@@ -1,0 +1,51 @@
+name: CI - Monolith smoke test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  monolith-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install service requirements (best-effort)
+        # Install any requirements.txt files found under AI-TTRPG/*
+        run: |
+          set -e
+          for f in AI-TTRPG/*/requirements.txt; do
+            if [ -f "$f" ]; then
+              echo "Installing $f"
+              python -m pip install -r "$f"
+            fi
+          done
+
+      - name: Install top-level dev deps
+        run: |
+          python -m pip install alembic sqlalchemy pydantic uvicorn pytest
+
+      - name: Run model-vs-migration diff
+        run: |
+          # Run the model-vs-migration diff script; fail the job if drift is found
+          python tools/model_migration_diff.py
+
+      - name: Run monolith integration tests
+        env:
+          MONOLITH_STORY_DB_INIT: auto
+          MONOLITH_WORLD_DB_INIT: auto
+        run: |
+          # Run the pytest integration test that executes the monolith runner.
+          pytest -q AI-TTRPG/tests/test_startup.py -q --maxfail=1

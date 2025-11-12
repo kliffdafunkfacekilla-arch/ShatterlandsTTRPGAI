@@ -52,6 +52,7 @@ class Location(Base):
     name = Column(String, index=True)
     tags = Column(JSON, default=[]) # e.g., ["forest", "outside", "hostile"]
     exits = Column(JSON, default={}) # e.g., {"north": "location_id_2"}
+    description = Column(Text, nullable=True) # Human-readable description of the location
 
     # This stores the tile map array (e.g., [[0,1,0],[0,1,0]])
     # It starts as NULL until procedurally generated.

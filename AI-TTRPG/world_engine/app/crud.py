@@ -203,10 +203,11 @@ def get_location_context(db: Session, location_id: int):
         "location_id": location.id,
         "name": location.name,
         "region_name": region.name,
-        "description": location.description,
+        "description": getattr(location, 'description', None),
         "generated_map_data": location.generated_map_data,
         "map_seed": location.map_seed,
         "ai_annotations": location.ai_annotations,
-        "npcs": [schemas.NpcInstanceContext.from_orm(npc) for npc in npcs],
-        "items": [schemas.ItemInstanceContext.from_orm(item) for item in items],
+        # Use the current schema model names
+        "npcs": [schemas.NpcInstance.from_orm(npc) for npc in npcs],
+        "items": [schemas.ItemInstance.from_orm(item) for item in items],
     }

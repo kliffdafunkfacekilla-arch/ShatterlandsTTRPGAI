@@ -3,6 +3,18 @@ import httpx
 from typing import Dict, Any, Optional, List
 from fastapi import HTTPException
 from . import schemas
+import os
+
+# If running inside the monolith, an internal adapter may be available.
+USE_INTERNAL_WORLD = False
+_internal_world = None
+try:
+    # monolith package is only on sys.path when running via start_monolith
+    from monolith.modules import world as _internal_world_module
+    USE_INTERNAL_WORLD = True
+    _internal_world = _internal_world_module
+except Exception:
+    USE_INTERNAL_WORLD = False
 import logging
 import json
 import asyncio
@@ -95,15 +107,21 @@ async def generate_npc_template(client: httpx.AsyncClient, generation_request: D
     return await _call_api(client, "POST", url, json=generation_request)
 
 async def spawn_npc_in_world(client: httpx.AsyncClient, spawn_request: schemas.OrchestrationSpawnNpc) -> Dict:
+    if USE_INTERNAL_WORLD:
+        return await _internal_world.spawn_npc_in_world(client, spawn_request)
     url = f"{WORLD_ENGINE_URL}/v1/npcs/spawn"
     return await _call_api(client, "POST", url, json=spawn_request.dict())
 
 async def update_location_annotations(client: httpx.AsyncClient, location_id: int, annotations: Dict[str, Any]) -> Dict:
+    if USE_INTERNAL_WORLD:
+        return await _internal_world.update_location_annotations(client, location_id, annotations)
     url = f"{WORLD_ENGINE_URL}/v1/locations/{location_id}/annotations"
     payload = {"ai_annotations": annotations}
     return await _call_api(client, "PUT", url, json=payload)
 
 async def get_world_location_context(client: httpx.AsyncClient, location_id: int) -> Dict:
+    if USE_INTERNAL_WORLD:
+        return await _internal_world.get_world_location_context(client, location_id)
     url = f"{WORLD_ENGINE_URL}/v1/locations/{location_id}"
     location_data = await _call_api(client, "GET", url)
     map_data = location_data.get("generated_map_data")
