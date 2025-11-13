@@ -1,0 +1,86 @@
+{
+  "Heavy Bows/Launchers": {
+    "skill_stat": "Might",
+    "damage": "3d10",
+    "penalty": -3,
+    "range_m": 150,
+    "properties": ["Siege", "AoE", "Slow"]
+  },
+  "Bows and Firearms": {
+    "skill_stat": "Awareness",
+    "damage": "1d10",
+    "penalty": -1,
+    "range_m": 100,
+    "properties": ["Long Range", "Accurate"]
+  },
+  "Quick Thrown": {
+    "skill_stat": "Finesse",
+    "damage": "1d8",
+    "penalty": 0,
+    "range_m": 50,
+    "properties": ["Fast", "Mobile"]
+  },
+  "Effect/Surprise Thrown": {
+    "skill_stat": "Reflexes",
+    "damage": "1d12",
+    "penalty": -2,
+    "range_m": 80,
+    "properties": ["High Power", "Status Effect"]
+  },
+  "Slings/Spears": {
+    "skill_stat": "Logic",
+    "damage": "1d6",
+    "penalty": 0,
+    "range_m": 20,
+    "properties": ["Versatile", "Quick"]
+  },
+  "Infused Blasters/Launchers": {
+    "skill_stat": "Knowledge",
+    "damage": "1d10",
+    "penalty": -1,
+    "range_m": 30,
+    "properties": ["Elemental Damage", "Focus"]
+  },
+  "Nature/Alchemy": {
+    "skill_stat": "Vitality",
+    "damage": "3d4",
+    "penalty": 0,
+    "range_m": 40,
+    "properties": ["Poison", "Nature-Based"]
+  },
+  "Fused/Triggered Projectiles": {
+    "skill_stat": "Intuition",
+    "damage": "2d6",
+    "penalty": 0,
+    "range_m": 15,
+    "properties": ["AoE", "Intuitive"]
+  },
+  "Crowd Controllers": {
+    "skill_stat": "Endurance",
+    "damage": "0",
+    "penalty": -2,
+    "range_m": 25,
+    "properties": ["Control", "Displacement"]
+  },
+  "Ariel/Flying Strikes": {
+    "skill_stat": "Fortitude",
+    "damage": "2d8",
+    "penalty": -1,
+    "range_m": 35,
+    "properties": ["Armor Piercing", "Flying"]
+  },
+  "Scatter/Repeater Bows/Firearms": {
+    "skill_stat": "Charm",
+    "damage": "1d4",
+    "penalty": 0,
+    "range_m": 10,
+    "properties": ["Multi-shot", "Impressive"]
+  },
+  "Concentration/Focus Launchers": {
+    "skill_stat": "Willpower",
+    "damage": "1d6",
+    "penalty": 0,
+    "range_m": 20,
+    "properties": ["Knockback", "Concentration"]
+  }
+}
