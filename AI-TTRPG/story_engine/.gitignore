@@ -1,6 +1,0 @@
-# Database file
-story.db
-
-# Python compiled files
-__pycache__/
-*.pyc
