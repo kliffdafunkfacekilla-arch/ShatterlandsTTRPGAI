@@ -1,11 +1,17 @@
-# World Engine Service
 
-## 1. Overview
+# World Engine
 
-The World Engine is a stateful FastAPI service responsible for managing the persistent state of the game world. It acts as the single source of truth for the state of all locations, NPCs, items, and other world-level entities.
+Manages world state, locations, and environmental features.
 
--   **Stateful:** Manages all world data in its own SQLite database (`world.db`).
--   **Data Source:** Provides detailed information about the game world to the `story_engine` for orchestration purposes.
+## Features
+- Location and spawn point management.
+- World data stored in models and JSON files.
+- Alembic migrations for schema changes.
+
+## Usage
+- Run migrations: `alembic upgrade head`
+- Start service: integrated via monolith runner.
+
 
 ## 2. Core Responsibilities
 

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "lore_001",
+    "title": "The Shattered Lands",
+    "type": "setting",
+    "tags": ["world", "history", "atlas"],
+    "body": "Long ago, the continent was fractured by a cataclysmic event. Now, the Shattered Lands are a patchwork of realms, each with its own rulers, mysteries, and dangers.",
+    "references": ["location:central_wastes", "npc:archsage_lyra"],
+    "map_locations": ["central_wastes", "eastern_frontier"],
+    "quests": ["quest_reunite_fragments"]
+  },
+  {
+    "id": "lore_002",
+    "title": "Archsage Lyra",
+    "type": "npc",
+    "tags": ["npc", "sage", "magic"],
+    "body": "Lyra is the last living member of the ancient order of Sages. She guards secrets of the old world and guides those who seek to heal the land.",
+    "references": ["lore_001"],
+    "map_locations": ["sage_tower"],
+    "quests": ["quest_find_lyra"]
+  },
+  {
+    "id": "lore_003",
+    "title": "Central Wastes",
+    "type": "location",
+    "tags": ["location", "ruins", "danger"],
+    "body": "Once fertile, now a barren expanse haunted by echoes of the cataclysm. Many adventurers seek lost relics here, few return.",
+    "references": ["lore_001"],
+    "map_locations": ["central_wastes"],
+    "quests": ["quest_retrieve_relic"]
+  }
+]

@@ -1,3 +1,27 @@
+# Example: Stick a quest pin to the Atlas (world_engine)
+import logging
+logger = logging.getLogger("uvicorn.error")
+
+async def stick_quest_pin_to_map(client: httpx.AsyncClient, location_id: int, pin_name: str, pin_data: Dict):
+    """
+    Sticks a 'pin' (a new JSON object) into a location's ai_annotations.
+    This will be processed by the world_engine when the map is generated.
+    """
+    logger.info(f"Sticking pin '{pin_name}' to location {location_id}")
+    # 1. Get the *current* annotations
+    try:
+        location_data = await get_world_location_context(client, location_id)
+        current_annotations = location_data.get("ai_annotations") or {}
+    except Exception as e:
+        logger.error(f"Failed to get location {location_id} to stick pin: {e}")
+        return
+
+    # 2. Add or update the pin
+    current_annotations[pin_name] = pin_data
+
+    # 3. Save the annotations back to the world_engine
+    await update_location_annotations(client, location_id, current_annotations)
+    logger.info(f"Successfully stuck pin '{pin_name}'.")
 # AI-TTRPG/story_engine/app/services.py
 import httpx
 from typing import Dict, Any, Optional, List
@@ -146,53 +170,10 @@ async def get_world_location_context(client: httpx.AsyncClient, location_id: int
             full_npc_template = await generate_npc_template(client, generation_params)
             npc_max_hp = full_npc_template.get("max_hp", 10)
             spawn_npc_data = schemas.OrchestrationSpawnNpc(
-                template_id="goblin_scout",
-                location_id=location_id,
-                coordinates=enemy_spawn,
-                name_override=None,
-                current_hp=npc_max_hp,
-                max_hp=npc_max_hp,
-                behavior_tags=full_npc_template.get("behavior_tags", ["aggressive"])
-            )
-            await spawn_npc_in_world(client, spawn_npc_data)
-            spawn_item_data = schemas.OrchestrationSpawnItem(
-                template_id="item_iron_key",
-                location_id=location_id,
-                npc_id=None,
-                coordinates=[10, 10],
-                quantity=1
-            )
-            await _call_api(client, "POST", f"{WORLD_ENGINE_URL}/v1/items/spawn", json=spawn_item_data.dict())
-            annotations = {
-                "door_1": {
-                    "type": "door", "status": "locked", "key_id": "item_iron_key", "coordinates": [5, 3]
-                }
-            }
-            await update_location_annotations(client, location_id, annotations)
-            map_update_payload = {
-                "generated_map_data": new_map_data,
-                "map_seed": map_response.get("seed_used"),
-                "spawn_points": map_response.get("spawn_points")
-            }
-            await _call_api(client, "PUT", f"{WORLD_ENGINE_URL}/v1/locations/{location_id}/map", json=map_update_payload)
-            
-            # --- RE-FETCH ---
-            location_data = await _call_api(client, "GET", url)
-            
-        except Exception as e:
-            logger.exception(f"FATAL: Failed to dynamically set up STARTING_ZONE: {e}. Returning possibly empty data.")
-    
-    # --- FIX: ADD SECOND PARSE CHECK ---
-    # This ensures that the re-fetched data is *also* parsed,
-    # guaranteeing the frontend never gets a string.
-    map_data = location_data.get("generated_map_data")
-    if isinstance(map_data, str):
-        try:
-            map_data = json.loads(map_data)
-        except json.JSONDecodeError:
-            logger.error("Failed to decode map data string (on refetch) as JSON. Treating as None.")
-            map_data = None
-        location_data["generated_map_data"] = map_data
-    # --- END FIX ---
+                if USE_INTERNAL_WORLD:
+                    return await _internal_world.get_world_location_context(client, location_id)
 
-    return location_data
+                # This is now just a simple proxy call. All the complex logic is gone.
+                url = f"{WORLD_ENGINE_URL}/v1/locations/{location_id}"
+                return await _call_api(client, "GET", url)
+                behavior_tags=full_npc_template.get("behavior_tags", ["aggressive"])

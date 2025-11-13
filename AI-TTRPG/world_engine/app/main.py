@@ -1,3 +1,4 @@
+
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -6,10 +7,17 @@ import os
 from contextlib import asynccontextmanager
 from alembic.config import Config as AlembicConfig
 from alembic import command as alembic_command
+import httpx
+import logging
+import json
+
+logger = logging.getLogger("uvicorn.error")
+MAP_GENERATOR_URL = "http://127.0.0.1:8006" # The address of your Map Tool
 
 # Import all our other files
 from . import crud, models, schemas
 from .database import SessionLocal, engine, Base, DATABASE_URL # <-- Import Base and DATABASE_URL
+from sqlalchemy.orm import joinedload
 
 # --- NEW LIFESPAN FUNCTION ---
 @asynccontextmanager
@@ -52,6 +60,16 @@ async def lifespan(app: FastAPI):
     # Shutdown logic
     print("INFO: World Engine: Shutting down.")
 
+    # --- LORE LOADER ---
+    def load_lore() -> list[dict]:
+        lore_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "lore.json")
+        try:
+            with open(lore_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load lore: {e}")
+            return []
+
 
 # This creates the FastAPI application instance
 app = FastAPI(
@@ -90,25 +108,166 @@ def get_db():
 def read_root():
     return {"status": "World Engine is running."}
 
+# --- LORE ENDPOINTS ---
+@app.get("/v1/lore", response_model=List[Dict[str, Any]])
+def get_lore():
+    """Return all lore entries."""
+    return load_lore()
+
+@app.get("/v1/lore/{lore_id}", response_model=Dict[str, Any])
+def get_lore_entry(lore_id: str):
+    """Return a single lore entry by id."""
+    for entry in load_lore():
+        if entry.get("id") == lore_id:
+            return entry
+    raise HTTPException(status_code=404, detail="Lore entry not found")
+
+# --- MAP ENDPOINTS ---
+@app.post("/v1/maps", response_model=schemas.Map)
+def create_map(map_data: schemas.MapBase, db: Session = Depends(get_db)):
+    db_map = models.Map(**map_data.dict())
+    db.add(db_map)
+    db.commit()
+    db.refresh(db_map)
+    return db_map
+
+@app.get("/v1/maps/{map_id}", response_model=schemas.Map)
+def get_map(map_id: int, db: Session = Depends(get_db)):
+    db_map = db.query(models.Map).options(joinedload(models.Map.tiles)).filter(models.Map.id == map_id).first()
+    if not db_map:
+        raise HTTPException(status_code=404, detail="Map not found")
+    return db_map
+
+@app.get("/v1/maps", response_model=List[schemas.Map])
+def list_maps(db: Session = Depends(get_db)):
+    db_maps = db.query(models.Map).all()
+    return db_maps
+
+@app.post("/v1/tiles", response_model=schemas.Tile)
+def create_tile(tile_data: schemas.TileBase, db: Session = Depends(get_db)):
+    db_tile = models.Tile(**tile_data.dict())
+    db.add(db_tile)
+    db.commit()
+    db.refresh(db_tile)
+    return db_tile
+
+@app.get("/v1/tiles/{tile_id}", response_model=schemas.Tile)
+def get_tile(tile_id: int, db: Session = Depends(get_db)):
+    db_tile = db.query(models.Tile).filter(models.Tile.id == tile_id).first()
+    if not db_tile:
+        raise HTTPException(status_code=404, detail="Tile not found")
+    return db_tile
+
+@app.get("/v1/tiles", response_model=List[schemas.Tile])
+def list_tiles(db: Session = Depends(get_db)):
+    db_tiles = db.query(models.Tile).all()
+    return db_tiles
+
 # --- Location Endpoints ---
 
 @app.get("/v1/locations/{location_id}", response_model=schemas.Location)
 def read_location(location_id: int, db: Session = Depends(get_db)):
     """
-    Get all data for a single location by its ID.
-    This is the main 'get' function for the story_engine.
+    Get all data for a single location.
+    If the map doesn't exist, this function will generate, save,
+    and populate it before returning.
     """
     try:
+        # 1. Get the location data from the database
         db_loc = crud.get_location(db, location_id=location_id)
         if db_loc is None:
             raise HTTPException(status_code=404, detail="Location not found")
+
+        # 2. CHECK: Does the map already exist?
+        if db_loc.generated_map_data is not None:
+            logger.info(f"Map for {location_id} already exists. Returning from DB.")
+            return db_loc # The map is already generated. Just return it.
+
+        # 3. GENERATE: The map is null, so we must build it.
+        logger.info(f"Map for {location_id} not found. Generating...")
+
+        # 4. BUILD PROMPT: Gather all tags from our own data
+        prompt_tags = []
+
+        # Add static biome tags
+        if db_loc.tags:
+            prompt_tags.extend(db_loc.tags)
+
+        # Add "sticky pin" tags from annotations
+        if db_loc.ai_annotations:
+            for key, value in db_loc.ai_annotations.items():
+                if isinstance(value, dict) and "type" in value:
+                    prompt_tags.append(f"spawn:{value['type']}") # e.g., "spawn:quest_item"
+
+        # (Optional) Add region-level tags (weather, war_zone, etc.)
+        if db_loc.region and db_loc.region.environmental_effects:
+            prompt_tags.extend(db_loc.region.environmental_effects)
+
+        # (Optional) Fill in blanks
+        if not any("size:" in tag for tag in prompt_tags):
+            prompt_tags.append("size:medium")
+
+        logger.info(f"Calling Map Generator tool with tags: {prompt_tags}")
+
+        # 5. CALL TOOL: Call the map_generator
+        import asyncio
+        async def generate_map():
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{MAP_GENERATOR_URL}/v1/generate",
+                    json={"tags": prompt_tags},
+                    timeout=30.0
+                )
+                response.raise_for_status()
+                return response.json()
+        map_gen_data = asyncio.run(generate_map())
+
+        # 6. SAVE TO ATLAS: Save the new map data back to the DB
+        map_update = schemas.LocationMapUpdate(
+            generated_map_data=map_gen_data.get("map_data"),
+            map_seed=map_gen_data.get("seed_used"),
+            spawn_points=map_gen_data.get("spawn_points")
+        )
+        db_loc = crud.update_location_map(db, location_id, map_update)
+        logger.info(f"New map for {location_id} saved to database.")
+
+        # 7. PLACE PINS: Spawn items/NPCs from the "sticky pins"
+        spawn_points = db_loc.spawn_points or {}
+        player_spawns = spawn_points.get("player", [[1,1]])
+
+        if db_loc.ai_annotations:
+            logger.info("Placing 'sticky pin' items/NPCs...")
+            for key, pin in db_loc.ai_annotations.items():
+                if not isinstance(pin, dict): continue
+
+                # Use a pin's coords, or default to a player spawn point
+                coords = pin.get("coordinates", player_spawns[0])
+
+                if pin.get("type") == "item":
+                    item_req = schemas.ItemSpawnRequest(
+                        template_id=pin.get("item_id", "item_iron_key"),
+                        quantity=pin.get("quantity", 1),
+                        location_id=location_id,
+                        coordinates=coords
+                    )
+                    crud.spawn_item(db, item_req)
+                    logger.info(f"Spawned pin item: {item_req.template_id}")
+
+                # (Add logic for "npc" pins here later)
+
+        # 8. RETURN: Return the fully generated and populated location
+        db.refresh(db_loc)
         return db_loc
-    except HTTPException:
-        raise
+
+    except httpx.RequestError as e:
+        logger.error(f"Failed to connect to map_generator: {e}")
+        raise HTTPException(status_code=503, detail="Map generation service unavailable.")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"map_generator returned error: {e.response.text}")
+        raise HTTPException(status_code=500, detail="Map generation failed.")
     except Exception as e:
-        import logging
-        logging.exception(f"Error fetching location {location_id}")
-        raise HTTPException(status_code=500, detail=f"Error fetching location: {str(e)}")
+        logger.exception(f"Error in read_location for {location_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/v1/locations/{location_id}/annotations", response_model=schemas.Location)
 def update_location_ai_annotations(

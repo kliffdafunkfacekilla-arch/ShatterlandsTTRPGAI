@@ -1,6 +1,36 @@
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
 
+# --- NEW: World Map and Tile Schemas ---
+class TileBase(BaseModel):
+    x: int
+    y: int
+    z: int = 0
+    terrain: Optional[str] = None
+    features: Optional[Dict[str, Any]] = {}
+    nested_map_id: Optional[int] = None
+
+class Tile(TileBase):
+    id: int
+    map_id: int
+    class Config:
+        from_attributes = True
+
+class MapBase(BaseModel):
+    name: str
+    parent_map_id: Optional[int] = None
+    grid_width: int = 100
+    grid_height: int = 100
+    layers: int = 1
+    description: Optional[str] = None
+
+class Map(MapBase):
+    id: int
+    tiles: List[Tile] = []
+    parent_map: Optional['Map'] = None
+    class Config:
+        from_attributes = True
+
 # Pydantic models are used to validate data.
 # 'BaseModel' is the class they inherit from.
 

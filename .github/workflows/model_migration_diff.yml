@@ -1,0 +1,34 @@
+name: Model-Migration Drift Check
+on:
+  push:
+    paths:
+      - 'AI-TTRPG/**/app/models.py'
+      - 'AI-TTRPG/**/alembic/versions/*.py'
+      - 'tools/model_migration_diff.py'
+      - '.github/workflows/model_migration_diff.yml'
+  pull_request:
+    paths:
+      - 'AI-TTRPG/**/app/models.py'
+      - 'AI-TTRPG/**/alembic/versions/*.py'
+      - 'tools/model_migration_diff.py'
+      - '.github/workflows/model_migration_diff.yml'
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies (all services)
+        run: |
+          pip install -r AI-TTRPG/world_engine/requirements.txt
+          pip install -r AI-TTRPG/story_engine/requirements.txt
+          pip install -r AI-TTRPG/character_engine/requirements.txt
+          pip install -r AI-TTRPG/encounter_generator/requirements.txt
+          pip install -r AI-TTRPG/map_generator/requirements.txt
+          pip install -r AI-TTRPG/rules_engine/requirements.txt
+      - name: Run model-migration drift check
+        run: python tools/model_migration_diff.py

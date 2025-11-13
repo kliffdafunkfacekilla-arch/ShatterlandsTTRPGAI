@@ -1,8 +1,35 @@
 from sqlalchemy import Column, Integer, String, Text, JSON, ForeignKey
 from sqlalchemy.orm import relationship
+from sqlalchemy import Float
 
 # Import the 'Base' we created in database.py
 from .database import Base
+
+# --- NEW: World Map and Tile Models ---
+class Map(Base):
+    __tablename__ = "maps"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    parent_map_id = Column(Integer, ForeignKey("maps.id"), nullable=True)
+    grid_width = Column(Integer, default=100)
+    grid_height = Column(Integer, default=100)
+    layers = Column(Integer, default=1)
+    description = Column(Text, nullable=True)
+    tiles = relationship("Tile", back_populates="map")
+    parent_map = relationship("Map", remote_side=[id])
+
+class Tile(Base):
+    __tablename__ = "tiles"
+    id = Column(Integer, primary_key=True, index=True)
+    map_id = Column(Integer, ForeignKey("maps.id"))
+    x = Column(Integer)
+    y = Column(Integer)
+    z = Column(Integer, default=0) # Layer
+    terrain = Column(String, nullable=True)
+    features = Column(JSON, default={})
+    nested_map_id = Column(Integer, ForeignKey("maps.id"), nullable=True) # Reference to nested map
+    map = relationship("Map", back_populates="tiles", foreign_keys=[map_id])
+    nested_map = relationship("Map", foreign_keys=[nested_map_id])
 
 class TrapInstance(Base):
     __tablename__ = "trap_instances"
