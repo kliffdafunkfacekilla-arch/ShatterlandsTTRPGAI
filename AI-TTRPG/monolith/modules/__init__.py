@@ -1,11 +1,11 @@
 """
 Container for monolith domain modules.
 
-Modules should expose a `register(orchestrator)` function that attaches
-their handlers to the orchestrator and event bus. This file provides a
-convenience function to register all built-in modules.
+This file provides a convenience function to register all
+self-contained modules with the orchestrator and event bus.
 """
 from typing import List
+import logging
 
 def register_all(orchestrator) -> None:
     # import modules lazily to avoid import cycles during bootstrap

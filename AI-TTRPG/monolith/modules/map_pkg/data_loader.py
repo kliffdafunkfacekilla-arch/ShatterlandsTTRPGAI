@@ -1,3 +1,4 @@
+# AI-TTRPG/monolith/modules/map_pkg/data_loader.py
 import json
 import os
 from typing import Dict, List, Any
@@ -10,8 +11,12 @@ def load_data():
     """Loads map generation data files."""
     global TILE_DEFINITIONS, GENERATION_ALGORITHMS
 
+    # --- THIS PATH IS NOW CORRECT ---
+    # __file__ is .../monolith/modules/map_pkg/data_loader.py
+    # BASE_DIR is .../monolith/modules/map_pkg/
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    DATA_DIR = os.path.join(BASE_DIR, '..', 'data')
+    DATA_DIR = os.path.join(BASE_DIR, 'data')
+    # --- END CORRECTION ---
 
     print("--- Map Generator: Loading Data ---")
 
