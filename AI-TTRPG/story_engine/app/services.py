@@ -1,7 +1,17 @@
-# Example: Stick a quest pin to the Atlas (world_engine)
+# AI-TTRPG/story_engine/app/services.py
+import httpx
+from typing import Dict, Any, Optional, List
+from fastapi import HTTPException
+from . import schemas
+import os
 import logging
+import json
+import asyncio
+import random
+
 logger = logging.getLogger("uvicorn.error")
 
+# Example: Stick a quest pin to the Atlas (world_engine)
 async def stick_quest_pin_to_map(client: httpx.AsyncClient, location_id: int, pin_name: str, pin_data: Dict):
     """
     Sticks a 'pin' (a new JSON object) into a location's ai_annotations.
@@ -22,12 +32,6 @@ async def stick_quest_pin_to_map(client: httpx.AsyncClient, location_id: int, pi
     # 3. Save the annotations back to the world_engine
     await update_location_annotations(client, location_id, current_annotations)
     logger.info(f"Successfully stuck pin '{pin_name}'.")
-# AI-TTRPG/story_engine/app/services.py
-import httpx
-from typing import Dict, Any, Optional, List
-from fastapi import HTTPException
-from . import schemas
-import os
 
 # If running inside the monolith, an internal adapter may be available.
 USE_INTERNAL_WORLD = False
@@ -39,10 +43,6 @@ try:
     _internal_world = _internal_world_module
 except Exception:
     USE_INTERNAL_WORLD = False
-import logging
-import json
-import asyncio
-import random
 
 RULES_ENGINE_URL = "http://127.0.0.1:8000"
 CHARACTER_ENGINE_URL = "http://127.0.0.1:8001"
@@ -143,6 +143,12 @@ async def update_location_annotations(client: httpx.AsyncClient, location_id: in
     payload = {"ai_annotations": annotations}
     return await _call_api(client, "PUT", url, json=payload)
 
+async def update_location_map(client: httpx.AsyncClient, location_id: int, map_update: Dict[str, Any]) -> Dict:
+    if USE_INTERNAL_WORLD:
+        return await _internal_world.update_location_map(client, location_id, map_update)
+    url = f"{WORLD_ENGINE_URL}/v1/locations/{location_id}/map"
+    return await _call_api(client, "PUT", url, json=map_update)
+
 async def get_world_location_context(client: httpx.AsyncClient, location_id: int) -> Dict:
     if USE_INTERNAL_WORLD:
         return await _internal_world.get_world_location_context(client, location_id)
@@ -170,10 +176,17 @@ async def get_world_location_context(client: httpx.AsyncClient, location_id: int
             full_npc_template = await generate_npc_template(client, generation_params)
             npc_max_hp = full_npc_template.get("max_hp", 10)
             spawn_npc_data = schemas.OrchestrationSpawnNpc(
-                if USE_INTERNAL_WORLD:
-                    return await _internal_world.get_world_location_context(client, location_id)
-
-                # This is now just a simple proxy call. All the complex logic is gone.
-                url = f"{WORLD_ENGINE_URL}/v1/locations/{location_id}"
-                return await _call_api(client, "GET", url)
-                behavior_tags=full_npc_template.get("behavior_tags", ["aggressive"])
+                template_id="goblin_scout",
+                location_id=location_id,
+                coordinates=enemy_spawn,
+                current_hp=npc_max_hp,
+                max_hp=npc_max_hp,
+                behavior_tags=full_npc_template.get("behavior_tags", ["aggressive"]),
+            )
+            await spawn_npc_in_world(client, spawn_npc_data)
+            await update_location_map(client, location_id, {"generated_map_data": new_map_data})
+            location_data["generated_map_data"] = new_map_data
+            logger.info("Dynamically set up STARTING_ZONE.")
+        except Exception as e:
+            logger.exception(f"Failed to dynamically set up STARTING_ZONE: {e}")
+    return location_data
