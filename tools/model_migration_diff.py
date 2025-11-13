@@ -31,7 +31,6 @@ def find_services() -> List[str]:
         pkg_dir = os.path.join(path, f"{name}_pkg")
         alembic_dir = os.path.join(pkg_dir, "alembic", "versions")
 
-        # Check for <name>_pkg/alembic/versions
         if os.path.isdir(pkg_dir) and os.path.isdir(alembic_dir):
             services.append(name)
     return services
@@ -41,14 +40,11 @@ def load_model_tables(service_name: str) -> Dict[str, Set[str]]:
     result: Dict[str, Set[str]] = {}
 
     # Path to the models.py file, e.g., .../modules/world/world_pkg/models.py
-    models_path = os.path.join(MONOLITH_DIR, f"{service_name}_pkg", 'models.py')
+    models_path = os.path.join(MONOLITH_DIR, service_name, f"{service_name}_pkg", 'models.py')
 
     if not os.path.exists(models_path):
-        # Check alternate pathing in case module name != pkg name
-        models_path = os.path.join(MONOLITH_DIR, service_name, f"{service_name}_pkg", 'models.py')
-        if not os.path.exists(models_path):
-            print(f"[WARN] models.py not found for {service_name} at {models_path}; skipping")
-            return result
+        print(f"[WARN] models.py not found for {service_name} at {models_path}; skipping")
+        return result
 
     try:
         text = open(models_path, 'r', encoding='utf-8').read()
@@ -87,7 +83,7 @@ def load_model_tables(service_name: str) -> Dict[str, Set[str]]:
             result.setdefault(tn, set()).add(m.group("col"))
 
     return result
-    
+
 def parse_migration_columns(migration_text: str) -> Dict[str, Set[str]]:
     """Parse migration file text for created tables and added columns."""
     tables: Dict[str, Set[str]] = {}
@@ -111,14 +107,10 @@ def parse_migration_columns(migration_text: str) -> Dict[str, Set[str]]:
 
 def load_migrations(service_name: str) -> Dict[str, Set[str]]:
     """Read all migration files under <service_name>_pkg/alembic/versions."""
-    migrations_dir = os.path.join(MONOLITH_DIR, f"{service_name}_pkg", "alembic", "versions")
-    if not os.path.isdir(migrations_dir):
-         migrations_dir = os.path.join(MONOLITH_DIR, service_name, f"{service_name}_pkg", "alembic", "versions")
-
+    migrations_dir = os.path.join(MONOLITH_DIR, service_name, f"{service_name}_pkg", "alembic", "versions")
     result: Dict[str, Set[str]] = {}
 
     if not os.path.isdir(migrations_dir):
-        print(f"[WARN] Migrations dir not found for {service_name} at {migrations_dir}")
         return result
 
     for fname in os.listdir(migrations_dir):
@@ -139,9 +131,9 @@ def load_migrations(service_name: str) -> Dict[str, Set[str]]:
     return result
 
 def run_check() -> int:
-    # Add project root to sys.path to allow imports
+    # Add monolith root to sys.path to allow imports
     if ROOT not in sys.path:
-        sys.path.insert(0, str(ROOT))
+        sys.path.insert(0, ROOT)
 
     services = find_services()
     if not services:

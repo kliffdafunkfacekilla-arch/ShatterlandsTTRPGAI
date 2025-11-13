@@ -2,96 +2,161 @@
 
 ## 1. High-Level Architecture
 
-The AI-TTRPG system is a Python-based backend built on a **modular monolith architecture**. It consists of a single, unified application that internally organizes functionality into distinct modules, each handling a specific domain of the game. This design promotes modularity and maintainability while simplifying development and deployment.
+The AI-TTRPG system is a Python-based backend built on a **microservice architecture**. It consists of seven distinct FastAPI services, each handling a specific domain of the game. This design promotes modularity, independent development, and scalability.
 
-The modules are contained within the `AI-TTRPG/monolith/modules/` directory and are managed by a central orchestrator.
+The services are divided into two primary categories:
 
-The modules are divided into two primary categories:
+*   **Stateful Services:** These three services manage persistent game data using individual SQLite databases, with schemas and migrations handled by SQLAlchemy and Alembic.
+    *   `character_engine`: Manages the creation, state, and progression of player characters.
+    *   `world_engine`: Manages the state of the game world, including locations, NPCs, and items.
+    *   `story_engine`: Manages campaign state and acts as the central orchestrator for complex actions.
 
-* **Stateful Modules:** These three modules manage persistent game data using individual SQLite databases (e.g., `characters.db`, `world.db`, `story.db`). Their logic is contained in `_pkg` sub-directories (e.g., `world_pkg/`).
-    * **`character`**: Manages the creation, state, and progression of player characters.
-    * **`world`**: Manages the persistent state of the game world, including locations, NPCs, and items.
-    * **`story`**: Manages campaign state, quests, and active combat encounters.
+*   **Stateless Services:** These four services act as data providers and calculators. They load their necessary data from local JSON files upon startup and do not maintain any persistent state of their own.
+    *   `rules_engine`: The single source of truth for all game rules and combat calculations.
+    *   `npc_generator`: Procedurally generates NPC templates based on a set of rules.
+    *   `map_generator`: Procedurally generates tile-based maps using various algorithms.
+    *   `encounter_generator`: (Placeholder) Intended to generate pre-defined encounters.
 
-* **Stateless Modules:** These modules act as data providers and "calculators." They load their necessary data from local JSON files upon startup.
-    * **`rules`**: The single source of truth for all game rules, combat calculations, and NPC generation.
-    * **`map`**: Procedurally generates tile-based maps. This logic is called *by* the `world` module on demand.
-    * **`encounter`**: A simple content library for pre-defined encounter templates.
+### Inter-Service Communication Flow
 
-### Inter-Module Communication Flow
+Services communicate via synchronous REST API calls, primarily orchestrated by the `story_engine`.
 
-Modules communicate via direct, in-process function calls, primarily orchestrated by the `story` module. The `story` module imports and calls functions from the `rules`, `world`, and `character` modules to execute complex game logic.
+```
++------------------+      +-----------------+      +-----------------+
+| player_interface |----->|  story_engine   |----->| character_engine|
++------------------+      +-------+---------+      +-----------------+
+                              ^   |                (Player State)
+                              |   |
+                              |   v
+                              |   +---------------->+-----------------+
+                              |                    |   world_engine  |
+                              |                    +-----------------+
+                              |                    (World State)
+                              v
+                      +-------+---------+
+                      |   rules_engine  |
+                      +-----------------+
+                      (Rules & Calculations)
+```
 
-+------------------+ +-----------------+ +-----------------+ | player_interface |----->| story (Module) |----->| character (Module) | +------------------+ +-------+---------+ +-----------------+ ^ | (Player State - characters.db) | | | v | +---------------->+-----------------+ | | world (Module) | | +-----------------+ | (World State - world.db) v +-------+---------+ | rules (Module) | +-----------------+ (Rules, Calcs, NPC Gen)
+## 2. Service Breakdown
 
+### `story_engine` (Orchestrator)
 
-## 2. Module Breakdown
+*   **Purpose:** Acts as the central nervous system of the application. It directs the flow of gameplay by receiving high-level requests (e.g., "start combat," "move player") and orchestrating the necessary calls to other services.
+*   **Core Endpoints:**
+    *   `POST /v1/combat/start`: Initiates a combat encounter.
+    *   `POST /v1/combat/{id}/player_action`: Processes a player's action during combat. The core logic is in `combat_handler.py`, which includes the new NPC AI behavior.
+    *   `POST /v1/actions/interact`: **(New)** Handles non-combat interactions with world objects. The core logic is in `interaction_handler.py`, which fetches world state from the `world_engine` and character data from the `character_engine`.
+*   **Data:** Manages active campaign state, quests, story flags, and the state of ongoing combat encounters in `story.db`.
+*   **Dependencies:** Calls all other stateful and stateless services to execute gameplay logic.
 
-### `story` (Orchestrator)
+### `world_engine` (Stateful)
 
-* **Purpose:** Acts as the central nervous system. It receives high-level requests (e.g., "start combat," "interact") and orchestrates the necessary calls to other modules to execute them.
-* **Logic:** `monolith/modules/story_pkg/`
-* **Core Logic:**
-    * `combat_handler.py`: Manages the entire lifecycle of a combat encounter, from setup to turn-by-turn resolution.
-    * `interaction_handler.py`: Processes non-combat player interactions with world objects.
-* **Data:** Manages active campaign state, quests, story flags, and the state of ongoing combat encounters in `story.db`.
-* **Dependencies:** Calls all other stateful and stateless modules.
+*   **Purpose:** Manages the persistent state of the game world. It is the source of truth for "what is where."
+*   **Core Endpoints:**
+    *   `GET /v1/locations/{id}`: Retrieves the full state of a location, including all NPCs, items, and map data.
+    *   `POST /v1/npcs/spawn`: Creates a new NPC instance at a specific location.
+    *   `PUT /v1/npcs/{id}`: Updates an NPC's state (e.g., `current_hp`, `status_effects`, `coordinates`).
+    *   `PUT /v1/locations/{id}/annotations`: **(New)** Allows the `story_engine` to store and update metadata about a location, such as the state of a door or the presence of a key.
+*   **Data:** Manages locations, NPCs, items, and their states in `world.db`.
 
-### `world` (Stateful)
+### `character_engine` (Stateful)
 
-* **Purpose:** Manages the persistent state of the game world. It is the source of truth for "what is where".
-* **Logic:** `monolith/modules/world_pkg/`
-* **Core Logic:**
-    * `crud.py`: Contains `get_location_context`, which retrieves the full state of a location.
-    * **On-Demand Map Generation:** If `get_location_context` is called for a location with no map, this module automatically calls the `map` module to generate and save one.
-* **Data:** Manages locations, NPCs, items, and their states in `world.db`.
-* **Dependencies:** Calls the `map` module.
+*   **Purpose:** The authoritative source for player character data. It manages character sheets, including stats, skills, inventory, and combat-related data.
+*   **Core Endpoints:**
+    *   `POST /v1/characters/`: Creates a new character.
+    *   `GET /v1/characters/{id}`: Retrieves a character's complete sheet.
+    *   `PUT /v1/characters/{id}/inventory/add` & `/remove`: Manages a character's inventory.
+    *   `PUT /v1/characters/{id}/apply_damage`: Updates a character's `current_hp`.
+    *   `PUT /v1/characters/{id}/location`: Updates the player's current location and coordinates.
+*   **Data:** Manages character sheets (as a single JSON blob) in `characters.db`. The `character_sheet` JSON blob was recently refactored to include a `combat_stats` dictionary for `max_hp`, `current_hp`, and `status_effects`.
 
-### `character` (Stateful)
+### `rules_engine` (Stateless)
 
-* **Purpose:** The authoritative source for player character data. It manages character sheets, including stats, skills, inventory, and combat-related data.
-* **Logic:** `monolith/modules/character_pkg/`
-* **Core Logic:**
-    * `services.py`: Handles character creation by calling the `rules` module.
-    * `crud.py`: Provides functions to `apply_damage`, `add_item_to_inventory`, etc.
-* **Data:** Manages character sheets in `characters.db`.
-* **Dependencies:** Calls the `rules` module.
+*   **Purpose:** The definitive source for all game mechanics and calculations. It ensures that combat and other actions are resolved consistently according to the game's ruleset.
+*   **Core Endpoints:**
+    *   `POST /v1/roll/contested_attack`: Performs a complete attack roll, returning the outcome (e.g., "hit", "miss", "critical_hit").
+    *   `POST /v1/calculate/damage`: Calculates the final damage dealt after accounting for stats and armor.
+    *   `GET /v1/lookup/all_skills`: Provides a list of all skills in the game.
+    *   `GET /v1/lookup/npc_template/{template_id}`: **(New)** Returns the generation parameters for a given NPC template ID.
+    *   `GET /v1/lookup/item_template/{item_id}`: **(New)** Looks up the definition for a given item ID, returning its type and category.
+*   **Data:** Loads all game rules from its `data/` directory of JSON files on startup.
 
-### `rules` (Stateless)
+### `npc_generator` (Stateless)
 
-* **Purpose:** The definitive source for all game mechanics, data, and calculations. This module also contains the logic for **NPC generation**, consolidated from the old `npc_generator` service.
-* **Logic:** `monolith/modules/rules_pkg/`
-* **Core Logic:**
-    * `core.py`: Contains all combat calculation functions (`calculate_contested_attack`, `calculate_damage`) and the NPC generation logic (`generate_npc_template_core`).
-* **Data:** Loads all game rules from its `data/` directory (e.g., `stats_and_skills.json`, `talents.json`, `generation_rules.json`) on startup.
-* **Dependencies:** None.
+*   **Purpose:** Procedurally generates NPC stat blocks to be used by the `story_engine`.
+*   **Core Endpoints:**
+    *   `POST /v1/generate`: Creates a new NPC template based on input parameters like kingdom, style, and difficulty. The core logic in `core.py` was recently updated to fetch the skill list dynamically.
+*   **Data:** Loads generation rules from `generation_rules.json`.
+*   **Dependencies:** Calls the `rules_engine` to get the master list of skills, ensuring generated NPCs are compatible with game rules.
 
-### `map` (Stateless)
+### `map_generator` (Stateless)
 
-* **Purpose:** Procedurally generates tile-based maps for game locations.
-* **Logic:** `monolith/modules/map_pkg/`
-* **Data:** Loads algorithm parameters and tile definitions from its `data/` directory.
-* **Dependencies:** None.
+*   **Purpose:** Procedurally generates tile-based maps for game locations.
+*   **Core Endpoints:**
+    *   `POST /v1/generate`: Creates a new tile map using a specified algorithm (e.g., Cellular Automata, Drunkard's Walk). The core logic in `core.py` was recently updated to include the "Drunkard's Walk" algorithm.
+*   **Data:** Loads algorithm parameters and tile definitions from JSON files.
 
-### `encounter` (Stateless)
+### `encounter_generator` (Stateless)
 
-* **Purpose:** A simple content library for providing pre-defined combat or skill-based encounters.
-* **Logic:** `monolith/modules/encounter_pkg/`
-* **Data:** Loads encounter definitions from its `data/` directory (e.g., `combat_encounters.json`).
-* **Dependencies:** None.
+*   **Purpose:** A placeholder service intended to provide pre-defined combat or skill-based encounters.
+*   **Core Endpoints:**
+    *   `POST /v1/generate`: (Not fully utilized) Returns an encounter structure from a JSON file.
 
-## 3. Case Study: Spawning an NPC in Combat
+## 3. Core Gameplay Loops
 
-The process of spawning an NPC when combat starts is a prime example of the modular monolith in action:
+### Exploration and Movement
 
-1.  **Initiation (`story`):** The `story` module (in `combat_handler.py`) receives a request to start combat, which includes a list of NPC template IDs (e.g., `["goblin_scout"]`).
+1.  The `player_interface` renders the current location by fetching data from the `story_engine`, which in turn gets the complete location context (map, NPCs, items) from the `world_engine`.
+2.  The player presses a movement key (e.g., 'W').
+3.  The `player_interface` sends the new coordinates to the `character_engine`'s `PUT /v1/characters/{id}/location` endpoint, persisting the player's new position.
+4.  The interface re-renders the scene.
 
-2.  **Parameter Lookup (`rules`):** The `story` module calls the `rules` module's API function: `rules_api.get_npc_generation_params("goblin_scout")`. The `rules` module looks this up in its cached `npc_templates.json` data and returns the generation parameters.
+### Case Study: Spawning an NPC in Combat
 
-3.  **Procedural Generation (`rules`):** The `story` module then calls `rules_api.generate_npc_template(...)`, passing in the parameters it just received. The `rules` module (in `rules_pkg/core.py`) uses its internal logic from `generation_rules.json` to procedurally generate a full NPC template, including stats and `max_hp`. It returns this full template.
+The process of spawning an NPC when combat starts is a prime example of the microservice architecture in action, demonstrating the clear separation of concerns.
 
-4.  **World State Update (`world`):** The `story` module now has a complete, statted NPC. It calls the `world` module's API function: `world_api.spawn_npc_in_world(...)`, providing the full template and coordinates. The `world` module (in `world_pkg/crud.py`) creates the new `NpcInstance` in its `world.db`, officially placing it in the game world.
+1.  **Initiation (`story_engine`):** The `story_engine` receives a request to start combat, which includes a list of NPC template IDs (e.g., `["goblin_scout"]`).
 
-5.  **Combat Begins:** The `story` module proceeds with the rest of the combat setup.
+2.  **Parameter Lookup (`rules_engine`):** The `story_engine` doesn't know *how* to create a "goblin_scout." It calls the `rules_engine`'s `GET /v1/lookup/npc_template/goblin_scout` endpoint. The `rules_engine` reads from its `npc_templates.json` file and returns the generation parameters: `{ "kingdom": "mammal", "difficulty": "easy", ... }`.
 
-This flow ensures that each module is only responsible for its own domain: the `rules` module knows the *recipe*, the `world` module *stores the dish*, and the `story` module *directs the process*.
+3.  **Procedural Generation (`npc_generator`):** The `story_engine` now knows the recipe. It calls the `npc_generator`'s `POST /v1/generate` endpoint, providing the parameters it just received. The `npc_generator` uses its internal logic to procedurally generate a full NPC template, including stats, skills, and, crucially, a calculated `max_hp`. It returns this full template.
+
+4.  **World State Update (`world_engine`):** The `story_engine` now has a complete, statted NPC. It calls the `world_engine`'s `POST /v1/npcs/spawn` endpoint, providing the full template and the desired coordinates. The `world_engine` creates the NPC instance in its `world.db`, officially placing it in the game world.
+
+5.  **Combat Begins:** The `story_engine` proceeds with the rest of the combat setup, now confident that a fully-formed NPC exists in the world.
+
+This flow ensures that each service is only responsible for its own domain: the `rules_engine` knows the *recipe*, the `npc_generator` knows *how to cook*, and the `world_engine` knows *where to place the dish*. The `story_engine` simply directs the process.
+
+## 4. Current State
+
+The project is currently in a functional, demonstrable state. The core gameplay loop of exploration and combat is implemented, and the foundational architecture is stable.
+
+*   **Implemented Features:**
+    *   Full character creation flow.
+    *   World exploration with tile-based maps.
+    *   Combat initiation and turn-based resolution.
+    *   Procedural generation of maps and NPCs.
+    *   A comprehensive, data-driven ruleset for combat calculations.
+
+*   **Placeholder Components:**
+    *   The `encounter_generator` service is a placeholder and does not yet have a significant role in the system.
+    *   NPC AI is basic, with simple "aggressive" or "cowardly" behaviors.
+    *   Quest and story progression systems are not yet implemented.
+
+## 5. Intended Final Goal
+
+The intended final goal of the AI-TTRPG project is to create a fully autonomous, endlessly replayable tabletop role-playing experience. The architecture is designed to support a dynamic, procedurally generated world where an AI Dungeon Master (the `story_engine`) can create and manage emergent narratives.
+
+*   **Key Future Features:**
+    *   **Dynamic World State:** The world will change in response to player actions, with the `story_engine` and `world_engine` tracking these changes.
+    *   **Emergent Storytelling:** The `story_engine` will be expanded to include more sophisticated AI-driven narrative generation, creating quests, and managing story arcs based on player choices.
+    *   **Advanced NPC AI:** NPCs will have more complex behaviors, schedules, and relationships, making the world feel more alive.
+    *   **Extensibility:** The data-driven nature of the stateless services will allow for easy expansion with new rules, items, and content without requiring code changes.
+
+## 6. Getting Started
+
+-   **Dependencies:** Each service has its own `requirements.txt` file.
+-   **Running the System:** The `start_services.bat` and `start_services.sh` scripts in the root directory are configured to launch all seven services, each on its own designated port (8000-8006).
+-   **Player Interface:** A React/TypeScript frontend is located in the `player_interface` directory. It must be started separately (`npm run dev`) and connects to the running backend services.
