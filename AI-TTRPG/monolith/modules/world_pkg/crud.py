@@ -1,4 +1,3 @@
-# AI-TTRPG/monolith/modules/world_pkg/crud.py
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 from . import models, schemas
@@ -6,12 +5,7 @@ from typing import List, Optional
 from fastapi import HTTPException
 import logging
 
-# --- MONOLITH IMPORT ---
-# Import our new, self-contained map module
-from .. import map as map_api
-# --- END IMPORT ---
-
-logger = logging.getLogger("monolith.world.crud")
+logger = logging.getLogger("uvicorn.error")
 
 # --- Faction ---
 def get_faction(db: Session, faction_id: int) -> Optional[models.Faction]:
@@ -64,11 +58,11 @@ def update_location_map(db: Session, location_id: int, map_update: schemas.Locat
     if db_loc:
         db_loc.generated_map_data = map_update.generated_map_data
         db_loc.map_seed = map_update.map_seed
-        db_loc.spawn_points = map_update.spawn_points
+        db_loc.spawn_points = map_update.spawn_points # <-- ADD THIS
 
         # This line is important for JSON fields
         flag_modified(db_loc, "generated_map_data")
-        flag_modified(db_loc, "spawn_points")
+        flag_modified(db_loc, "spawn_points") # <-- ADD THIS
 
         db.commit()
         db.refresh(db_loc)
@@ -88,6 +82,9 @@ def get_npc(db: Session, npc_id: int) -> Optional[models.NpcInstance]:
     return db.query(models.NpcInstance).filter(models.NpcInstance.id == npc_id).first()
 
 def spawn_npc(db: Session, npc: schemas.NpcSpawnRequest) -> models.NpcInstance:
+    # --- THIS FUNCTION IS NOW FIXED ---
+    # It now prioritizes the HP values from the request schema.
+    # The 'or 10' is just a final fallback if None is passed.
     db_npc = models.NpcInstance(
         template_id=npc.template_id,
         location_id=npc.location_id,
@@ -97,6 +94,7 @@ def spawn_npc(db: Session, npc: schemas.NpcSpawnRequest) -> models.NpcInstance:
         behavior_tags=npc.behavior_tags,
         coordinates=npc.coordinates # Save the coordinates
     )
+    # --- END FIX ---
     db.add(db_npc)
     db.commit()
     db.refresh(db_npc)
@@ -177,13 +175,10 @@ def delete_item(db: Session, item_id: int) -> bool:
         return True
     return False
 
-# --- CONTEXT GETTER (MODIFIED) ---
 def get_location_context(db: Session, location_id: int):
     """
     Retrieves the full context for a given location, including region,
     NPCs, and items.
-
-    *** REFACTORED: This function now handles on-demand map generation. ***
     """
     logger.info(f"Getting full context for location_id: {location_id}")
     location = db.query(models.Location).filter(models.Location.id == location_id).first()
@@ -191,61 +186,28 @@ def get_location_context(db: Session, location_id: int):
         logger.error(f"Location not found for id: {location_id}")
         raise HTTPException(status_code=404, detail="Location not found")
 
-    # --- NEW: On-Demand Map Generation ---
-    if not location.generated_map_data:
-        logger.warning(f"Location {location_id} ('{location.name}') has no map data. Generating one.")
-        try:
-            # 1. Get tags from location, or provide a default
-            tags = location.tags
-            if not tags or not isinstance(tags, list):
-                tags = ["forest", "outside", "clearing"] # A safe default
-
-            # 2. Call the monolith's map_api synchronously
-            map_response_dict = map_api.generate_map(tags=tags)
-
-            # 3. Create the Pydantic schema for the update
-            map_update_schema = schemas.LocationMapUpdate(
-                generated_map_data=map_response_dict.get("map_data"),
-                map_seed=map_response_dict.get("seed_used"),
-                spawn_points=map_response_dict.get("spawn_points")
-            )
-
-            # 4. Save the new map to the database
-            # This call commits to the DB and refreshes the 'location' object
-            update_location_map(db, location_id, map_update_schema)
-            logger.info(f"Successfully generated and saved new map for location {location_id}.")
-
-        except Exception as e:
-            logger.exception(f"Failed to generate map for location {location_id}: {e}")
-            # Do not raise an error; we can still return the context without a map
-    # --- END NEW LOGIC ---
-
     npcs = db.query(models.NpcInstance).filter(models.NpcInstance.location_id == location_id).all()
     items = db.query(models.ItemInstance).filter(models.ItemInstance.location_id == location_id).all()
-    
+
     # Get Region name
     region = db.query(models.Region).filter(models.Region.id == location.region_id).first()
-    
+
+    # --- START OF NEW FIX ---
     if not region:
         logger.error(f"Data integrity error: Location {location_id} has region_id {location.region_id} but no matching region was found.")
+        # This was the cause of the 500 error
         raise HTTPException(status_code=500, detail=f"Data integrity error: Region {location.region_id} not found for location {location_id}.")
+    # --- END OF NEW FIX ---
 
-    # Return a DICTIONARY (to match the old API response)
     return {
-        "id": location.id, # <-- ADDED (was missing from your old code, but implied by schema)
+        "location_id": location.id,
         "name": location.name,
         "region_name": region.name,
         "description": getattr(location, 'description', None),
         "generated_map_data": location.generated_map_data,
         "map_seed": location.map_seed,
         "ai_annotations": location.ai_annotations,
-        "spawn_points": location.spawn_points, # <-- ADDED
-        # Use the Pydantic schemas to convert ORM objects
-        "npcs": [schemas.NpcInstance.from_orm(npc).model_dump() for npc in npcs],
-        "items": [schemas.ItemInstance.from_orm(item).model_dump() for item in items],
-        # Add traps and other fields if they exist in your schema/model
-        "trap_instances": [schemas.TrapInstance.from_orm(trap).model_dump() for trap in location.trap_instances],
-        "tags": location.tags,
-        "exits": location.exits,
-        "region": schemas.Region.from_orm(region).model_dump(),
+        # Use the current schema model names
+        "npcs": [schemas.NpcInstance.from_orm(npc) for npc in npcs],
+        "items": [schemas.ItemInstance.from_orm(item) for item in items],
     }
