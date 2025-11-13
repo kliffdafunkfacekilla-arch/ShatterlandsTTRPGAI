@@ -1,0 +1,10 @@
+# Combined dependencies for the Monolith Application
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+alembic
+httpx
+numpy
+noise
+requests

@@ -1,5 +1,4 @@
 name: CI - Monolith smoke test
-
 on:
   push:
     branches: [ main ]
@@ -10,6 +9,7 @@ jobs:
   monolith-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,30 +22,26 @@ jobs:
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
-      - name: Install service requirements (best-effort)
-        # Install any requirements.txt files found under AI-TTRPG/*
+      - name: Install Monolith Dependencies
         run: |
-          set -e
-          for f in AI-TTRPG/*/requirements.txt; do
-            if [ -f "$f" ]; then
-              echo "Installing $f"
-              python -m pip install -r "$f"
-            fi
-          done
-
-      - name: Install top-level dev deps
-        run: |
-          python -m pip install alembic sqlalchemy pydantic uvicorn pytest
+          # Install the monolith's main requirements file
+          python -m pip install -r AI-TTRPG/monolith/requirements.txt
+          # Install test-specific dependencies
+          python -m pip install pytest
 
       - name: Run model-vs-migration diff
         run: |
+          # Add project root to PYTHONPATH so tool can import monolith modules
+          export PYTHONPATH=$(pwd)
           # Run the model-vs-migration diff script; fail the job if drift is found
           python tools/model_migration_diff.py
 
       - name: Run monolith integration tests
         env:
-          MONOLITH_STORY_DB_INIT: auto
-          MONOLITH_WORLD_DB_INIT: auto
+          # Set the migration mode for the test
+          MONOLITH_DB_INIT: auto
         run: |
           # Run the pytest integration test that executes the monolith runner.
+          # We add the project root to PYTHONPATH here as well.
+          export PYTHONPATH=$(pwd)
           pytest -q AI-TTRPG/tests/test_startup.py -q --maxfail=1

@@ -1,5 +1,0 @@
-numpy
-noise
-fastapi
-uvicorn[standard]
-pydantic

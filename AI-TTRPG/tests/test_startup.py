@@ -1,6 +1,7 @@
 import os
 import sys
 import subprocess
+from pathlib import Path
 
 
 def test_monolith_startup_runs_and_exits():
@@ -13,6 +14,8 @@ def test_monolith_startup_runs_and_exits():
     env = os.environ.copy()
     env["MONOLITH_STORY_DB_INIT"] = "auto"
     env["MONOLITH_WORLD_DB_INIT"] = "auto"
+    env["MONOLITH_RUN_ONCE"] = "true"
+    env["PYTHONPATH"] = str(Path(os.getcwd()).parent)
 
     cmd = [sys.executable, "-m", "AI-TTRPG.monolith.start_monolith"]
 
