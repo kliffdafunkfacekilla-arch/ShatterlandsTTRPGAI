@@ -1,9 +1,0 @@
-# Add httpx for async HTTP requests to map_generator
-httpx
-fastapi
-uvicorn[standard]
-sqlalchemy
-pydantic
-requests
-alembic
-

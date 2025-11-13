@@ -1,226 +1,155 @@
-"""Small runner to start the monolith and demonstrate wiring.
+# AI-TTRPG/monolith/start_monolith.py
+"""
+Main runner to start the TTRPG Monolith.
 
-Run this file to boot the orchestrator and register built-in modules.
-It is intentionally minimal and synchronous-friendly for local development.
+This script ensures all database migrations for all
+stateful modules are applied before starting the orchestrator.
 """
 import asyncio
 import sys
 from pathlib import Path
 import traceback
 from typing import Optional
+import os
+import logging
+
+# --- Setup Logging ---
+# Configure basic logging to see startup messages
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s')
+logger = logging.getLogger("monolith.startup")
+
+# --- Alembic Import ---
 try:
-    # alembic is an optional dev dependency; attempt to import
     from alembic.config import Config as AlembicConfig
     from alembic import command as alembic_command
-except Exception:
-    AlembicConfig = None  # type: ignore
-    alembic_command = None  # type: ignore
-# ensure AI-TTRPG folder is in sys.path and import monolith package by local name
-import os
-ROOT = Path(__file__).resolve().parents[1]
+except ImportError:
+    logger.warning("Alembic not found. `pip install alembic` is required. Skipping migrations.")
+    AlembicConfig = None
+    alembic_command = None
 
+# --- Path Setup ---
+# Ensure AI-TTRPG folder is in sys.path
+ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
 from monolith.orchestrator import get_orchestrator
 from monolith.modules import register_all
 
+# --- Database Migration Function ---
+def _run_migrations_for_module(module_name: str, root_path: Path, mode: str):
+    """
+    Generic function to find and run Alembic migrations for a module.
 
-async def _on_response(topic: str, payload):
-    """Generic response handler to print what modules publish."""
-    print(f"[response] {topic}: {payload}")
+    A module is expected to have its package at:
+    .../modules/<module_name>/<module_name>_pkg/
 
+    And its alembic.ini at:
+    .../modules/<module_name>/<module_name>_pkg/alembic.ini
+    """
+    if not AlembicConfig or not alembic_command:
+        logger.warning(f"Skipping migrations for '{module_name}' (Alembic not loaded).")
+        return
 
+    logger.info(f"--- Running Migrations for: {module_name} (Mode: {mode}) ---")
+
+    if mode == "none":
+        logger.info(f"Skipping migrations for '{module_name}' as per mode=none.")
+        return
+
+    try:
+        pkg_path = root_path / "monolith" / "modules" / module_name / f"{module_name}_pkg"
+        alembic_ini_path = pkg_path / "alembic.ini"
+        alembic_script_location = pkg_path / "alembic"
+
+        if not alembic_ini_path.exists():
+            logger.warning(f"alembic.ini not found for '{module_name}' at: {alembic_ini_path}. Skipping migrations.")
+            return
+
+        if not alembic_script_location.exists():
+            logger.warning(f"alembic script location not found for '{module_name}' at: {alembic_script_location}. Skipping migrations.")
+            return
+
+        # Dynamically get the DATABASE_URL from the module's database.py
+        try:
+            db_module_path = f"monolith.modules.{module_name}_pkg.database"
+            db_module = importlib.import_module(db_module_path)
+            database_url = getattr(db_module, "DATABASE_URL")
+            logger.info(f"Using DB URL from module: {database_url}")
+        except Exception as e:
+            logger.exception(f"Could not import DATABASE_URL from {db_module_path}: {e}")
+            if mode == "migrate":
+                raise
+            return
+
+        # Configure and run Alembic
+        cfg = AlembicConfig(str(alembic_ini_path))
+        cfg.set_main_option("script_location", str(alembic_script_location))
+        cfg.set_main_option("sqlalchemy.url", database_url)
+
+        logger.info(f"Running alembic upgrade head for '{module_name}'...")
+        alembic_command.upgrade(cfg, "head")
+        logger.info(f"Alembic upgrade complete for '{module_name}'.")
+
+    except Exception as e:
+        logger.exception(f"Alembic migration failed for '{module_name}': {e}")
+        if mode == "migrate":
+            raise RuntimeError(f"Migration failed for {module_name} in 'migrate' mode.")
+
+        # Fallback to create_all()
+        if mode == "auto":
+            try:
+                logger.warning(f"Falling back to create_all() for '{module_name}'...")
+                db_module = importlib.import_module(f"monolith.modules.{module_name}_pkg.database")
+                engine = getattr(db_module, "engine")
+                Base = getattr(db_module, "Base")
+                Base.metadata.create_all(bind=engine)
+                logger.info(f"create_all() successful for '{module_name}'.")
+            except Exception as create_e:
+                logger.exception(f"Fallback create_all() ALSO FAILED for '{module_name}': {create_e}")
+                raise
+
+# --- Main Startup Function ---
 async def _main():
     orch = get_orchestrator()
     bus = orch.bus
-    # Ensure story_engine DB exists and migrations applied (best-effort).
-    def _ensure_story_db():
-        STORY_ALEMBIC = ROOT / "story_engine" / "alembic.ini"
-        import os
 
-        # Control behavior with MONOLITH_STORY_DB_INIT env var:
-        #  - 'migrate' : force alembic upgrade (fail if alembic missing/failed)
-        #  - 'create'  : force create_all only
-        #  - 'auto'    : try alembic then fallback to create_all (default)
-        #  - 'none'    : do nothing
-        mode = os.environ.get("MONOLITH_STORY_DB_INIT", "auto").lower()
-        print(f"story db init mode: {mode}")
+    # 1. Run Migrations for all stateful modules
+    import importlib # Move import to top-level
 
-        # Try Alembic when requested/available
-        if mode in ("auto", "migrate") and AlembicConfig and alembic_command and STORY_ALEMBIC.exists():
-            try:
-                # Ensure story_engine package is importable for alembic env.py
-                story_pkg_path = str(ROOT / "story_engine")
-                if story_pkg_path not in sys.path:
-                    sys.path.insert(0, story_pkg_path)
+    # Get migration mode from environment, default to 'auto'
+    # 'auto': Try Alembic, fallback to create_all()
+    # 'migrate': Force Alembic, fail on error
+    # 'none': Skip all DB initialization
+    migration_mode = os.environ.get("MONOLITH_DB_INIT", "auto").lower()
 
-                cfg = AlembicConfig(str(STORY_ALEMBIC))
-                cfg.set_main_option("script_location", str(ROOT / "story_engine" / "alembic"))
-                try:
-                    from story_engine.app import database as se_db
-                    db_url = getattr(se_db, "DATABASE_URL", "")
-                    if db_url.startswith("sqlite:///"):
-                        db_path = db_url.replace("sqlite:///", "")
-                        db_path_obj = Path(db_path)
-                        if not db_path_obj.is_absolute():
-                            db_path_obj = (ROOT / db_path_obj).resolve()
-                        db_url = f"sqlite:///{db_path_obj}"
-                    cfg.set_main_option("sqlalchemy.url", db_url)
-                except Exception:
-                    pass
+    _run_migrations_for_module("character", ROOT, migration_mode)
+    _run_migrations_for_module("world", ROOT, migration_mode)
+    _run_migrations_for_module("story", ROOT, migration_mode)
 
-                print("Running story_engine alembic migrations...")
-                alembic_command.upgrade(cfg, "head")
-                print("story_engine migrations applied.")
-                return
-            except Exception:
-                print("Alembic migration failed, falling back to create_all:")
-                traceback.print_exc()
-                if mode == "migrate":
-                    raise RuntimeError("MONOLITH_STORY_DB_INIT=migrate requested but alembic upgrade could not be run")
-
-        # If explicitly disabled, skip DB initialization
-        if mode == "none":
-            print("MONOLITH_STORY_DB_INIT=none; skipping story DB initialization.")
-            return
-
-        # Fallback / create_all path
-        try:
-            from story_engine.app import database as se_db
-            from sqlalchemy import create_engine
-
-            db_url = getattr(se_db, "DATABASE_URL", "")
-            if db_url.startswith("sqlite:///"):
-                db_path = db_url.replace("sqlite:///", "")
-                db_path_obj = Path(db_path)
-                if not db_path_obj.is_absolute():
-                    db_path_obj = (ROOT / db_path_obj).resolve()
-                db_path_obj.parent.mkdir(parents=True, exist_ok=True)
-                abs_db_url = f"sqlite:///{db_path_obj}"
-            else:
-                abs_db_url = db_url
-
-            engine = create_engine(abs_db_url, connect_args={"check_same_thread": False})
-            se_Base = getattr(se_db, "Base")
-            print("Creating story_engine tables via SQLAlchemy create_all()")
-            se_Base.metadata.create_all(bind=engine)
-            print("story_engine DB initialized.")
-        except Exception:
-            print("Failed to initialize story_engine DB via create_all(). See traceback:")
-            traceback.print_exc()
-
-    _ensure_story_db()
-    # Ensure world_engine DB exists and migrations applied (best-effort).
-    def _ensure_world_db():
-        from pathlib import Path as _Path
-        STORY_ALEMBIC = ROOT / "world_engine" / "alembic.ini"
-        mode = os.environ.get("MONOLITH_WORLD_DB_INIT", "auto").lower()
-        print(f"world db init mode: {mode}")
-
-        # Run alembic if available
-        if mode in ("auto", "migrate") and AlembicConfig and alembic_command and STORY_ALEMBIC.exists():
-            try:
-                story_pkg_path = str(ROOT / "world_engine")
-                if story_pkg_path not in sys.path:
-                    sys.path.insert(0, story_pkg_path)
-                cfg = AlembicConfig(str(STORY_ALEMBIC))
-                cfg.set_main_option("script_location", str(ROOT / "world_engine" / "alembic"))
-                try:
-                    from world_engine.app import database as we_db
-                    db_url = getattr(we_db, "DATABASE_URL", "")
-                    if db_url.startswith("sqlite:///"):
-                        db_path = db_url.replace("sqlite:///", "")
-                        db_path_obj = _Path(db_path)
-                        if not db_path_obj.is_absolute():
-                            db_path_obj = (ROOT / db_path_obj).resolve()
-                        db_url = f"sqlite:///{db_path_obj}"
-                    cfg.set_main_option("sqlalchemy.url", db_url)
-                except Exception:
-                    pass
-                print("Running world_engine alembic migrations...")
-                alembic_command.upgrade(cfg, "head")
-                print("world_engine migrations applied.")
-                return
-            except Exception:
-                print("World alembic migration failed, falling back to create_all:")
-                traceback.print_exc()
-                if mode == "migrate":
-                    raise RuntimeError("MONOLITH_WORLD_DB_INIT=migrate requested but alembic upgrade could not be run")
-
-        if mode == "none":
-            print("MONOLITH_WORLD_DB_INIT=none; skipping world DB initialization.")
-            return
-
-        try:
-            from world_engine.app import database as we_db
-            from sqlalchemy import create_engine as _create_engine
-            db_url = getattr(we_db, "DATABASE_URL", "")
-            if db_url.startswith("sqlite:///"):
-                db_path = db_url.replace("sqlite:///", "")
-                db_path_obj = _Path(db_path)
-                if not db_path_obj.is_absolute():
-                    db_path_obj = (ROOT / db_path_obj).resolve()
-                db_path_obj.parent.mkdir(parents=True, exist_ok=True)
-                abs_db_url = f"sqlite:///{db_path_obj}"
-            else:
-                abs_db_url = db_url
-            engine = _create_engine(abs_db_url, connect_args={"check_same_thread": False})
-            se_Base = getattr(we_db, "Base")
-            print("Creating world_engine tables via SQLAlchemy create_all()")
-            se_Base.metadata.create_all(bind=engine)
-            print("world_engine DB initialized.")
-            # world_engine DB initialized via create_all()
-        except Exception:
-            print("Failed to initialize world_engine DB via create_all(). See traceback:")
-            traceback.print_exc()
-
-    _ensure_world_db()
-    # register modules (they subscribe to the bus)
+    # 2. Register all modules (this loads their data, etc.)
+    logger.info("Registering all monolith modules...")
     register_all(orch)
-    # start orchestrator hook
+
+    # 3. Start the orchestrator
     await orch.start()
-    # give modules a moment to subscribe their handlers
+
+    # Give modules a moment to subscribe their handlers
     await asyncio.sleep(0.1)
     
-    # subscribe to all response.* events to capture and display module outputs
-    await bus.subscribe("response.rules.get_skill_for_category", _on_response)
-    await bus.subscribe("response.encounter.generate", _on_response)
-    await bus.subscribe("response.map.generate", _on_response)
-    await bus.subscribe("combat.enemy_defeated", _on_response)
-    # story events
-    await bus.subscribe("story.combat_initialized", _on_response)
-    await bus.subscribe("story.npc_turn_started", _on_response)
-    await bus.subscribe("story.combat_concluded", _on_response)
-    await bus.subscribe("story.interaction_resolved", _on_response)
-    await bus.subscribe("story.narrative_advanced", _on_response)
+    # 4. Monolith is now running
+    logger.info("--- AI-TTRPG Monolith is now running ---")
+    logger.info("The application is ready to accept connections.")
+    logger.info("This script will now run indefinitely.")
     
-    # demo: publish a command that modules will handle
-    print("Monolith started; publishing demo commands:")
-    print("  - start_combat")
-    await orch.handle_command("start_combat", {"enemy_id": "goblin_1"})
-    print("  - rules.get_skill_for_category")
-    await orch.handle_command("rules.get_skill_for_category", {"category": "Plate Armor"})
-    print("  - encounter.generate")
-    await orch.handle_command("encounter.generate", {"tags": ["forest"]})
-    print("  - map.generate")
-    await orch.handle_command("map.generate", {"width": 8, "height": 6})
-    print("  - story.start_combat")
-    await orch.handle_command("story.start_combat", {
-        "location_id": 1,
-        "player_ids": ["player_1"],
-        "npc_template_ids": ["goblin_scout", "goblin_warrior"],
-        "map_data": [[0, 0, 3, 0], [0, 3, 3, 0], [3, 0, 0, 3], [0, 3, 0, 0]]
-    })
-    print("  - story.interact")
-    await orch.handle_command("story.interact", {
-        "actor_id": "player_1",
-        "target_id": "chest_01"
-    })
-    print("  - story.advance_narrative")
-    await orch.handle_command("story.advance_narrative", {"node_id": "chapter_2_start"})
-    # keep alive briefly to allow background tasks to process
-    await asyncio.sleep(2.0)
-
+    # Keep the event loop alive indefinitely, unless in test mode
+    if os.environ.get("MONOLITH_RUN_ONCE"):
+        logger.info("MONOLITH_RUN_ONCE is set. Exiting after startup.")
+        # Give a brief moment for any final logs to flush
+        await asyncio.sleep(0.1)
+    else:
+        while True:
+            await asyncio.sleep(3600)
 
 if __name__ == "__main__":
     asyncio.run(_main())

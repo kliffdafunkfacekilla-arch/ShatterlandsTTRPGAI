@@ -1,10 +1,9 @@
-"""Story adapter: bridge the original `story_engine` package into the
-monolith event bus.
+# AI-TTRPG/monolith/modules/story.py
+"""
+Story adapter: Bridges the internal 'story_pkg' logic (combat,
+interaction, etc.) into the monolith event bus.
 
-This adapter reuses the existing `story_engine.app` code (combat/interaction
-logic and DB models) and exposes them via the monolith's command topics.
-
-It subscribes to:
+This module subscribes to:
 - command.story.start_combat
 - command.story.interact
 - command.story.advance_narrative
@@ -15,19 +14,18 @@ And publishes story.* events returned by those handlers.
 from typing import Any, Dict
 import asyncio
 import logging
-
+import httpx # Keep httpx for the *internal* async client pattern
 from ..event_bus import get_event_bus
 
-# Import the original story_engine package components and DB
-from story_engine.app import combat_handler as se_combat
-from story_engine.app import interaction_handler as se_interaction
-from story_engine.app import schemas as se_schemas
-from story_engine.app import database as se_db
-from story_engine.app import crud as se_crud
-from story_engine.app import models as se_models
+# Import from this module's *own* internal package
+from .story_pkg import combat_handler as se_combat
+from .story_pkg import interaction_handler as se_interaction
+from .story_pkg import schemas as se_schemas
+from .story_pkg import database as se_db
+from .story_pkg import crud as se_crud
+from .story_pkg import models as se_models
 
 logger = logging.getLogger("monolith.story")
-
 
 async def _on_command_start_combat(topic: str, payload: Dict[str, Any]) -> None:
     bus = get_event_bus()
@@ -40,6 +38,8 @@ async def _on_command_start_combat(topic: str, payload: Dict[str, Any]) -> None:
         # Create a DB session for the story engine
         db = se_db.SessionLocal()
         try:
+            # Call our internal combat_handler
+            # This handler will internally call our monolith service APIs
             db_combat = await se_combat.start_combat(db, start_req)
         finally:
             db.close()
@@ -64,7 +64,6 @@ async def _on_command_start_combat(topic: str, payload: Dict[str, Any]) -> None:
     except Exception as e:
         logger.exception(f"Failed to start combat: {e}")
         await bus.publish("story.combat_start_failed", {"error": str(e), "payload": payload})
-
 
 async def _on_command_player_action(topic: str, payload: Dict[str, Any]) -> None:
     """Handle a player or NPC action routed to the story engine.
@@ -91,50 +90,53 @@ async def _on_command_player_action(topic: str, payload: Dict[str, Any]) -> None
                 raise RuntimeError(f"Combat {combat_id} not found")
 
             action_req = se_schemas.PlayerActionRequest(**action_data)
+
+            # Call our internal combat_handler
             result = await se_combat.handle_player_action(db, combat, actor_id, action_req)
         finally:
             db.close()
 
-        await bus.publish("story.player_action_resolved", {"combat_id": combat_id, "result": result.dict() if hasattr(result, "dict") else result})
+        # Convert Pydantic result to dict for event bus
+        await bus.publish("story.player_action_resolved", {"combat_id": combat_id, "result": result.model_dump() if hasattr(result, "model_dump") else result})
     except Exception as e:
         logger.exception(f"Error handling player action: {e}")
         await bus.publish("story.player_action_failed", {"error": str(e), "payload": payload})
-
 
 async def _on_command_interact(topic: str, payload: Dict[str, Any]) -> None:
     bus = get_event_bus()
     logger.info(f"[story] interact command: {payload}")
 
     try:
-        # Be tolerant of older/demo payload shapes: map 'target_id' -> 'target_object_id'
+        # Be tolerant of older/demo payload shapes
         sanitized = dict(payload)
         if "target_object_id" not in sanitized and "target_id" in sanitized:
             sanitized["target_object_id"] = sanitized.pop("target_id")
         if "actor_id" not in sanitized and "actor" in sanitized:
             sanitized["actor_id"] = sanitized.pop("actor")
-        # Provide a reasonable default for location if caller omitted it in demo
         if "location_id" not in sanitized:
-            sanitized["location_id"] = 1
+            sanitized["location_id"] = 1 # Default location
 
         req = se_schemas.InteractionRequest(**sanitized)
+
+        # Call our internal interaction_handler
+        # This handler will internally call our monolith service APIs
         result = await se_interaction.handle_interaction(req)
-        # pydantic model -> dict
-        resp = result.dict() if hasattr(result, "dict") else result
+
+        # Convert Pydantic model -> dict for event bus
+        resp = result.model_dump() if hasattr(result, "model_dump") else result
         await bus.publish("story.interaction_resolved", resp)
     except Exception as e:
         logger.exception(f"Interaction handling failed: {e}")
         await bus.publish("story.interaction_failed", {"error": str(e), "payload": payload})
-
 
 async def _on_command_advance_narrative(topic: str, payload: Dict[str, Any]) -> None:
     bus = get_event_bus()
     logger.info(f"[story] advance_narrative command: {payload}")
 
     node_id = payload.get("node_id")
-    # For now reuse the simple event to notify listeners; a richer implementation
-    # could call story_engine.crud / services to persist progress.
+    # For now reuse the simple event to notify listeners;
+    # A richer implementation could call story_pkg.crud to persist progress.
     await bus.publish("story.narrative_advanced", {"node_id": node_id, "timestamp": "now"})
-
 
 def register(orchestrator) -> None:
     bus = get_event_bus()
@@ -143,4 +145,4 @@ def register(orchestrator) -> None:
     asyncio.create_task(bus.subscribe("command.story.interact", _on_command_interact))
     asyncio.create_task(bus.subscribe("command.story.advance_narrative", _on_command_advance_narrative))
     asyncio.create_task(bus.subscribe("command.story.player_action", _on_command_player_action))
-    logger.info("[story] module registered (story_engine adapter)")
+    logger.info("[story] module registered (self-contained logic)")

@@ -13,6 +13,7 @@ def test_monolith_startup_runs_and_exits():
     env = os.environ.copy()
     env["MONOLITH_STORY_DB_INIT"] = "auto"
     env["MONOLITH_WORLD_DB_INIT"] = "auto"
+    env["MONOLITH_RUN_ONCE"] = "true"
 
     cmd = [sys.executable, "-m", "AI-TTRPG.monolith.start_monolith"]
 
