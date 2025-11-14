@@ -8,12 +8,9 @@ import asyncio
 from kivy.app import App
 from kivy.uix.screenmanager import Screen
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
 from kivy.uix.button import Button
-from kivy.uix.image import Image
-from kivy.uix.behaviors import ToggleButtonBehavior
 from kivy.uix.spinner import Spinner, SpinnerOption
 from kivy.uix.textinput import TextInput
 from kivy.properties import ObjectProperty, ListProperty, DictProperty, NumericProperty, StringProperty
@@ -29,15 +26,9 @@ try:
     from monolith.modules.character_pkg.database import SessionLocal as CharSession
 except ImportError as e:
     logging.error(f"CHAR_CREATE: Failed to import monolith modules: {e}")
+    # This screen is unusable without the monolith, but we set dummies
+    # to prevent a hard crash on import.
     rules_api, char_api, char_schemas, char_services, CharSession = None, None, None, None, None
-
-# --- NEW: Import Asset Loader ---
-try:
-    from asset_loader import get_entity_definition, get_sprite_render_info, ENTITY_DEFINITIONS, TILE_SIZE
-except ImportError as e:
-    logging.error(f"CHAR_CREATE: Failed to import asset_loader: {e}")
-    get_entity_definition, get_sprite_render_info, ENTITY_DEFINITIONS, TILE_SIZE = None, None, {}, 0
-# --- END NEW ---
 
 # --- Constants ---
 KINGDOMS = ["Mammal", "Reptile", "Avian", "Aquatic", "Insect", "Plant"]
@@ -48,81 +39,67 @@ BASE_STATS = {
     "Knowledge": 8, "Logic": 8, "Awareness": 8, "Intuition": 8, "Charm": 8, "Willpower": 8
 }
 
-# --- NEW: Kivy Portrait Button ---
-class PortraitButton(ToggleButtonBehavior, Image):
-    """
-    A button that shows a character portrait.
-    It uses ToggleButtonBehavior to manage its 'pressed' state.
-    """
-    def __init__(self, portrait_id: str, **kwargs):
-        super().__init__(**kwargs)
-        self.portrait_id = portrait_id
-        self.group = 'portrait_select'
-        self.allow_no_selection = False
-
-        # Get the render info from our asset loader
-        if get_sprite_render_info:
-            render_info = get_sprite_render_info(portrait_id)
-            if render_info:
-                sheet_path, sx, sy, sw, sh = render_info
-                self.source = sheet_path
-                self.texture = Image(source=sheet_path).texture.get_region(sx, sy, sw, sh)
-
-        # Add a border to show selection
-        self.bind(state=self.update_border)
-        self.update_border(None, self.state)
-
-    def update_border(self, instance, value):
-        if value == 'down':
-            self.canvas.after.clear()
-            with self.canvas.after:
-                from kivy.graphics import Color, Line
-                Color(0, 1, 0, 1) # Green
-                Line(rectangle=(self.x, self.y, self.width, self.height), width=3)
-        else:
-            self.canvas.after.clear()
-# --- END NEW ---
-
 class CharacterCreationScreen(Screen):
+    """
+    A multi-step screen for character creation.
+    Uses a ScrollView to ensure content fits.
+    """
 
-    # (Kivy Properties are the same)
+    # --- Kivy Properties ---
+    # Holds the main layout for the current step
     step_ui_container = ObjectProperty(None)
+    # Holds all loaded rules data
     rules_data = DictProperty({})
+    # Holds the user's selections
     choices = DictProperty({})
+    # Holds the dynamically calculated stats
     calculated_stats = DictProperty(BASE_STATS.copy())
+    # Holds the dynamically calculated skills
     calculated_skills = ListProperty([])
+    # Holds the talents returned from the rules engine
     eligible_talents = ListProperty(['- Select a Talent -'])
+    # Tracks the current step
     current_step_name = StringProperty('kingdom')
 
-    # --- MODIFIED: Added 'portrait' step ---
+    # Our step definition
     STEP_ORDER = [
         'kingdom', 'features', 'backgrounds', 'school',
-        'talent', 'portrait', 'name', 'review'
+        'talent', 'name', 'review'
     ]
-    # --- END MODIFIED ---
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.build_ui()
+        # Asynchronously load all the rules data when the screen is first created
+        # We use Clock.schedule_once to run this *after* the Kivy app loop has started
         Clock.schedule_once(self.load_all_rules_data)
 
     def build_ui(self):
-        # (This function is unchanged)
+        """Builds the static UI shell for the screen."""
         root_layout = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
+
+        # --- Title ---
         self.title_label = Label(text="Character Creation", font_size='32sp', size_hint_y=0.1)
         root_layout.add_widget(self.title_label)
+
+        # --- ScrollView for dynamic content ---
         scroll_view = ScrollView(size_hint_y=0.8, do_scroll_x=False)
+        # This container will be cleared and rebuilt for each step
         self.step_ui_container = BoxLayout(orientation='vertical', spacing='5dp', size_hint_y=None)
         self.step_ui_container.bind(minimum_height=self.step_ui_container.setter('height'))
         scroll_view.add_widget(self.step_ui_container)
         root_layout.add_widget(scroll_view)
+
+        # --- Navigation ---
         nav_layout = BoxLayout(size_hint_y=0.1, spacing='10dp')
         self.prev_btn = Button(text='Back')
         self.prev_btn.bind(on_release=self.prev_step)
         nav_layout.add_widget(self.prev_btn)
+
         self.next_btn = Button(text='Next')
         self.next_btn.bind(on_release=self.next_step)
         nav_layout.add_widget(self.next_btn)
+
         root_layout.add_widget(nav_layout)
         self.add_widget(root_layout)
 
@@ -143,7 +120,6 @@ class CharacterCreationScreen(Screen):
             "devotion_choice": None,
             "ability_school": None,
             "ability_talent": None,
-            "portrait_id": None, # <-- ADD THIS
             "name": "",
             "capstone_choice": None
         }
@@ -153,42 +129,53 @@ class CharacterCreationScreen(Screen):
         self.current_step_name = 'kingdom'
 
     def rebuild_step_ui(self, *args):
-        # (This function is unchanged)
+        """Clears and rebuilds the UI for the current step."""
         if not self.step_ui_container:
-            return
+            return # UI not ready yet
+
         self.step_ui_container.clear_widgets()
+
         step_builder = getattr(self, f"build_step_{self.current_step_name}", None)
+
         if step_builder:
             step_builder()
         else:
             self.step_ui_container.add_widget(Label(text=f"Unknown step: {self.current_step_name}"))
+
+        # Update button states
         current_index = self.STEP_ORDER.index(self.current_step_name)
         self.prev_btn.disabled = (current_index == 0)
         self.next_btn.text = "Next"
         self.next_btn.disabled = False
+
         if self.current_step_name == 'review':
             self.next_btn.text = "Create Character"
-        self.validate_step()
 
-    # --- NAVIGATION (Unchanged) ---
+        self.validate_step() # Check if 'Next' should be disabled
+
+    # --- NAVIGATION ---
+
     def next_step(self, instance):
+        """Moves to the next step or submits the character."""
         if self.current_step_name == 'review':
             self.submit_character()
             return
+
         current_index = self.STEP_ORDER.index(self.current_step_name)
         if current_index < len(self.STEP_ORDER) - 1:
             self.current_step_name = self.STEP_ORDER[current_index + 1]
             self.rebuild_step_ui()
 
     def prev_step(self, instance):
+        """Moves to the previous step."""
         current_index = self.STEP_ORDER.index(self.current_step_name)
         if current_index > 0:
             self.current_step_name = self.STEP_ORDER[current_index - 1]
             self.rebuild_step_ui()
         elif current_index == 0:
+            # First step, go back to game setup
             App.get_running_app().root.current = 'game_setup'
 
-    # --- VALIDATION (Modified) ---
     def validate_step(self, *args):
         """Checks if the current step is complete and enables/disables 'Next'."""
         is_valid = False
@@ -203,8 +190,6 @@ class CharacterCreationScreen(Screen):
             is_valid = self.choices.get('ability_school') is not None
         elif step == 'talent':
             is_valid = self.choices.get('ability_talent') is not None
-        elif step == 'portrait': # <-- ADD THIS CASE
-            is_valid = self.choices.get('portrait_id') is not None
         elif step == 'name':
             is_valid = len(self.choices.get('name', '')) > 1
         elif step == 'review':
@@ -212,14 +197,18 @@ class CharacterCreationScreen(Screen):
 
         self.next_btn.disabled = not is_valid
 
-    # --- DATA LOADING (Unchanged) ---
+    # --- DATA LOADING ---
+
     def load_all_rules_data(self, *args):
-        # (This function is unchanged)
+        """Loads all creation data from the monolith's rules module."""
         if not rules_api:
             self.step_ui_container.add_widget(Label(text="FATAL: Rules Module not loaded."))
             return
+
         logging.info("CHAR_CREATE: Loading all rules data...")
         try:
+            # These are direct, synchronous calls to the loaded rules module
+            # The 'async' functions in rules.py are stubs; we call the *real* functions.
             self.rules_data = {
                 "kingdom_features": rules_api._get_data("kingdom_features_data"),
                 "ability_schools": list(rules_api._get_data("ability_data").keys()),
@@ -232,204 +221,216 @@ class CharacterCreationScreen(Screen):
                 "talent_data": rules_api._get_data("talent_data"),
                 "stats_list": rules_api._get_data("stats_list")
             }
+            logging.info(f"CHAR_CREATE: Loaded {len(self.rules_data['kingdom_features'])} features.")
+            logging.info(f"CHAR_CREATE: Loaded {len(self.rules_data['ability_schools'])} schools.")
+
+            # Now that data is loaded, rebuild the UI for the first step
             self.rebuild_step_ui()
+
         except Exception as e:
             logging.exception(f"CHAR_CREATE: Failed to load rules data: {e}")
             self.step_ui_container.add_widget(Label(text=f"Error: Could not load rules data.\n{e}"))
 
-    # --- UI BUILDERS (New and existing) ---
+    # --- UI BUILDERS FOR EACH STEP ---
 
     def build_step_kingdom(self):
-        # (This function is unchanged)
         self.title_label.text = "Step 1: Choose Kingdom"
         self.step_ui_container.add_widget(Label(text="Select your character's kingdom:"))
+
         for kingdom in KINGDOMS:
             btn = Button(text=kingdom, size_hint_y=None, height='44dp')
             btn.bind(on_release=partial(self.select_choice, 'kingdom', kingdom))
+            # Highlight if selected
             if self.choices.get('kingdom') == kingdom:
-                btn.background_color = (0, 1, 0, 1)
+                btn.background_color = (0, 1, 0, 1) # Green
             self.step_ui_container.add_widget(btn)
 
     def build_step_features(self):
-        # (This function is unchanged)
         self.title_label.text = "Step 2: Choose Features (F1-F8)"
         if not self.choices.get('kingdom'):
             self.step_ui_container.add_widget(Label(text="Please go back and select a kingdom first."))
             return
+
         kingdom = self.choices['kingdom']
         all_features = self.rules_data.get('kingdom_features', {})
+
         for f_id in FEATURE_IDS:
             feature_set = all_features.get(f_id, {}).get(kingdom, [])
-            if not feature_set: continue
+            if not feature_set:
+                logging.warning(f"No feature data for {f_id}/{kingdom}")
+                continue
+
             feature_names = [f['name'] for f in feature_set]
             current_choice_name = self.get_current_feature_choice(f_id)
+
             self.step_ui_container.add_widget(Label(text=f"Feature {f_id}:", font_size='18sp'))
             spinner = Spinner(
                 text=current_choice_name if current_choice_name else f'- Select {f_id} -',
-                values=feature_names, size_hint_y=None, height='44dp'
+                values=feature_names,
+                size_hint_y=None,
+                height='44dp'
             )
-            spinner.option_cls.height = '44dp'
+            spinner.option_cls.height = '44dp' # Make dropdown items taller
             spinner.bind(text=partial(self.select_feature, f_id))
             self.step_ui_container.add_widget(spinner)
 
     def build_step_backgrounds(self):
-        # (This function is unchanged)
         self.title_label.text = "Step 3: Choose Background"
+
         for step_name in BACKGROUND_STEPS:
             self.step_ui_container.add_widget(Label(text=f"Choose {step_name.replace('_', ' ').title()}:", font_size='18sp'))
             choices_list = self.rules_data.get(f"{step_name}_choices", [])
             choice_names = [c['name'] for c in choices_list]
+
             current_choice = self.choices.get(f"{step_name}_choice")
+
             spinner = Spinner(
                 text=current_choice if current_choice else f'- Select {step_name.title()} -',
-                values=choice_names, size_hint_y=None, height='44dp'
+                values=choice_names,
+                size_hint_y=None,
+                height='44dp'
             )
             spinner.option_cls.height = '44dp'
             spinner.bind(text=partial(self.select_choice, f"{step_name}_choice"))
             self.step_ui_container.add_widget(spinner)
 
     def build_step_school(self):
-        # (This function is unchanged)
         self.title_label.text = "Step 4: Choose Ability School"
         self.step_ui_container.add_widget(Label(text="Select your starting Ability School:"))
+
         school_names = self.rules_data.get('ability_schools', [])
         current_choice = self.choices.get('ability_school')
+
         spinner = Spinner(
             text=current_choice if current_choice else '- Select a School -',
-            values=school_names, size_hint_y=None, height='44dp'
+            values=school_names,
+            size_hint_y=None,
+            height='44dp'
         )
         spinner.option_cls.height = '44dp'
         spinner.bind(text=partial(self.select_choice, 'ability_school'))
         self.step_ui_container.add_widget(spinner)
 
     def build_step_talent(self):
-        # (This function is unchanged)
         self.title_label.text = "Step 5: Choose Ability Talent"
         self.step_ui_container.add_widget(Label(text="Select your starting Talent:"))
+
         current_choice = self.choices.get('ability_talent')
+
+        # This spinner's values are set by self.eligible_talents property
         self.talent_spinner = Spinner(
             text=current_choice if current_choice else '- Select a Talent -',
-            values=self.eligible_talents, size_hint_y=None, height='44dp'
+            values=self.eligible_talents,
+            size_hint_y=None,
+            height='44dp'
         )
         self.talent_spinner.option_cls.height = '44dp'
         self.talent_spinner.bind(text=partial(self.select_choice, 'ability_talent'))
         self.step_ui_container.add_widget(self.talent_spinner)
+
+        # This step is special: it needs to fetch dynamic data
         self.fetch_eligible_talents()
 
-    # --- NEW: UI BUILDER FOR PORTRAITS ---
-    def build_step_portrait(self):
-        self.title_label.text = "Step 6: Choose Portrait"
-        self.step_ui_container.add_widget(Label(text="Select your character's portrait:"))
-
-        if not ENTITY_DEFINITIONS or TILE_SIZE == 0:
-            self.step_ui_container.add_widget(Label(text="Error: Asset definitions not loaded."))
-            return
-
-        # Create a 5-column grid for the portraits
-        grid = GridLayout(cols=5, spacing='10dp', size_hint_y=None)
-        grid.bind(minimum_height=grid.setter('height'))
-
-        # Find all character portraits from entity_definitions.json
-        character_portraits = {
-            key: val for key, val in ENTITY_DEFINITIONS.items()
-            if key.startswith("character_")
-        }
-
-        for portrait_id in sorted(character_portraits.keys()):
-            btn = PortraitButton(
-                portrait_id=portrait_id,
-                size_hint=(None, None),
-                size=(TILE_SIZE, TILE_SIZE) # Use TILE_SIZE from asset_loader
-            )
-            btn.bind(on_release=partial(self.select_choice, 'portrait_id', portrait_id))
-            if self.choices.get('portrait_id') == portrait_id:
-                btn.state = 'down' # Set the button as pressed
-            grid.add_widget(btn)
-
-        self.step_ui_container.add_widget(grid)
-    # --- END NEW ---
-
     def build_step_name(self):
-        # (Step number is now 7)
-        self.title_label.text = "Step 7: Choose Name"
+        self.title_label.text = "Step 6: Choose Name"
         self.step_ui_container.add_widget(Label(text="Enter your character's name:"))
+
         name_input = TextInput(
             text=self.choices.get('name', ''),
-            size_hint_y=None, height='44dp', font_size='18sp', multiline=False
+            size_hint_y=None,
+            height='44dp',
+            font_size='18sp',
+            multiline=False
         )
         name_input.bind(text=partial(self.select_choice, 'name'))
         self.step_ui_container.add_widget(name_input)
 
     def build_step_review(self):
-        # (Step number is now 8)
-        self.title_label.text = "Step 8: Review"
+        self.title_label.text = "Step 7: Review"
 
-        # Capstone (F9) Selection
+        # --- Capstone (F9) Selection ---
         self.step_ui_container.add_widget(Label(text="Choose Capstone (F9):", font_size='18sp'))
         all_features = self.rules_data.get('kingdom_features', {})
         capstone_set = all_features.get('F9', {}).get('All', [])
         capstone_names = [f['name'] for f in capstone_set]
         current_capstone = self.choices.get('capstone_choice')
+
         capstone_spinner = Spinner(
             text=current_capstone if current_capstone else '- Select Capstone -',
-            values=capstone_names, size_hint_y=None, height='44dp'
+            values=capstone_names,
+            size_hint_y=None,
+            height='44dp'
         )
         capstone_spinner.option_cls.height = '44dp'
         capstone_spinner.bind(text=partial(self.select_choice, 'capstone_choice'))
         self.step_ui_container.add_widget(capstone_spinner)
 
-        # Summary
+        # --- Summary ---
         self.step_ui_container.add_widget(Label(text="Review Your Character:", font_size='18sp', padding=('10dp', '10dp')))
         summary_text = f"""
-        Name: {self.choices.get('name')}
-        Kingdom: {self.choices.get('kingdom')}
-        Portrait: {self.choices.get('portrait_id')}
-        School: {self.choices.get('ability_school')}
-        Talent: {self.choices.get('ability_talent')}
-        Capstone: {self.choices.get('capstone_choice')}
-        """
+Name: {self.choices.get('name')}
+Kingdom: {self.choices.get('kingdom')}
+Features: {len(self.choices.get('feature_choices', []))} selected
+Origin: {self.choices.get('origin_choice')}
+School: {self.choices.get('ability_school')}
+Talent: {self.choices.get('ability_talent')}
+Capstone: {self.choices.get('capstone_choice')}
+"""
         self.step_ui_container.add_widget(Label(text=summary_text, halign='left', valign='top'))
         self.next_btn.text = "Create Character"
-    # --- EVENT HANDLERS & LOGIC (All unchanged) ---
-    # ... (select_choice) ...
-    # ... (select_feature) ...
-    # ... (get_current_feature_choice) ...
-    # ... (update_calculated_stats_and_skills) ...
-    # ... (fetch_eligible_talents) ...
-    # ... (update_talent_spinner) ...
-    # (This is just to show they are identical to the previous step)
+
+    # --- EVENT HANDLERS & LOGIC ---
+
     def select_choice(self, key, value, instance, *args):
+        """Generic handler for simple choices."""
         self.choices[key] = value
         self.validate_step()
+
+        # If the choice affects stats or skills, recalculate
         if key in ['kingdom', 'origin_choice', 'childhood_choice', 'coming_of_age_choice', 'training_choice', 'devotion_choice']:
             self.update_calculated_stats_and_skills()
 
     def select_feature(self, f_id, instance, value):
+        """Handler for feature spinners."""
         new_choice = {"feature_id": f_id, "choice_name": value}
-        self.choices['feature_choices'] = [c for c in self.choices['feature_choices'] if c['feature_id'] != f_id]
+
+        # Remove old choice for this F_ID, if any
+        self.choices['feature_choices'] = [
+            c for c in self.choices['feature_choices'] if c['feature_id'] != f_id
+        ]
+        # Add the new one
         self.choices['feature_choices'].append(new_choice)
+
         self.update_calculated_stats_and_skills()
         self.validate_step()
 
     def get_current_feature_choice(self, f_id):
+        """Finds the name of the selected choice for a given F_ID."""
         for choice in self.choices['feature_choices']:
             if choice['feature_id'] == f_id:
                 return choice['choice_name']
         return None
 
     def update_calculated_stats_and_skills(self):
+        """Recalculates stats and skills based on current choices."""
+        logging.debug("Recalculating stats and skills...")
         new_stats = BASE_STATS.copy()
-        new_skills = set()
+        new_skills = set() # Use a set for unique skills
+
+        # 1. Apply Feature mods
         all_features = self.rules_data.get('kingdom_features', {})
         kingdom = self.choices.get('kingdom')
         if kingdom:
             for f_choice in self.choices['feature_choices']:
-                f_id, f_name = f_choice['feature_id'], f_choice['choice_name']
+                f_id = f_choice['feature_id']
+                f_name = f_choice['choice_name']
                 feature_set = all_features.get(f_id, {}).get(kingdom, [])
                 mod_data = next((item for item in feature_set if item.get("name") == f_name), None)
-                if mod_data and 'mods' in mod_data and hasattr(rules_api, 'rules_core'):
-                    rules_api.rules_core._apply_mods(new_stats, mod_data['mods'])
 
+                if mod_data and 'mods' in mod_data:
+                    rules_api.rules_core._apply_mods(new_stats, mod_data['mods']) # Call helper
+
+        # 2. Apply Background Skills
         for step_name in BACKGROUND_STEPS:
             choice_name = self.choices.get(f"{step_name}_choice")
             if choice_name:
@@ -438,23 +439,40 @@ class CharacterCreationScreen(Screen):
                 if choice_data:
                     for skill in choice_data.get('skills', []):
                         new_skills.add(skill)
+
         self.calculated_stats = new_stats
         self.calculated_skills = list(new_skills)
+        logging.debug(f"New Stats: {self.calculated_stats}")
+        logging.debug(f"New Skills: {self.calculated_skills}")
+
+        # If we are on the talent step, re-fetch talents
         if self.current_step_name == 'talent':
             self.fetch_eligible_talents()
 
     def fetch_eligible_talents(self):
-        if not rules_api:
-            return
+        """
+        Calls the rules engine to get talents.
+        This is tricky because the monolith function is async.
+        """
+        if not rules_api: return
+
         self.talent_spinner.values = ['Fetching talents...']
         self.talent_spinner.text = 'Fetching talents...'
         self.next_btn.disabled = True
+
+        # Convert skill list to skill rank map
         skill_ranks = {skill: 0 for skill in self.rules_data.get('all_skills_map', {})}
         for skill_name in self.calculated_skills:
             if skill_name in skill_ranks:
-                skill_ranks[skill_name] = 1
-        payload = {"stats": self.calculated_stats, "skills": skill_ranks}
+                skill_ranks[skill_name] = 1 # All background skills are Rank 1
 
+        payload = {
+            "stats": self.calculated_stats,
+            "skills": skill_ranks
+        }
+
+        # We must run the async function in a separate thread/loop
+        # and use Clock.schedule_once to update the Kivy UI
         async def do_fetch():
             try:
                 talents = await rules_api.find_eligible_talents_api(None, payload)
@@ -462,28 +480,32 @@ class CharacterCreationScreen(Screen):
             except Exception as e:
                 logging.exception(f"Failed to fetch talents: {e}")
                 Clock.schedule_once(partial(self.update_talent_spinner, [], str(e)))
-        asyncio.run(do_fetch())
+
+        asyncio.run(do_fetch()) # Run the async task
 
     def update_talent_spinner(self, talents, error_msg=None, *args):
+        """Callback to update the talent spinner from the main Kivy thread."""
         if error_msg:
             self.eligible_talents = [f'Error: {error_msg}']
         elif not talents:
             self.eligible_talents = ['- No eligible talents found -']
         else:
             self.eligible_talents = ['- Select a Talent -'] + [t['name'] for t in talents]
+
         self.talent_spinner.values = self.eligible_talents
         self.talent_spinner.text = self.eligible_talents[0]
-        self.choices['ability_talent'] = None
+        self.choices['ability_talent'] = None # Reset choice
         self.validate_step()
 
-    # --- FINAL SUBMISSION (Modified) ---
+    # --- FINAL SUBMISSION ---
+
     def submit_character(self):
         """Final step. Validates, builds the schema, and calls the monolith."""
         logging.info("CHAR_CREATE: Submitting character...")
         self.next_btn.disabled = True
         self.next_btn.text = "Creating..."
 
-        # 1. Add the F9 Capstone choice
+        # 1. Add the F9 Capstone choice to the feature list
         final_feature_choices = self.choices['feature_choices']
         final_feature_choices.append({
             "feature_id": "F9",
@@ -502,39 +524,26 @@ class CharacterCreationScreen(Screen):
                 training_choice=self.choices['training_choice'],
                 devotion_choice=self.choices['devotion_choice'],
                 ability_school=self.choices['ability_school'],
-                ability_talent=self.choices['ability_talent'],
-
-                # --- THIS IS THE CHANGE ---
-                # Add the portrait_id directly to the create payload
-                portrait_id=self.choices['portrait_id']
-                # --- END CHANGE ---
+                ability_talent=self.choices['ability_talent']
             )
         except Exception as e:
             logging.error(f"Failed to create schema: {e}")
             self.next_btn.text = f"Error: {e}"
+            # Do not re-enable button, data is bad
             return
 
-        # 3. Call the monolith service (async)
+        # 3. Call the monolith service (which is async)
         async def do_create():
             db = None
             try:
                 db = CharSession()
-                # Call the main creation service
-                # This service now handles the portrait_id automatically
+                # We pass 'rules_data' to avoid re-fetching it
                 new_char_context = await char_services.create_character(
                     db=db,
                     character=payload,
                     rules_data=self.rules_data
                 )
-
-                # --- REMOVE THE OLD HACK ---
-                # We no longer need this, as the service handles it
-                # db_char = char_crud.get_character(db, new_char_context.id)
-                # if db_char:
-                #     db_char.equipment['portrait_id'] = self.choices['portrait_id']
-                #     ... etc ...
-                # --- END REMOVAL ---
-
+                # Use Clock to update UI on success
                 Clock.schedule_once(
                     partial(self.on_creation_success, new_char_context.name)
                 )
@@ -542,19 +551,25 @@ class CharacterCreationScreen(Screen):
                 logging.exception("Character creation failed in service.")
                 if db:
                     db.rollback()
+                # Use Clock to update UI on failure
                 Clock.schedule_once(
                     partial(self.on_creation_failure, str(e))
                 )
             finally:
                 if db:
                     db.close()
-        asyncio.run(do_create())
+
+        asyncio.run(do_create()) # Run the async task
 
     def on_creation_success(self, char_name, *args):
+        """Callback on successful creation."""
         logging.info(f"Successfully created character: {char_name}")
+        # Go back to game setup screen
         App.get_running_app().root.current = 'game_setup'
 
     def on_creation_failure(self, error_msg, *args):
+        """Callback on failed creation."""
         logging.error(f"Creation failed: {error_msg}")
         self.next_btn.disabled = False
         self.next_btn.text = "Create Character"
+        # We could show a popup here
