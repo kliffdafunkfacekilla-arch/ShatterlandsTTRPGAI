@@ -9,9 +9,11 @@ class Character(Base):
     name = Column(String, index=True)
     kingdom = Column(String)
 
-    # --- ADD THIS LINE ---
-    current_location_id = Column(Integer, default=1) # Defaults to location 1 (STARTING_ZONE)
-    # --- END ADD ---
+    current_location_id = Column(Integer, default=1)
+
+    # --- NEW COLUMN ---
+    portrait_id = Column(String, nullable=True) # e.g., "character_1"
+    # --- END NEW COLUMN ---
 
     # These are the separate columns that match your migration and services.py
     level = Column(Integer)
