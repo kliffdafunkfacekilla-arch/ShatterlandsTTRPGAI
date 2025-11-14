@@ -1,4 +1,3 @@
-# AI-TTRPG/monolith/modules/__init__.py
 """
 Container for monolith domain modules.
 
@@ -8,42 +7,24 @@ self-contained modules with the orchestrator and event bus.
 from typing import List
 import logging
 
-logger = logging.getLogger("monolith.modules")
-
 def register_all(orchestrator) -> None:
-    """
-    Imports and registers all self-contained modules.
-    The import order matters for data loading (e.g., rules first).
-    """
-    try:
-        # Stateless, foundational modules
-        from . import rules
-        from . import map
-        from . import encounter_generator
+    # import modules lazily to avoid import cycles during bootstrap
+    from . import narrative, combat, rules, encounter_generator, map_generator, story, world
 
-        # Stateful, dependent modules
-        from . import world
-        from . import character
-        from . import story
+    # --- ADD 'character' TO THIS LIST ---
+    from . import character
 
-        # Simple/stub modules
-        from . import narrative
-        from . import combat
+    narrative.register(orchestrator)
+    combat.register(orchestrator)
 
-        # Register all modules
-        rules.register(orchestrator)
-        map.register(orchestrator)
-        encounter_generator.register(orchestrator)
+    # stateless services being migrated first
+    rules.register(orchestrator)
+    encounter_generator.register(orchestrator)
+    map_generator.register(orchestrator)
 
-        world.register(orchestrator)
-        character.register(orchestrator)
-        story.register(orchestrator) # This is the main "brain"
+    # adapters / stateful services
+    world.register(orchestrator)
+    story.register(orchestrator)
 
-        narrative.register(orchestrator)
-        combat.register(orchestrator)
-
-        logger.info("All monolith modules registered successfully.")
-
-    except Exception as e:
-        logger.exception(f"Failed during module registration: {e}")
-        raise
+    # --- REGISTER THE NEW MODULE ---
+    character.register(orchestrator)
