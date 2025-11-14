@@ -9,7 +9,7 @@ import logging
 
 def register_all(orchestrator) -> None:
     # import modules lazily to avoid import cycles during bootstrap
-    from . import narrative, combat, rules, encounter_generator, map_generator, story, world
+    from . import narrative, combat, rules, encounter_generator, story, world
 
     # --- ADD 'character' TO THIS LIST ---
     from . import character
@@ -20,7 +20,6 @@ def register_all(orchestrator) -> None:
     # stateless services being migrated first
     rules.register(orchestrator)
     encounter_generator.register(orchestrator)
-    map_generator.register(orchestrator)
 
     # adapters / stateful services
     world.register(orchestrator)
