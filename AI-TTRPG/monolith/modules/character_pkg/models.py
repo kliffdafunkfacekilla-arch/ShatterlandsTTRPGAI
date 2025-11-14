@@ -12,7 +12,7 @@ class Character(Base):
     # --- ADD THIS LINE ---
     current_location_id = Column(Integer, default=1) # Defaults to location 1 (STARTING_ZONE)
     # --- END ADD ---
-    
+
     # These are the separate columns that match your migration and services.py
     level = Column(Integer)
     stats = Column(JSON)

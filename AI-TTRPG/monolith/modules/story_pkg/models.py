@@ -71,7 +71,7 @@ class CombatParticipant(Base):
     __tablename__ = "combat_participants"
 
     id = Column(Integer, primary_key=True, index=True)
-    
+
     # Link to the parent CombatEncounter
     combat_id = Column(Integer, ForeignKey("combat_encounters.id"))
     encounter = relationship("CombatEncounter", back_populates="participants")
@@ -80,5 +80,5 @@ class CombatParticipant(Base):
     actor_id = Column(String, index=True)
     # "player" or "npc"
     actor_type = Column(String)
-    
+
     initiative_roll = Column(Integer)

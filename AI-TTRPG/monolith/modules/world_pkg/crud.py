@@ -222,10 +222,11 @@ def get_location_context(db: Session, location_id: int):
 
     npcs = db.query(models.NpcInstance).filter(models.NpcInstance.location_id == location_id).all()
     items = db.query(models.ItemInstance).filter(models.ItemInstance.location_id == location_id).all()
-    
+
     # Get Region name
     region = db.query(models.Region).filter(models.Region.id == location.region_id).first()
-    
+
+    # --- START OF NEW FIX ---
     if not region:
         logger.error(f"Data integrity error: Location {location_id} has region_id {location.region_id} but no matching region was found.")
         raise HTTPException(status_code=500, detail=f"Data integrity error: Region {location.region_id} not found for location {location_id}.")
@@ -248,4 +249,8 @@ def get_location_context(db: Session, location_id: int):
         "tags": location.tags,
         "exits": location.exits,
         "region": schemas.Region.from_orm(region).model_dump(),
+        # Use the current schema model names
+        "npcs": [schemas.NpcInstance.from_orm(npc) for npc in npcs],
+        "items": [schemas.ItemInstance.from_orm(item) for item in items],
+
     }

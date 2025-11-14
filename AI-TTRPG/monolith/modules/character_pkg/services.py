@@ -176,7 +176,7 @@ async def _get_rules_engine_data() -> Dict[str, Any]:
         # --- MODIFIED: Flatten the structured talent data into the map ---
         all_talents_map = {}
         structured_talents = rules_data.get("all_talents_structured", {})
-        
+
         if not structured_talents:
              print("WARNING: 'all_talents_structured' data is empty. Talent map will be empty.")
              logger.warning("Received empty talent data from rules_engine. This may cause ability talent selection to fail.")
@@ -186,7 +186,7 @@ async def _get_rules_engine_data() -> Dict[str, Any]:
             if not isinstance(single_stat_talents, list):
                 logger.error(f"Expected single_stat_mastery to be a list, got {type(single_stat_talents)}")
                 single_stat_talents = []
-            
+
             for talent in single_stat_talents:
                 if not isinstance(talent, dict):
                     logger.warning(f"Skipping non-dict talent in single_stat_mastery: {talent}")
@@ -196,13 +196,13 @@ async def _get_rules_engine_data() -> Dict[str, Any]:
                     all_talents_map[talent_name] = talent
                 else:
                     logger.debug(f"Talent in single_stat_mastery missing 'talent_name': {talent}")
-            
+
             # Flatten dual_stat_focus
             dual_stat_talents = structured_talents.get("dual_stat_focus", [])
             if not isinstance(dual_stat_talents, list):
                 logger.error(f"Expected dual_stat_focus to be a list, got {type(dual_stat_talents)}")
                 dual_stat_talents = []
-            
+
             for talent in dual_stat_talents:
                 if not isinstance(talent, dict):
                     logger.warning(f"Skipping non-dict talent in dual_stat_focus: {talent}")
@@ -212,33 +212,33 @@ async def _get_rules_engine_data() -> Dict[str, Any]:
                     all_talents_map[talent_name] = talent
                 else:
                     logger.debug(f"Talent in dual_stat_focus missing 'talent_name': {talent}")
-            
+
             # Flatten single_skill_mastery (this one is nested)
             skill_mastery_data = structured_talents.get("single_skill_mastery", {})
             if not isinstance(skill_mastery_data, dict):
                 logger.error(f"Expected single_skill_mastery to be a dict, got {type(skill_mastery_data)}")
                 skill_mastery_data = {}
-            
+
             for category_name, category_list in skill_mastery_data.items():
                 if not isinstance(category_list, list):
                     logger.warning(f"Skipping single_skill_mastery category '{category_name}': expected list, got {type(category_list)}")
                     continue
-                
+
                 for skill_group in category_list:
                     if not isinstance(skill_group, dict):
                         logger.warning(f"Skipping non-dict skill_group in category '{category_name}'")
                         continue
-                    
+
                     talents_list = skill_group.get("talents", [])
                     if not isinstance(talents_list, list):
                         logger.warning(f"Skipping talent list in {category_name}/{skill_group.get('skill', 'Unknown')}: expected list, got {type(talents_list)}")
                         continue
-                    
+
                     for talent in talents_list:
                         if not isinstance(talent, dict):
                             logger.warning(f"Skipping non-dict talent in {category_name}")
                             continue
-                        
+
                         # Check both 'talent_name' (primary) and 'name' (fallback) for inconsistent JSON
                         talent_name = talent.get("talent_name") or talent.get("name")
                         if talent_name:
@@ -343,29 +343,29 @@ async def create_character(
                 logger.warning(f"Feature ID '{choice.feature_id}' not found in kingdom_features. Skipping.")
                 print(f"Warning: Feature ID '{choice.feature_id}' not found. Skipping.")
                 continue
-            
+
             feature_id_data = all_features_data.get(choice.feature_id, {})
-            
+
             # Check if kingdom exists for this feature
             if kingdom_key not in feature_id_data:
                 logger.warning(f"Kingdom '{kingdom_key}' not found for feature '{choice.feature_id}'. Available: {list(feature_id_data.keys())}")
                 print(f"Warning: Kingdom '{kingdom_key}' not found for feature {choice.feature_id}. Skipping.")
                 continue
-            
+
             feature_set = feature_id_data.get(kingdom_key, [])
-            
+
             # Check if feature_set is valid
             if not isinstance(feature_set, list):
                 logger.error(f"Feature set for {choice.feature_id}/{kingdom_key} is not a list: {type(feature_set)}")
                 print(f"Error: Feature set for {choice.feature_id}/{kingdom_key} is malformed. Skipping.")
                 continue
-            
+
             # Find the specific choice
             mod_data = next(
                 (item for item in feature_set if item.get("name") == choice.choice_name),
                 None,
             )
-            
+
             if mod_data and "mods" in mod_data:
                 print(f"Applying mods for: {choice.choice_name}")
                 _apply_mods(base_stats, mod_data["mods"])
@@ -436,13 +436,13 @@ async def create_character(
     # 5. Apply Ability Talent mods
     print(f"Applying Ability Talent mods for: {character.ability_talent}")
     all_talents_map = rules.get("all_talents_map", {})
-    
+
     if not all_talents_map:
         logger.error("Talent map is empty. No ability talents will be applied.")
         print("ERROR: Talent map is empty. No ability talents available.")
     else:
         ab_talent_data = all_talents_map.get(character.ability_talent)
-        
+
         if not ab_talent_data:
             available_talents = list(all_talents_map.keys())[:10]  # Show first 10
             logger.warning(f"Ability talent '{character.ability_talent}' not found in talent map. Available (showing first 10): {available_talents}")
@@ -479,7 +479,7 @@ async def create_character(
     # 7. Get base abilities
     base_abilities = []
     school_data = rules.get("all_abilities_map", {}).get(character.ability_school)
-    
+
     # --- FIX: Check if school_data and tiers exist before trying to access (with comprehensive error handling) ---
     if not school_data:
         logger.warning(f"No ability school data found for '{character.ability_school}'. No base ability added.")
@@ -496,14 +496,14 @@ async def create_character(
     else:
         # Tiers exist and have content, proceed with logic
         tiers_list = school_data["tiers"]
-        
+
         # Try to find T1 ability
         t1_ability = None
         for tier in tiers_list:
             if isinstance(tier, dict) and tier.get("tier") == "T1":
                 t1_ability = tier
                 break
-        
+
         if t1_ability:
             # Use 'description' as it's the ability text
             description = t1_ability.get("description", "Unknown T1 Ability")
