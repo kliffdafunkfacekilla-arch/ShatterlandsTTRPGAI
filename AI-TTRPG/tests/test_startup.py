@@ -1,6 +1,7 @@
 import os
 import sys
 import subprocess
+from pathlib import Path
 
 
 def test_monolith_startup_runs_and_exits():

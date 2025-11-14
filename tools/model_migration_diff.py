@@ -111,6 +111,7 @@ def load_migrations(service_name: str) -> Dict[str, Set[str]]:
     result: Dict[str, Set[str]] = {}
 
     if not os.path.isdir(migrations_dir):
+        print(f"[WARN] Migrations dir not found for {service_name} at {migrations_dir}")
         return result
 
     for fname in os.listdir(migrations_dir):
