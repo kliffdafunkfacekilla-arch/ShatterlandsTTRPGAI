@@ -33,6 +33,10 @@ class CharacterCreate(BaseModel):
     ability_school: str
     ability_talent: str  # This is the final talent choice, which remains
 
+    # --- ADD THIS LINE ---
+    portrait_id: Optional[str] = None # Add the portrait ID here
+    # --- END ADD ---
+
 
 # --- UNCHANGED SCHEMAS ---
 class CharacterBase(BaseModel):
@@ -73,6 +77,10 @@ class CharacterContextResponse(CharacterBase):
 
     position_x: int
     position_y: int
+
+    # --- ADD THIS LINE ---
+    portrait_id: Optional[str] = None # Add the portrait ID here
+    # --- END ADD ---
 
     class Config:
         from_attributes = True

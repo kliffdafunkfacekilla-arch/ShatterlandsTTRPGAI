@@ -1,0 +1,31 @@
+{
+  "0": {
+    "name": "Grass",
+    "passable": true
+  },
+  "1": {
+    "name": "Tree",
+    "passable": false
+  },
+  "2": {
+    "name": "Water",
+    "passable": false
+  },
+  "3": {
+    "name": "Stone Floor",
+    "passable": true
+  },
+  "4": {
+    "name": "Stone Wall",
+    "passable": false
+  },
+  "5": {
+    "name": "Door",
+    "passable": false,
+    "states": {
+      "open": {
+        "passable": true
+      }
+    }
+  }
+}

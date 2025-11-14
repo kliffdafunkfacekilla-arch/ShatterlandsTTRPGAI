@@ -97,6 +97,10 @@ def get_character_context(
         # --- END ADD ---
         position_x=db_character.position_x,
         position_y=db_character.position_y,
+
+        # --- ADD THIS LINE ---
+        portrait_id=db_character.portrait_id # Map the new field
+        # --- END ADD ---
     )
 # --- MODIFIED: Helper functions for new creation logic ---
 async def _call_rules_engine(
@@ -543,7 +547,11 @@ async def create_character(
         # --- ADD THIS LINE ---
         current_location_id=1, # Default to STARTING_ZONE
         position_x=1, # Default start position (matches placeholder spawn)
-        position_y=1 # Default start position (matches placeholder spawn)
+        position_y=1, # Default start position (matches placeholder spawn)
+
+        # --- ADD THIS LINE ---
+        portrait_id=character.portrait_id # Save the portrait ID
+        # --- END ADD ---
     )
 
     logger.debug(f"Constructed DB character model: {db_character.__dict__}")
@@ -598,6 +606,10 @@ def update_character_context(
         db_character.position_x = updates.position_x
         db_character.position_y = updates.position_y
 
+        # --- ADD THIS LINE ---
+        db_character.portrait_id = updates.portrait_id
+        # --- END ADD ---
+
         try:
             db.commit()
             db.refresh(db_character)
@@ -637,7 +649,11 @@ async def create_default_test_character(db: Session, rules_data: dict):
         training_choice="Soldier's Discipline",
         devotion_choice="Devotion to the State",
         ability_school="Force",
-        ability_talent="Overpowering Presence" # Was "Mind over Matter" which doesn't exist
+        ability_talent="Overpowering Presence", # Was "Mind over Matter" which doesn't exist
+
+        # --- ADD THIS LINE ---
+        portrait_id="character_1" # Give it a default portrait
+        # --- END ADD ---
     )
     # --- END MODIFICATION ---
 
