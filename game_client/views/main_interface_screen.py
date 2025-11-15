@@ -17,6 +17,7 @@ from kivy.uix.button import Button
 from kivy.uix.popup import Popup # <-- ADD THIS IMPORT
 from kivy.properties import ObjectProperty, ListProperty, StringProperty
 from kivy.core.window import Window
+from kivy.clock import Clock
 from functools import partial
 from typing import Optional
 
@@ -229,6 +230,17 @@ class MainInterfaceScreen(Screen):
         self.bind(active_character_context=self.update_active_character_ui)
         self.bind(party_list=self.update_party_list_ui)
         Window.bind(on_resize=self.center_layout)
+
+        # --- ADD BINDING FOR DM INPUT ---
+        # We must schedule this to run after the KV string is loaded
+        Clock.schedule_once(self._bind_inputs)
+
+    def _bind_inputs(self, *args):
+        """Bind inputs that aren't available during __init__."""
+        if self.ids.dm_input:
+            self.ids.dm_input.bind(on_text_validate=self.on_submit_narration)
+        else:
+            logging.error("Failed to bind dm_input, widget not found.")
 
     def center_layout(self, instance, width, height):
         if self.map_view_anchor:

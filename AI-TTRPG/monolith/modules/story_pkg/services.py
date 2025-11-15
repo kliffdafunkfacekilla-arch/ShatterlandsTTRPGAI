@@ -100,6 +100,11 @@ def apply_damage_to_character(char_id: str, damage_amount: int) -> Dict:
     logger.debug(f"Calling internal character_api.apply_damage_to_character for {char_id}")
     return char_api.apply_damage_to_character(char_id, damage_amount)
 
+def apply_healing_to_character(char_id: str, amount: int):
+    """Applies healing to a character. Fire and forget."""
+    logger.debug(f"Calling internal character_api.apply_healing_to_character for {char_id}")
+    return character_api.apply_healing_to_character(char_id, amount)
+
 def add_item_to_character(char_id: str, item_id: str, quantity: int) -> Dict:
     logger.debug(f"Calling internal character_api.add_item_to_character for {char_id}")
     return char_api.add_item_to_character(char_id, item_id, quantity)

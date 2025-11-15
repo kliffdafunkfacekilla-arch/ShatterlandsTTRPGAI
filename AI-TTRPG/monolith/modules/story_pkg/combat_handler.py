@@ -250,6 +250,7 @@ def check_combat_end_condition(db: Session, combat: models.CombatEncounter) -> b
 
 def determine_npc_action(db: Session, combat: models.CombatEncounter, npc_actor_id: str) -> Optional[schemas.PlayerActionRequest]:
     # --- REMOVED ASYNC ---
+    log = [] # Create a log list
     try:
         # --- REMOVED AWAIT ---
         _, npc_context = get_actor_context(npc_actor_id)
@@ -260,6 +261,13 @@ def determine_npc_action(db: Session, combat: models.CombatEncounter, npc_actor_
     behavior_tags = npc_context.get("behavior_tags", [])
     npc_current_hp = npc_context.get("current_hp", 1)
     npc_max_hp = npc_context.get("max_hp", 1)
+
+    # --- NEW: Cowardly Check ---
+    if "cowardly" in behavior_tags and npc_current_hp < (npc_max_hp * 0.3):
+        logger.info(f"NPC {npc_actor_id} is cowardly and waiting.")
+        # Return None, which is handled as a "wait" action
+        return None
+
     living_players = []
     for p in combat.participants:
         if p.actor_id.startswith("player_"):
@@ -285,7 +293,9 @@ def determine_npc_action(db: Session, combat: models.CombatEncounter, npc_actor_
         target_id = living_players[0]['id']
         log.append(f"{npc_actor_id} targets the weakest player, {target_id}!")
     else:
+        # Default aggressive behavior
         target_id = random.choice(living_players)['id']
+        logger.info(f"NPC {npc_actor_id} randomly targets: {target_id}")
 
     if action_type == "attack" and target_id:
         return schemas.PlayerActionRequest(action="attack", target_id=target_id)
@@ -316,7 +326,6 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
         log.append(f"{actor_id} targets {target_id} with an attack.")
 
     elif action.action == "use_ability":
-        # We now correctly log the ability_id from the request
         log.append(f"{actor_id} uses ability: {action.ability_id} on {target_id}!")
 
         if "Minor Shove" in action.ability_id:
@@ -347,7 +356,7 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
             services.apply_damage_to_character(action.target_id, -15)
             log.append(f"{actor_id} uses {action.item_id} on {target_id}, healing for 15 HP.")
 
-        # We must advance the turn and check for combat end.
+        # This part (turn advancement) is correct and remains
         combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
         combat_over = check_combat_end_condition(db, combat)
         db.commit()

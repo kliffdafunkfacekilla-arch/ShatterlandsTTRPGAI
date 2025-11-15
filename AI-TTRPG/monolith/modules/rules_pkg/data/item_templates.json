@@ -27,11 +27,17 @@
   "item_brawling_gloves": {
     "name": "Brawling Gloves",
     "type": "melee",
-    "category": "Brawling Weapons"
+    "category": "Unarmed/Fist Weapons"
   },
   "item_iron_key": {
     "name": "Iron Key",
     "type": "key",
     "category": "quest"
+  },
+  "item_health_potion_small": {
+    "name": "Small Health Potion",
+    "type": "healing",
+    "category": "potion",
+    "potency": 15
   }
 }
