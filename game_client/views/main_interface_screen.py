@@ -3,6 +3,7 @@ The Main Game Interface screen.
 Handles the exploration UI and game logic.
 """
 import logging
+import datetime
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.uix.screenmanager import Screen
@@ -13,6 +14,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
+from kivy.uix.popup import Popup # <-- ADD THIS IMPORT
 from kivy.properties import ObjectProperty, ListProperty, StringProperty
 from kivy.core.window import Window
 from functools import partial
@@ -27,12 +29,14 @@ try:
     from monolith.modules.world_pkg.database import SessionLocal as WorldSession
     from monolith.modules import character as character_api
     from monolith.modules import story as story_api
+    from monolith.modules import save_api # <-- ADD THIS IMPORT
     from monolith.modules.story_pkg import schemas as story_schemas
 except ImportError as e:
     logging.error(f"MAIN_INTERFACE: Failed to import monolith modules: {e}")
     char_crud, char_services, CharSession = None, None, None
     world_crud, WorldSession = None, None
     character_api, story_api, story_schemas = None, None, None
+    save_api = None # <-- ADD THIS
 
 # --- Client Imports ---
 try:
@@ -182,6 +186,11 @@ MAIN_INTERFACE_KV = """
                 Button:
                     text: 'Menu'
                     on_release: app.root.current = 'main_menu'
+
+                Button:
+                    text: 'Save Game' # <-- ADD THIS BUTTON
+                    on_release: root.show_save_popup()
+
                 Button:
                     text: 'Character'
                     on_release: app.root.current = 'character_sheet'
@@ -206,6 +215,7 @@ class MainInterfaceScreen(Screen):
     active_character_context = ObjectProperty(None, force_dispatch=True)
     location_context = ObjectProperty(None, force_dispatch=True)
     party_list = ListProperty([])
+    save_popup = ObjectProperty(None, allownone=True) # <-- ADD THIS
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -484,3 +494,70 @@ class MainInterfaceScreen(Screen):
             else:
                 logging.debug("Right-clicked on empty tile.")
         return True
+
+    # --- ADD THESE NEW METHODS for the Save Popup ---
+
+    def show_save_popup(self):
+        """Displays a popup to get a save game name."""
+        if self.save_popup:
+            self.save_popup.dismiss()
+
+        # Get a default name
+        char_name = self.active_character_context.name if self.active_character_context else "save"
+        default_save_name = f"{char_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}"
+
+        content = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
+
+        content.add_widget(Label(text='Enter a name for your save file:'))
+
+        text_input = TextInput(
+            text=default_save_name,
+            size_hint_y=None,
+            height='44dp',
+            multiline=False
+        )
+        content.add_widget(text_input)
+
+        button_layout = BoxLayout(size_hint_y=None, height='44dp', spacing='10dp')
+
+        save_btn = Button(text='Save')
+        cancel_btn = Button(text='Cancel')
+
+        button_layout.add_widget(save_btn)
+        button_layout.add_widget(cancel_btn)
+        content.add_widget(button_layout)
+
+        self.save_popup = Popup(
+            title='Save Game',
+            content=content,
+            size_hint=(0.5, 0.4),
+            auto_dismiss=False
+        )
+
+        save_btn.bind(on_release=lambda x: self.do_save_game(text_input.text))
+        cancel_btn.bind(on_release=self.save_popup.dismiss)
+
+        self.save_popup.open()
+
+    def do_save_game(self, slot_name: str):
+        """Calls the save_api and closes the popup."""
+        if not slot_name:
+            return # Or show an error in the popup
+
+        if not save_api:
+            logging.error("Save API not loaded. Cannot save.")
+            self.save_popup.dismiss()
+            return
+
+        try:
+            result = save_api.save_game(slot_name)
+            if result.get("success"):
+                self.update_log(f"Game saved as '{slot_name}'")
+            else:
+                raise Exception(result.get("error", "Unknown save error"))
+        except Exception as e:
+            logging.exception(f"Failed to save game: {e}")
+            self.update_log(f"Error saving game: {e}")
+
+        self.save_popup.dismiss()
+        self.save_popup = None
