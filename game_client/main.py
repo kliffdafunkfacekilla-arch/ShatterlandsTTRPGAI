@@ -45,8 +45,8 @@ from kivy.core.window import Window
 from views.main_menu_screen import MainMenuScreen
 from views.game_setup_screen import GameSetupScreen
 from views.character_creation_screen import CharacterCreationScreen
-# --- IMPORT THE NEW SCREEN ---
 from views.main_interface_screen import MainInterfaceScreen
+from views.combat_screen import CombatScreen # <-- ADD THIS IMPORT
 
 # --- 5. INITIALIZE ASSET LOADER ---
 # (Must be after monolith register so data is loaded)
@@ -74,6 +74,7 @@ class ShatterlandsClientApp(App):
 
         # --- USE THE NEW, REAL SCREEN ---
         sm.add_widget(MainInterfaceScreen(name='main_interface'))
+sm.add_widget(CombatScreen(name='combat_screen')) # <-- ADD THIS LINE
 
         sm.current = 'main_menu'
         return sm

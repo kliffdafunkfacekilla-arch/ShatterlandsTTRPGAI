@@ -27,6 +27,34 @@ from .story_pkg import models as se_models
 
 logger = logging.getLogger("monolith.story")
 
+# --- Add this new synchronous function to AI-TTRPG/monolith/modules/story.py ---
+def handle_interaction(request: se_schemas.InteractionRequest) -> Dict[str, Any]:
+    """
+    Synchronous wrapper for the interaction handler.
+    This is called directly by other modules (like the Kivy client).
+    """
+    logger.info(f"[story.sync] Handling interaction: Actor '{request.actor_id}' -> Target '{request.target_object_id}'")
+
+    # Note: The interaction_handler.py is already synchronous
+    # after our previous refactors, so we can just call it directly.
+    try:
+        # The handler takes the Pydantic schema and returns a Pydantic response
+        response_model = se_interaction.handle_interaction(request)
+
+        # Convert the Pydantic model back to a dict for the client
+        return response_model.model_dump()
+
+    except Exception as e:
+        logger.exception(f"[story.sync] Interaction handling failed: {e}")
+        # Return an error response in the expected format
+        return {
+            "success": False,
+            "message": f"An unexpected error occurred: {e}",
+            "updated_annotations": None,
+            "items_added": None,
+            "items_removed": None,
+        }
+
 async def _on_command_start_combat(topic: str, payload: Dict[str, Any]) -> None:
     bus = get_event_bus()
     logger.info(f"[story] start_combat command received: {payload}")
