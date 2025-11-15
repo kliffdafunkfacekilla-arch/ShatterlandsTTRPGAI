@@ -125,6 +125,34 @@ def update_npc(db: Session, npc_id: int, updates: schemas.NpcUpdate) -> Optional
         db.refresh(db_npc)
     return db_npc
 
+def apply_status_to_npc(db: Session, npc_id: int, status_id: str) -> Optional[models.NpcInstance]:
+    """Adds a status effect ID to the NPC's status_effects list."""
+    db_npc = get_npc(db, npc_id)
+    if db_npc:
+        status_effects = db_npc.status_effects or []
+        if status_id not in status_effects:
+            status_effects.append(status_id)
+            logger.info(f"Applying status '{status_id}' to NPC {npc_id}")
+        db_npc.status_effects = status_effects
+        flag_modified(db_npc, "status_effects")
+        db.commit()
+        db.refresh(db_npc)
+    return db_npc
+
+def remove_status_from_npc(db: Session, npc_id: int, status_id: str) -> Optional[models.NpcInstance]:
+    """Removes a status effect ID from the NPC's status_effects list."""
+    db_npc = get_npc(db, npc_id)
+    if db_npc:
+        status_effects = db_npc.status_effects or []
+        if status_id in status_effects:
+            status_effects.remove(status_id)
+            logger.info(f"Removing status '{status_id}' from NPC {npc_id}")
+        db_npc.status_effects = status_effects
+        flag_modified(db_npc, "status_effects")
+        db.commit()
+        db.refresh(db_npc)
+    return db_npc
+
 def delete_npc(db: Session, npc_id: int) -> bool:
     """This is how we remove a dead NPC from the world."""
     db_npc = get_npc(db, npc_id)

@@ -57,6 +57,10 @@ def get_armor_data(category_name: str) -> Dict:
     logger.debug(f"Calling internal rules_api.get_armor_data for {category_name}")
     return rules_api.get_armor_data(category_name)
 
+def get_loot_table(loot_table_ref: str) -> Dict:
+    logger.debug(f"Calling internal rules_api.get_loot_table for {loot_table_ref}")
+    return rules_api.get_loot_table(loot_table_ref)
+
 # --- World Engine Functions ---
 def get_world_location_context(location_id: int) -> Dict:
     logger.debug(f"Calling internal world_api.get_world_location_context for {location_id}")
@@ -112,3 +116,36 @@ def add_item_to_character(char_id: str, item_id: str, quantity: int) -> Dict:
 def remove_item_from_character(char_id: str, item_id: str, quantity: int) -> Dict:
     logger.debug(f"Calling internal character_api.remove_item_from_character for {char_id}")
     return char_api.remove_item_from_character(char_id, item_id, quantity)
+
+def get_ability_data(ability_name: str) -> Dict:
+    """Gets the data for a single ability from the rules engine."""
+    logger.debug(f"Calling internal rules_api.get_ability_data for {ability_name}")
+    all_abilities = rules_api.get_all_abilities()
+    for school, school_data in all_abilities.items():
+        for branch in school_data.get("branches", []):
+            for tier in branch.get("tiers", []):
+                if tier.get("name") == ability_name:
+                    return tier
+    return {}
+
+# --- NEW HELPER FUNCTIONS ---
+def apply_status_to_target(target_id: str, status_id: str) -> Dict:
+    """Applies a status to a player or NPC based on ID prefix."""
+    logger.debug(f"Applying status {status_id} to {target_id}")
+    if target_id.startswith("player_"):
+        return character_api.apply_status_to_character(target_id, status_id)
+    elif target_id.startswith("npc_"):
+        npc_instance_id = int(target_id.split("_")[1])
+        return world_api.apply_status_to_npc(npc_instance_id, status_id)
+    else:
+        raise ValueError(f"Unknown target type for ID {target_id}")
+
+def remove_status_from_character(char_id: str, status_id: str) -> Dict:
+    """Removes a status from a character."""
+    logger.debug(f"Removing status {status_id} from {char_id}")
+    return character_api.remove_status_from_character(char_id, status_id)
+
+def remove_status_from_npc(npc_id: int, status_id: str) -> Dict:
+    """Removes a status from an NPC."""
+    logger.debug(f"Removing status {status_id} from NPC {npc_id}")
+    return world_api.remove_status_from_npc(npc_id, status_id)
