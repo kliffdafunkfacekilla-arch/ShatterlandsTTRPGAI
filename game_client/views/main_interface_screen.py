@@ -184,6 +184,7 @@ MAIN_INTERFACE_KV = """
                     on_release: app.root.current = 'main_menu'
                 Button:
                     text: 'Character'
+                    on_release: app.root.current = 'character_sheet'
                 Button:
                     text: 'Inventory'
                 Button:
