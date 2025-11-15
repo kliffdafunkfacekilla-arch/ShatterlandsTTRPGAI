@@ -360,6 +360,17 @@ class CombatScreen(Screen):
                 if npc.get('current_hp', 0) > 0:
                     return "npc", npc
 
+        # Check Player (self)
+        if (self.player_context and
+            self.player_context.position_x == tile_x and
+            self.player_context.position_y == tile_y):
+            # Return the dict version of the context
+            return "player", self.player_context.model_dump()
+
+        # TODO: Check other allied players in party_list
+
+        return None
+
         # Check Players (self or allies)
         for char_context in self.party_contexts_list:
             if (char_context.position_x == tile_x and
@@ -460,6 +471,7 @@ class CombatScreen(Screen):
 
     def on_touch_down(self, touch):
         """Handle mouse clicks for targeting."""
+
         # ... (menu closing logic is unchanged) ...
         if self.ability_menu:
             if not self.ability_menu.collide_point(*touch.pos):
@@ -470,7 +482,7 @@ class CombatScreen(Screen):
                 self.close_item_menu()
             return True
 
-        if not self.is_player_turn or not self.current_action or not self.active_combat_character:
+        if not self.is_player_turn or not self.current_action:
             return super().on_touch_down(touch)
 
         if not self.map_view_widget or not self.map_view_widget.collide_point(*touch.pos):
@@ -494,6 +506,7 @@ class CombatScreen(Screen):
         if target:
             target_type, target_data = target
 
+            # Define what a friendly action is
             is_friendly_action = (
                 self.selected_item_id == "item_health_potion_small" or
                 self.selected_ability_id == "Minor Heal"
@@ -524,11 +537,12 @@ class CombatScreen(Screen):
                 self.current_action = None
                 return True
 
+            # --- If we got here, we have a valid target_id ---
             action_name = self.current_action
             ability_id = self.selected_ability_id if action_name == "use_ability" else None
             item_id = self.selected_item_id if action_name == "use_item" else None
 
-            self.add_to_log(f"{self.active_combat_character.name} uses {action_name} on {target_id}!")
+            self.add_to_log(f"You use {action_name} on {target_id}!")
 
             action = story_schemas.PlayerActionRequest(
                 action=action_name,
@@ -537,8 +551,7 @@ class CombatScreen(Screen):
                 item_id=item_id
             )
 
-            # --- MODIFIED: Use the correct active player ID ---
-            self.handle_player_action(self.active_combat_character.id, action)
+            self.handle_player_action(self.player_context.id, action)
 
             # Clear targeting mode
             self.current_action = None
