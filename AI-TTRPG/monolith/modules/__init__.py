@@ -10,9 +10,7 @@ import logging
 def register_all(orchestrator) -> None:
     # import modules lazily to avoid import cycles during bootstrap
     from . import narrative, combat, rules, encounter_generator, story, world
-
-    # --- ADD 'character' AND 'save_api' TO THIS LIST ---
-    from . import character, save_api
+    from . import character, save_api, ai_dm
 
     narrative.register(orchestrator)
     combat.register(orchestrator)
@@ -27,4 +25,5 @@ def register_all(orchestrator) -> None:
 
     # --- REGISTER THE NEW MODULES ---
     character.register(orchestrator)
-    save_api.register(orchestrator) # <-- ADD THIS LINE
+    save_api.register(orchestrator)
+    ai_dm.register(orchestrator)

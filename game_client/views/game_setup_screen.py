@@ -6,16 +6,19 @@ monolith imports instead of API calls.
 """
 from kivy.uix.screenmanager import Screen
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.spinner import Spinner
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.checkbox import CheckBox
 from kivy.app import App
 from kivy.properties import ObjectProperty, ListProperty
-from typing import List
+from typing import List, Dict
 import logging
 
 # --- Direct Monolith Imports ---
-# We can do this because main.py already set up the sys.path
+# ... (imports are unchanged) ...
 try:
     from monolith.modules.character_pkg import crud as char_crud
     from monolith.modules.character_pkg import services as char_services
@@ -34,8 +37,10 @@ class GameSetupScreen(Screen):
     """
 
     # Kivy properties to hold our dynamic data
-    party_spinner = ObjectProperty(None)
-    character_names = ListProperty(['Loading characters...'])
+    character_select_list = ObjectProperty(None)
+
+    # This will hold the mapping of {char_name: CheckBox_widget}
+    character_toggles: Dict[str, CheckBox] = {}
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -51,16 +56,17 @@ class GameSetupScreen(Screen):
         # --- Party Selection ---
         layout.add_widget(Label(text='Select Party Members', size_hint_y=0.1))
 
-        # This spinner will be populated by load_characters()
-        self.party_spinner = Spinner(
-            text='Select a Character',
-            values=self.character_names,
+        # --- NEW: ScrollView for Character Checkboxes ---
+        scroll_view = ScrollView(size_hint_y=0.3)
+        self.character_select_list = GridLayout(
+            cols=1,
             size_hint_y=None,
-            height='44dp'
+            spacing='5dp'
         )
-        # Bind the values property so it updates when self.character_names changes
-        self.bind(character_names=self.party_spinner.setter('values'))
-        layout.add_widget(self.party_spinner)
+        self.character_select_list.bind(minimum_height=self.character_select_list.setter('height'))
+        scroll_view.add_widget(self.character_select_list)
+        layout.add_widget(scroll_view)
+        # --- END NEW ---
 
         # Button to go to character creation
         create_char_btn = Button(
@@ -103,37 +109,56 @@ class GameSetupScreen(Screen):
         """Kivy function that runs when this screen is shown."""
         # Refresh the character list every time we enter this screen
         self.load_characters()
-        if self.character_names:
-            self.party_spinner.text = self.character_names[0]
 
     def load_characters(self):
         """
-        Opening the ttrpgai outline..txt file. Opening the AI-TTRPG/monolith/modules/character_pkg/crud.py file. Opening the AI-TTRPG/monolith/modules/character_pkg/services.py file.
-        Fetches the character list directly from the database.
-        This REPLACES the old requests.get() call.
+        Fetches the character list directly from the database
+        and populates the checkbox list.
         """
         if not CharSession or not char_crud or not char_services:
-            self.character_names = ["Error: Monolith not loaded"]
+            self.character_select_list.clear_widgets()
+            self.character_select_list.add_widget(Label(text="Error: Monolith not loaded"))
             return
+
         char_names = ['No characters found']
+        self.character_select_list.clear_widgets()
+        self.character_toggles.clear()
+
         db = None
         try:
             db = CharSession()
-            # 1. Call the CRUD function to get DB models
             db_chars = char_crud.list_characters(db)
 
             if db_chars:
                 # 2. Convert models to the context dicts using the service
                 char_contexts = [char_services.get_character_context(c) for c in db_chars]
-                # 3. Get the names
-                char_names = [c.name for c in char_contexts if c]
-                if not char_names:
-                    char_names = ['No characters found']
 
-            self.character_names = char_names
+                if not char_contexts:
+                    self.character_select_list.add_widget(Label(text="No characters found."))
+                    return
+
+                # --- NEW: Populate Checkbox List ---
+                for char_context in char_contexts:
+                    char_box = BoxLayout(orientation='horizontal', size_hint_y=None, height='44dp')
+
+                    checkbox = CheckBox(size_hint_x=0.2)
+                    label = Label(text=char_context.name, size_hint_x=0.8, halign='left')
+                    label.bind(size=label.setter('text_size')) # for alignment
+
+                    char_box.add_widget(checkbox)
+                    char_box.add_widget(label)
+
+                    self.character_select_list.add_widget(char_box)
+                    self.character_toggles[char_context.name] = checkbox
+                # --- END NEW ---
+
+            else:
+                self.character_select_list.add_widget(Label(text="No characters found."))
+
         except Exception as e:
             logging.error(f"GAME_SETUP: Failed to load character list: {e}")
-            self.character_names = [f'Error: Could not load characters']
+            self.character_select_list.clear_widgets()
+            self.character_select_list.add_widget(Label(text="Error: Could not load characters."))
         finally:
             if db:
                 db.close() # Always close the session
@@ -148,20 +173,27 @@ class GameSetupScreen(Screen):
 
     def start_game(self, instance):
         """Collects settings and navigates to the main game screen."""
-        # We'll need to store this data in the App or a game_state module
-        selected_char = self.party_spinner.text
+
+        # --- MODIFIED: Get all selected characters ---
+        selected_character_names = []
+        for name, checkbox in self.character_toggles.items():
+            if checkbox.active:
+                selected_character_names.append(name)
+
         difficulty = self.difficulty_spinner.text
 
-        if selected_char == 'No characters found' or 'Error' in selected_char:
-            logging.warning("GAME_SETUP: Cannot start game, no valid character selected.")
+        if not selected_character_names:
+            logging.warning("GAME_SETUP: Cannot start game, no character selected.")
+            # TODO: Show a popup to the user
             return
+        # --- END MODIFIED ---
 
-        logging.info(f"Starting game with {selected_char} at {difficulty} difficulty.")
+        logging.info(f"Starting game with party: {selected_character_names} at {difficulty} difficulty.")
 
         # Store settings in the app
         app = App.get_running_app()
         app.game_settings = {
-            'selected_character_name': selected_char,
+            'party_list': selected_character_names, # <-- Use new list
             'difficulty': difficulty
         }
 

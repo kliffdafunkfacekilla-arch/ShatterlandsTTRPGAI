@@ -73,6 +73,14 @@ def get_item_template_params(item_id: str) -> Dict:
         raise Exception(f"Item template '{item_id}' not found.")
     return template_data
 
+def get_loot_table(loot_table_ref: str) -> Dict:
+    """Looks up a loot table by its reference ID."""
+    loot_tables = _get_data("loot_tables")
+    loot_table = loot_tables.get(loot_table_ref)
+    if not loot_table:
+        raise Exception(f"Loot table '{loot_table_ref}' not found.")
+    return loot_table
+
 def generate_npc_template(generation_request: Dict) -> Dict:
     """Generates a full NPC template."""
     req_schema = rules_models.NpcGenerationRequest(**generation_request)
@@ -123,6 +131,10 @@ def get_armor_data(category_name: str) -> Dict:
         data = _get_data("armor").get("Natural/Unarmored")
     if not data: return {"skill": "Natural/Unarmored", "skill_stat": "Fortitude", "dr": 0}
     return data
+
+def get_all_abilities() -> Dict:
+    """Returns the full abilities data structure."""
+    return _get_data("ability_data")
 
 def get_all_ability_schools() -> List[str]:
     """Returns a list of all ability school names."""

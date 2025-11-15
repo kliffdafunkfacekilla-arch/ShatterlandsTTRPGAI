@@ -24,6 +24,7 @@ from .story_pkg import schemas as se_schemas
 from .story_pkg import database as se_db
 from .story_pkg import crud as se_crud
 from .story_pkg import models as se_models
+from . import ai_dm
 
 logger = logging.getLogger("monolith.story")
 
@@ -57,15 +58,21 @@ def handle_interaction(request: se_schemas.InteractionRequest) -> Dict[str, Any]
 
 def handle_narrative_prompt(actor_id: str, prompt_text: str) -> Dict[str, Any]:
     """
-    Handles a player's narrative input from the 'DM input' box.
+    Synchronous wrapper for the AI DM narration.
+    This is called directly by other modules (like the Kivy client).
+
+    --- MODIFIED: This now calls the AI_DM module. ---
     """
-    logger.info(f"[story.sync] Handling narrative prompt from '{actor_id}': '{prompt_text}'")
-    # In the future, this would call a generative AI model.
-    # For now, it returns a simple placeholder response.
-    return {
-        "success": True,
-        "message": f"You said: '{prompt_text}'. The DM ponders this..."
-    }
+    logger.info(f"[story.sync] Narrative prompt from {actor_id}: {prompt_text}")
+
+    # Instead of returning a placeholder, call the AI DM module
+    try:
+        response = ai_dm.get_narrative_response(actor_id, prompt_text)
+        return response
+
+    except Exception as e:
+        logger.exception(f"Call to AI DM module failed: {e}")
+        return {"success": False, "message": "The world feels unresponsive..."}
 
 async def _on_command_start_combat(topic: str, payload: Dict[str, Any]) -> None:
     bus = get_event_bus()
