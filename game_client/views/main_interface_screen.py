@@ -6,10 +6,14 @@ from monolith.modules.character_pkg import crud as char_crud
 from monolith.modules.character_pkg import services as char_services
 from monolith.modules.character_pkg.database import SessionLocal as CharSession
 from monolith.modules.world_pkg import crud as world_crud
-from monolith.modules.world_pkg.database import SessionLocal as WorldSessionexcept ImportError as e:
+from monolith.modules.world_pkg.database import SessionLocal as WorldSession
+from monolith.modules import character as character_api
+from monolith.modules import story as story_api # <-- ADD THIS
+from monolith.modules.story_pkg import schemas as story_schemas # <-- ADD THIS
+except ImportError as e:
 logging.error(f"MAIN_INTERFACE: Failed to import monolith modules: {e}")
 char_crud, char_services, CharSession = None, None, None
-world_crud, WorldSession = None, None# --- Client Asset Loader ---try:
+world_crud, WorldSession, character_api, story_api, story_schemas = None, None, None, None, None
 from game_client import asset_loaderexcept ImportError as e:
 logging.error(f"MAIN_INTERFACE: Failed to import asset_loader: {e}")
 asset_loader = None# Constants
@@ -202,6 +206,8 @@ party_list_container = ObjectProperty(None)
 # --- Game State Properties ---
 tile_sprites = ListProperty([])
 entity_sprites = ListProperty([])
+player_sprite = ObjectProperty(None)
+context_menu = ObjectProperty(None, allownone=True) # <-- ADD THIS
 
 # Store the context data
 active_character_context = ObjectProperty(None, force_dispatch=True)
@@ -391,7 +397,8 @@ return
 sheet_path, u, v, u2, v2 = render_info
 render_y = (map_height - 1 - player.position_y) * TILE_SIZE
 
-player_image = Image(
+# Create the image and store it in our property
+self.player_sprite = Image(
 source=sheet_path,
 texture=asset_loader.get_texture(sheet_path),
 tex_coords=(u, v, u2, v2),
@@ -399,8 +406,10 @@ size_hint=(None, None),
 size=(TILE_SIZE, TILE_SIZE),
 pos=(player.position_x * TILE_SIZE, render_y)
 )
-self.render_layout.add_widget(player_image)
-self.entity_sprites.append(player_image)
+
+# Add the stored sprite to the layout
+self.render_layout.add_widget(self.player_sprite)
+self.entity_sprites.append(self.player_sprite)
 logging.info(f"Player '{player.name}' rendered at ({player.position_x}, {player.position_y})")
 
 # --- UI Update Functions ---
@@ -434,3 +443,297 @@ self.ids.log_label.text += f"\n- {message}"
 def update_narration(self, message: str):
 """Replaces the narration text."""
 self.ids.narration_label.text = message
+
+def get_target_at_coord(self, tile_x: int, tile_y: int) -> Optional[tuple[str, dict]]:
+    """
+    Checks if an NPC or interactable object exists at these tile coordinates.
+    Returns a tuple: (target_type, target_data) or None
+    """
+    # 1. Check for NPCs
+    for npc in self.location_context.get('npcs', []):
+        coords = npc.get('coordinates')
+        if coords and coords[0] == tile_x and coords[1] == tile_y:
+            # Return 'npc' and the npc data dictionary
+            return "npc", npc
+
+    # 2. Check for Interactable Objects (ai_annotations)
+    annotations = self.location_context.get('ai_annotations', {})
+    for obj_id, obj_data in annotations.items():
+        coords = obj_data.get('coordinates')
+        if coords and coords[0] == tile_x and coords[1] == tile_y:
+            # Add the ID to the data so we can reference it
+            obj_data['id'] = obj_id
+            # Return 'object' and the annotation data
+            return "object", obj_data
+
+    # 3. Nothing found
+    return None
+
+def handle_examine(self, target_type: str, target_data: dict):
+    """(Client-side) Displays the description of a target."""
+    desc = "You see nothing special."
+    if target_type == "npc":
+        # We'd eventually get this from the rules_api, but for now, use template_id
+        desc = f"You see a {target_data.get('template_id', 'creature')}."
+    elif target_type == "object":
+        desc = target_data.get('description', f"You see a {target_data.get('id', 'thing')}.")
+
+    self.update_narration(desc)
+    self.update_log(f"Examined: {target_data.get('id', target_data.get('template_id', 'target'))}")
+
+def open_context_menu(self, target_type: str, target_data: dict, touch_pos):
+    """Creates and displays a right-click context menu."""
+    # Close any old menu
+    self.close_context_menu()
+
+    menu_items = []
+    target_id = target_data.get('id') or target_data.get('template_id')
+
+    # --- 1. Define Menu Items ---
+    if target_type == "npc":
+        menu_items.append(("Examine", partial(self.handle_examine, target_type, target_data)))
+        menu_items.append(("Attack", partial(self.initiate_combat, target_data))) # Use our existing combat function
+        menu_items.append(("Talk", partial(self.handle_interaction, target_id, "talk"))) # 'talk' is a placeholder
+
+    elif target_type == "object":
+        menu_items.append(("Examine", partial(self.handle_examine, target_type, target_data)))
+        menu_items.append(("Use", partial(self.handle_interaction, target_id, "use")))
+
+    if not menu_items:
+        return # No actions
+
+    # --- 2. Build Kivy Widgets ---
+    self.context_menu = BoxLayout(
+        orientation='vertical',
+        size_hint=(None, None),
+        width='150dp',
+        height=f"{len(menu_items) * 44}dp",
+        pos=touch_pos # Display at the click position
+    )
+
+    for text, callback in menu_items:
+        btn = Button(
+            text=text,
+            size_hint_y=None,
+            height='44dp'
+        )
+        btn.bind(on_release=callback)
+        self.context_menu.add_widget(btn)
+
+    # Add the menu to the root layout (not the map)
+    self.add_widget(self.context_menu)
+
+def close_context_menu(self, *args):
+    """Removes the context menu if it exists."""
+    if self.context_menu:
+        self.remove_widget(self.context_menu)
+        self.context_menu = None
+
+def handle_interaction(self, target_id: str, action_type: str, *args):
+    """
+    (Client -> Monolith) Calls the monolith's story module to perform an action.
+    """
+    self.close_context_menu()
+
+    if not story_api or not story_schemas:
+        self.update_narration("Error: Story module not loaded.")
+        return
+
+    actor_id = self.active_character_context.id
+    loc_id = self.active_character_context.current_location_id
+
+    self.update_log(f"Attempting '{action_type}' on '{target_id}'...")
+
+    try:
+        # 1. Create the request schema
+        request = story_schemas.InteractionRequest(
+            actor_id=actor_id,
+            location_id=loc_id,
+            target_object_id=target_id, # The handler expects this field
+            interaction_type=action_type
+        )
+
+        # 2. Call the synchronous story_api function
+        response_dict = story_api.handle_interaction(request)
+
+        # 3. Process the response dictionary
+        response = story_schemas.InteractionResponse(**response_dict)
+
+        self.update_narration(response.message)
+
+        # 4. If the world state changed, we must update our local context
+        if response.success and response.updated_annotations:
+            self.location_context['ai_annotations'] = response.updated_annotations
+            # Re-render the scene to show changes (e.g., open door)
+            self.build_scene()
+
+        # TODO: Handle items_added, items_removed
+
+    except Exception as e:
+        logging.exception(f"Interaction failed: {e}")
+        self.update_narration(f"An error occurred: {e}")
+
+def initiate_combat(self, target_npc: dict):
+    """
+    (Client -> Monolith) Calls the story API to start a combat encounter.
+    """
+    if not story_api or not story_schemas:
+        self.update_narration("Error: Story module not loaded.")
+        return
+
+    app = App.get_running_app()
+    actor_id = self.active_character_context.id
+    loc_id = self.active_character_context.current_location_id
+
+    # NPCs in the location_context are dicts, not full schemas.
+    # We need the template_id to start combat.
+    npc_template_id = target_npc.get('template_id')
+    if not npc_template_id:
+        self.update_log(f"Cannot start combat: NPC has no template_id.")
+        return
+
+    self.update_log(f"You attack the {npc_template_id}!")
+
+    try:
+        # 1. Create the request schema
+        request = story_schemas.CombatStartRequest(
+            location_id=loc_id,
+            player_ids=[actor_id], # Just our active player for now
+            npc_template_ids=[npc_template_id] # Just the NPC we clicked
+        )
+
+        # 2. Call the new synchronous story_api function
+        combat_state_dict = story_api.start_combat(request)
+
+        # 3. Store the combat state in the app
+        app.game_settings['combat_state'] = combat_state_dict
+
+        # 4. Transition to the Combat Screen
+        app.root.current = 'combat_screen'
+
+    except Exception as e:
+        logging.exception(f"Failed to start combat: {e}")
+        self.update_narration(f"An error occurred: {e}")
+
+# --- Add these new methods inside the MainInterfaceScreen class ---
+
+def is_tile_passable(self, tile_x: int, tile_y: int) -> bool:
+    """Checks if a given tile coordinate is walkable."""
+    if not self.location_context:
+        return False
+    tile_map = self.location_context.get('generated_map_data')
+    if not tile_map:
+        return False
+
+    map_height = len(tile_map)
+    map_width = len(tile_map[0])
+
+    # 1. Check map bounds
+    if not (0 <= tile_x < map_width and 0 <= tile_y < map_height):
+        return False
+
+    # 2. Get tile ID from map data
+    try:
+        tile_id = tile_map[tile_y][tile_x] # y is row, x is col
+    except IndexError:
+        return False
+
+    # 3. Get tile definition from asset loader
+    tile_def = asset_loader.get_tile_definition(tile_id)
+    if not tile_def:
+        logging.warning(f"No tile definition found for ID {tile_id}")
+        return False # Unknown tiles are not passable
+
+    # 4. Return the 'passable' status
+    return tile_def.get('passable', False)
+
+def move_player_to(self, tile_x: int, tile_y: int):
+    """Calls the monolith to update position and moves the sprite."""
+    if not self.active_character_context or not self.player_sprite:
+        return
+
+    try:
+        # 1. Call Monolith to update the database
+        char_id = self.active_character_context.id
+        loc_id = self.active_character_context.current_location_id
+        new_coords = [tile_x, tile_y]
+
+        # This is a synchronous, direct-call to the monolith module
+        updated_context_dict = character_api.update_character_location(
+            char_id, loc_id, new_coords
+        )
+
+        # 2. Update local context in memory
+        self.active_character_context.position_x = updated_context_dict.get('position_x', tile_x)
+        self.active_character_context.position_y = updated_context_dict.get('position_y', tile_y)
+
+        # 3. Update sprite position on screen
+        map_height = len(self.location_context.get('generated_map_data', []))
+        # Kivy Y is flipped
+        render_y = (map_height - 1 - tile_y) * TILE_SIZE
+        self.player_sprite.pos = (tile_x * TILE_SIZE, render_y)
+
+        self.update_log(f"Moved to ({tile_x}, {tile_y})")
+
+    except Exception as e:
+        logging.exception(f"Failed to move player: {e}")
+        self.update_log(f"Error: Could not move player.")
+
+def on_touch_down(self, touch):
+    """Handle mouse/touch input."""
+
+    # If a context menu is open, a click anywhere should close it.
+    if self.context_menu:
+        # Check if the click is *outside* the menu
+        if not self.context_menu.collide_point(*touch.pos):
+            self.close_context_menu()
+        return True # Consume the touch
+
+    # Check if the click is within the map rendering area
+    if not self.render_layout or not self.render_layout.collide_point(*touch.pos):
+        # If click is outside the map, let Kivy handle it (e.g., for buttons)
+        return super().on_touch_down(touch)
+
+    # --- Click is on the map ---
+
+    # 1. Convert window coordinates to tile coordinates
+    local_pos = self.render_layout.to_local(*touch.pos)
+    tile_x = int(local_pos[0] // TILE_SIZE)
+
+    map_height = len(self.location_context.get('generated_map_data', []))
+    if map_height == 0:
+        return True # No map
+
+    tile_y = (map_height - 1) - int(local_pos[1] // TILE_SIZE)
+
+    logging.debug(f"Map click at tile ({tile_x}, {tile_y}) - Button: {touch.button}")
+
+    # 2. Check for target at this coordinate
+    target = self.get_target_at_coord(tile_x, tile_y)
+
+    # 3. Handle Left-Click (Move or Examine)
+    if touch.button == 'left':
+        if target:
+            # Target found: Examine it
+            target_type, target_data = target
+            self.handle_examine(target_type, target_data)
+        else:
+            # No target: Attempt to move
+            if self.is_tile_passable(tile_x, tile_y):
+                self.move_player_to(tile_x, tile_y)
+            else:
+                logging.info(f"Clicked impassable tile at ({tile_x}, {tile_y})")
+                self.update_log("You can't move there.")
+
+    # 4. Handle Right-Click (Context Menu)
+    elif touch.button == 'right':
+        if target:
+            # Target found: Open context menu
+            target_type, target_data = target
+            self.open_context_menu(target_type, target_data, touch.pos)
+        else:
+            # No target: Do nothing
+            logging.debug("Right-clicked on empty tile.")
+            pass
+
+    return True # We consumed the touch
