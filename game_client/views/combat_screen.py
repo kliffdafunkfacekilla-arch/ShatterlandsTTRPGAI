@@ -63,6 +63,8 @@ class CombatScreen(Screen):
     current_action = StringProperty(None, allownone=True) # e.g., "attack"
     selected_ability_id = StringProperty(None, allownone=True) # For abilities
     ability_menu = ObjectProperty(None, allownone=True) # For ability pop-up
+    selected_item_id = StringProperty(None, allownone=True) # <-- ADD THIS
+    item_menu = ObjectProperty(None, allownone=True) # <-- ADD THIS
     is_player_turn = BooleanProperty(False)
 
     def __init__(self, **kwargs):
@@ -178,6 +180,8 @@ class CombatScreen(Screen):
             return
 
         self.current_action = None # Reset any pending actions
+        self.close_ability_menu() # <-- ADD THIS
+        self.close_item_menu() # <-- ADD THIS
 
         turn_order = self.combat_state.get('turn_order', [])
         current_index = self.combat_state.get('current_turn_index', 0)
@@ -208,7 +212,8 @@ class CombatScreen(Screen):
     def build_player_actions(self, player_id: str):
         """Populates the action bar with buttons for the player."""
         self.action_bar.clear_widgets()
-        self.close_ability_menu() # Ensure menu is closed on new turn
+        self.close_ability_menu() # Ensure all menus
+        self.close_item_menu() # are closed on new turn
 
         # --- Attack Button ---
         attack_btn = Button(text='Attack', font_size='18sp')
@@ -216,7 +221,11 @@ class CombatScreen(Screen):
 
         # --- Ability Button ---
         ability_btn = Button(text='Ability', font_size='18sp')
-        ability_.bind(on_release=self.open_ability_menu)
+        ability_btn.bind(on_release=self.open_ability_menu)
+
+        # --- Item Button ---
+        item_btn = Button(text='Item', font_size='18sp')
+        item_btn.bind(on_release=self.open_item_menu) # <-- HOOKED UP
 
         # --- Wait Button ---
         wait_btn = Button(text='Wait', font_size='18sp')
@@ -227,7 +236,7 @@ class CombatScreen(Screen):
 
         self.action_bar.add_widget(attack_btn)
         self.action_bar.add_widget(ability_btn)
-        self.action_bar.add_widget(Button(text='Item (TBD)'))
+        self.action_bar.add_widget(item_btn)
         self.action_bar.add_widget(wait_btn)
 
     def set_action_mode(self, action_name: str):
@@ -377,17 +386,80 @@ class CombatScreen(Screen):
         self.selected_ability_id = ability_id # Store the chosen ability
         self.set_action_mode("use_ability") # Set targeting mode
 
+    # --- Add these new methods for the Item Menu ---
+
+    def close_item_menu(self, *args):
+        """Removes the item pop-up menu if it exists."""
+        if self.item_menu:
+            # We must remove it from its parent (the main layout)
+            self.remove_widget(self.item_menu)
+            self.item_menu = None
+
+    def open_item_menu(self, *args):
+        """
+        Reads the player's inventory and shows a pop-up menu.
+        """
+        self.close_ability_menu() # Close other menus
+        self.close_item_menu() # Close self
+
+        # inventory is a dict: {"item_id": quantity}
+        inventory = self.player_context.inventory
+        if not inventory:
+            self.add_to_log("Your inventory is empty.")
+            return
+
+        # Create the pop-up menu
+        self.item_menu = BoxLayout(
+            orientation='vertical',
+            size_hint=(None, None),
+            width='200dp',
+            height=f"{len(inventory) * 44}dp",
+            pos_hint={'center_x': 0.5, 'top': 2.5} # Position it above the action bar
+        )
+
+        for item_id, quantity in inventory.items():
+            button_text = f"{item_id.replace('_', ' ').title()} (x{quantity})"
+
+            btn = Button(
+                text=button_text,
+                size_hint_y=None,
+                height='44dp'
+            )
+            # Bind the button to call select_item
+            btn.bind(on_release=partial(self.select_item, item_id))
+            self.item_menu.add_widget(btn)
+
+        self.add_widget(self.item_menu)
+
+    def select_item(self, item_id: str, *args):
+        """
+        Called when an item is chosen from the menu.
+        Sets targeting mode.
+        """
+        self.close_item_menu()
+
+        # TODO: Check if item is usable in combat
+        # For now, all items are usable
+
+        self.selected_item_id = item_id # Store the chosen item
+        self.set_action_mode("use_item") # Set targeting mode
+
     def on_touch_down(self, touch):
         """Handle mouse clicks for targeting."""
 
-        # If the ability menu is open, a click outside it should close it.
+        # If a menu is open, a click outside it should close it.
         if self.ability_menu:
             if not self.ability_menu.collide_point(*touch.pos):
                 self.close_ability_menu()
             return True # Consume the touch
 
+        if self.item_menu:
+            if not self.item_menu.collide_point(*touch.pos):
+                self.close_item_menu()
+            return True # Consume the touch
+
         # We only care about clicks if it's the player's turn
-        # and they are in a targeting mode (e.g., "attack" or "use_ability")
+        # and they are in a targeting mode
         if not self.is_player_turn or not self.current_action:
             return super().on_touch_down(touch)
 
@@ -396,6 +468,7 @@ class CombatScreen(Screen):
             self.add_to_log("Targeting cancelled. Click an action.")
             self.current_action = None
             self.selected_ability_id = None
+            self.selected_item_id = None # <-- ADD THIS
             return super().on_touch_down(touch)
 
         # --- Click is on the map and player is targeting ---
@@ -409,12 +482,15 @@ class CombatScreen(Screen):
 
         target = self.get_target_at_coord(tile_x, tile_y)
 
+        # TODO: Allow targeting self or allies for healing items
+
         if target:
             target_type, target_data = target
             if target_type == "npc":
                 target_id = f"npc_{target_data.get('id')}"
                 action_name = self.current_action
                 ability_id = self.selected_ability_id if action_name == "use_ability" else None
+                item_id = self.selected_item_id if action_name == "use_item" else None
 
                 self.add_to_log(f"You target {target_id} with {action_name}!")
 
@@ -422,7 +498,8 @@ class CombatScreen(Screen):
                 action = story_schemas.PlayerActionRequest(
                     action=action_name,
                     target_id=target_id,
-                    ability_id=ability_id # <-- Pass the selected ability
+                    ability_id=ability_id,
+                    item_id=item_id # <-- Pass the selected item
                 )
 
                 # Send it to the monolith
@@ -431,9 +508,11 @@ class CombatScreen(Screen):
                 # Clear targeting mode
                 self.current_action = None
                 self.selected_ability_id = None
+                self.selected_item_id = None
         else:
             self.add_to_log("You must target an enemy.")
             self.current_action = None # Cancel targeting
             self.selected_ability_id = None
+            self.selected_item_id = None
 
         return True # Consumed the touch
