@@ -30,73 +30,50 @@ logger = logging.getLogger("monolith.story")
 async def _on_command_start_combat(topic: str, payload: Dict[str, Any]) -> None:
     bus = get_event_bus()
     logger.info(f"[story] start_combat command received: {payload}")
-
     try:
-        # Build pydantic request model (validates payload shape)
         start_req = se_schemas.CombatStartRequest(**payload)
-
-        # Create a DB session for the story engine
         db = se_db.SessionLocal()
         try:
-            # Call our internal combat_handler
-            # This handler will internally call our monolith service APIs
-            db_combat = await se_combat.start_combat(db, start_req)
+            # --- THIS IS THE CHANGE: NO 'await' ---
+            db_combat = se_combat.start_combat(db, start_req)
         finally:
             db.close()
 
-        # Prepare a lightweight response for the UI / orchestrator
+        # ... (rest of the function is unchanged, await bus.publish is correct)
         participants = []
         for p in getattr(db_combat, "participants", []):
-            participants.append({
-                "actor_id": p.actor_id,
-                "actor_type": p.actor_type,
-                "initiative_roll": getattr(p, "initiative_roll", 0)
-            })
-
+            participants.append({ "actor_id": p.actor_id, "actor_type": p.actor_type, "initiative_roll": getattr(p, "initiative_roll", 0) })
         await bus.publish("story.combat_initialized", {
-            "combat_id": getattr(db_combat, "id", None),
-            "location_id": getattr(db_combat, "location_id", None),
-            "turn_order": getattr(db_combat, "turn_order", []),
-            "current_turn_index": getattr(db_combat, "current_turn_index", 0),
+            "combat_id": getattr(db_combat, "id", None), "location_id": getattr(db_combat, "location_id", None),
+            "turn_order": getattr(db_combat, "turn_order", []), "current_turn_index": getattr(db_combat, "current_turn_index", 0),
             "participants": participants
         })
-
     except Exception as e:
         logger.exception(f"Failed to start combat: {e}")
         await bus.publish("story.combat_start_failed", {"error": str(e), "payload": payload})
 
 async def _on_command_player_action(topic: str, payload: Dict[str, Any]) -> None:
-    """Handle a player or NPC action routed to the story engine.
-
-    Expected payload keys: combat_id (int), actor_id (str), action (dict)
-    """
     bus = get_event_bus()
     logger.info(f"[story] player_action command received: {payload}")
-
+    # ... (payload validation unchanged) ...
     combat_id = payload.get("combat_id")
     actor_id = payload.get("actor_id")
     action_data = payload.get("action") or {}
-
     if combat_id is None or actor_id is None:
-        logger.warning("player_action missing combat_id or actor_id")
         await bus.publish("story.player_action_failed", {"error": "missing combat_id/actor_id", "payload": payload})
         return
-
     try:
         db = se_db.SessionLocal()
         try:
             combat = se_crud.get_combat_encounter(db, combat_id)
             if not combat:
                 raise RuntimeError(f"Combat {combat_id} not found")
-
             action_req = se_schemas.PlayerActionRequest(**action_data)
 
-            # Call our internal combat_handler
-            result = await se_combat.handle_player_action(db, combat, actor_id, action_req)
+            # --- THIS IS THE CHANGE: NO 'await' ---
+            result = se_combat.handle_player_action(db, combat, actor_id, action_req)
         finally:
             db.close()
-
-        # Convert Pydantic result to dict for event bus
         await bus.publish("story.player_action_resolved", {"combat_id": combat_id, "result": result.model_dump() if hasattr(result, "model_dump") else result})
     except Exception as e:
         logger.exception(f"Error handling player action: {e}")
@@ -105,24 +82,20 @@ async def _on_command_player_action(topic: str, payload: Dict[str, Any]) -> None
 async def _on_command_interact(topic: str, payload: Dict[str, Any]) -> None:
     bus = get_event_bus()
     logger.info(f"[story] interact command: {payload}")
-
     try:
-        # Be tolerant of older/demo payload shapes
+        # (payload sanitation unchanged)
         sanitized = dict(payload)
         if "target_object_id" not in sanitized and "target_id" in sanitized:
             sanitized["target_object_id"] = sanitized.pop("target_id")
         if "actor_id" not in sanitized and "actor" in sanitized:
             sanitized["actor_id"] = sanitized.pop("actor")
         if "location_id" not in sanitized:
-            sanitized["location_id"] = 1 # Default location
-
+            sanitized["location_id"] = 1
         req = se_schemas.InteractionRequest(**sanitized)
 
-        # Call our internal interaction_handler
-        # This handler will internally call our monolith service APIs
-        result = await se_interaction.handle_interaction(req)
+        # --- THIS IS THE CHANGE: NO 'await' ---
+        result = se_interaction.handle_interaction(req)
 
-        # Convert Pydantic model -> dict for event bus
         resp = result.model_dump() if hasattr(result, "model_dump") else result
         await bus.publish("story.interaction_resolved", resp)
     except Exception as e:

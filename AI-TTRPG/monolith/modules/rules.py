@@ -55,8 +55,9 @@ def _get_data(key: str) -> Any:
             return {}
     return data
 
-# --- Public API Functions (mirroring original HTTP API) ---
-async def get_npc_generation_params(_client: Any, template_id: str) -> Dict:
+# --- Public API Functions (NOW SYNCHRONOUS) ---
+# (Removed _client: Any and async from all function definitions)
+def get_npc_generation_params(template_id: str) -> Dict:
     """Looks up the generation parameters for a given NPC template ID."""
     templates = _get_data("npc_templates")
     template_data = templates.get(template_id)
@@ -64,7 +65,7 @@ async def get_npc_generation_params(_client: Any, template_id: str) -> Dict:
         raise Exception(f"NPC template '{template_id}' not found.")
     return template_data
 
-async def get_item_template_params(_client: Any, item_id: str) -> Dict:
+def get_item_template_params(item_id: str) -> Dict:
     """Calls rules_engine to get definition for an item template ID."""
     templates = _get_data("item_templates")
     template_data = templates.get(item_id)
@@ -72,7 +73,7 @@ async def get_item_template_params(_client: Any, item_id: str) -> Dict:
         raise Exception(f"Item template '{item_id}' not found.")
     return template_data
 
-async def generate_npc_template(_client: Any, generation_request: Dict) -> Dict:
+def generate_npc_template(generation_request: Dict) -> Dict:
     """Generates a full NPC template."""
     req_schema = rules_models.NpcGenerationRequest(**generation_request)
     return rules_core.generate_npc_template_core(
@@ -81,26 +82,26 @@ async def generate_npc_template(_client: Any, generation_request: Dict) -> Dict:
         generation_rules=_get_data("generation_rules"),
     )
 
-async def roll_initiative(_client: Any, **stats) -> Dict:
+def roll_initiative(**stats) -> Dict:
     """Rolls initiative based on the provided attribute scores."""
     req_schema = rules_models.InitiativeRequest(**stats)
     result = rules_core.calculate_initiative(req_schema)
     return result.model_dump() # Convert Pydantic model to dict
 
-async def roll_contested_attack(_client: Any, attack_params: Dict) -> Dict:
+def roll_contested_attack(attack_params: Dict) -> Dict:
     """Performs a contested attack roll."""
     req_schema = rules_models.ContestedAttackRequest(**attack_params)
     result = rules_core.calculate_contested_attack(req_schema)
     return result.model_dump()
 
-async def calculate_damage(_client: Any, damage_params: Dict) -> Dict:
+def calculate_damage(damage_params: Dict) -> Dict:
     """Calculates final damage."""
     req_schema = rules_models.DamageRequest(**damage_params)
     result = rules_core.calculate_damage(req_schema)
     return result.model_dump()
 
-async def get_weapon_data(_client: Any, category_name: str, weapon_type: str) -> Dict:
-    """Looks up the stats for a specific weapon category."""
+def get_weapon_data(category_name: str, weapon_type: str) -> Dict:
+    # (This function's logic is unchanged)
     if weapon_type == "melee":
         data = _get_data("melee_weapons").get(category_name)
     elif weapon_type == "ranged":
@@ -109,28 +110,82 @@ async def get_weapon_data(_client: Any, category_name: str, weapon_type: str) ->
         raise Exception(f"Unknown weapon type: {weapon_type}")
 
     if not data:
-        # Fallback to Brawling/Unarmed
         logger.warning(f"Weapon category '{category_name}' not found. Defaulting to 'Unarmed/Fist Weapons'.")
         data = _get_data("melee_weapons").get("Unarmed/Fist Weapons")
-        if not data: # Handle deep fallback
-             return {"skill": "Unarmed/Fist Weapons", "skill_stat": "Fortitude", "damage": "1d4", "penalty": 0}
-
+    if not data: return {"skill": "Unarmed/Fist Weapons", "skill_stat": "Fortitude", "damage": "1d4", "penalty": 0}
     return data
 
-async def get_armor_data(_client: Any, category_name: str) -> Dict:
-    """Looks up the stats for a specific armor category."""
+def get_armor_data(category_name: str) -> Dict:
+    # (This function's logic is unchanged)
     data = _get_data("armor").get(category_name)
     if not data:
-         # Fallback to Unarmored
         logger.warning(f"Armor category '{category_name}' not found. Defaulting to 'Natural/Unarmored'.")
         data = _get_data("armor").get("Natural/Unarmored")
-        if not data: # Handle deep fallback
-            return {"skill": "Natural/Unarmored", "skill_stat": "Fortitude", "dr": 0}
-
+    if not data: return {"skill": "Natural/Unarmored", "skill_stat": "Fortitude", "dr": 0}
     return data
 
+def get_all_ability_schools() -> List[str]:
+    """Returns a list of all ability school names."""
+    return list(_get_data("ability_data").keys())
+
+def get_all_skills() -> Dict:
+    """Returns the full skills map."""
+    return _get_data("all_skills")
+
+def get_all_stats() -> List[str]:
+    """Returns the list of stats."""
+    return _get_data("stats_list")
+
+def get_all_talents_data() -> Dict:
+    """Returns the full structured talents data."""
+    return _get_data("talent_data")
+
+def get_ability_school(school_name: str) -> Dict:
+    """Looks up a single ability school."""
+    school = _get_data("ability_data").get(school_name)
+    if not school:
+        raise Exception(f"Ability school '{school_name}' not found.")
+    return {
+        "school": school_name,
+        "resource_pool": school.get("resource_pool", school.get("resource")),
+        "associated_stat": school.get("associated_stat", "Unknown"),
+        "tiers": school.get("branches", [])
+    }
+
+# (get_origin_choices, get_childhood_choices, etc. are all now sync)
+def get_origin_choices() -> List[Dict]:
+    return _get_data("origin_choices")
+
+def get_childhood_choices() -> List[Dict]:
+    return _get_data("childhood_choices")
+
+def get_coming_of_age_choices() -> List[Dict]:
+    return _get_data("coming_of_age_choices")
+
+def get_training_choices() -> List[Dict]:
+    return _get_data("training_choices")
+
+def get_devotion_choices() -> List[Dict]:
+    return _get_data("devotion_choices")
+
+def find_eligible_talents_api(payload: Dict) -> List[Dict]:
+    """API-compatible wrapper for finding talents."""
+    stats = payload.get("stats", {})
+    skills = payload.get("skills", {})
+    talents = rules_core.find_eligible_talents(
+        stats_in=stats,
+        skills_in=skills,
+        talent_data=_get_data("talent_data"),
+        stats_list=_get_data("stats_list"),
+        all_skills_map=_get_data("all_skills")
+    )
+    return [t.model_dump() for t in talents]
+
+def calculate_base_vitals_api(payload: Dict) -> Dict:
+    """API-compatible wrapper for calculating vitals."""
+    req_schema = rules_models.BaseVitalsRequest(**payload)
+    result = rules_core.calculate_base_vitals(req_schema.stats)
+    return result.model_dump()
+
 def register(orchestrator) -> None:
-    # This module is now self-contained. It doesn't need to subscribe
-    # to the event bus, but it's loaded and its data is cached.
-    # Other modules (like 'story') will import and call its functions.
     logger.info("[rules] module registered (self-contained logic)")

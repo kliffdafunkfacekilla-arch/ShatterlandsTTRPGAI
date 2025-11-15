@@ -103,174 +103,74 @@ def get_character_context(
         # --- END ADD ---
     )
 # --- MODIFIED: Helper functions for new creation logic ---
-async def _call_rules_engine(
-    method: str, endpoint: str, params: Dict = None, json_data: Dict = None
-) -> Any:
-    """Generic async helper to call the Rules Engine."""
-    url = f"{RULES_ENGINE_URL}{endpoint}"
-    try:
-        async with httpx.AsyncClient() as client:
-            logger.info(f"Calling Rules Engine: {method} {url}")
-            if method.upper() == "GET":
-                response = await client.get(url, params=params, timeout=CLIENT_TIMEOUT)
-            elif method.upper() == "POST":
-                response = await client.post(
-                    url, json=json_data, params=params, timeout=CLIENT_TIMEOUT
-                )
-            else:
-                raise ValueError(f"Unsupported HTTP method: {method}")
-
-            response.raise_for_status() # Raise exception for 4xx/5xx errors
-            logger.info(f"Rules Engine response status: {response.status_code}")
-            return response.json()
-    except httpx.RequestError as e:
-        logger.error(f"Error connecting to Rules Engine at {e.request.url!r}: {e}")
-        # Re-raise as an HTTPException for FastAPI to handle
-        from fastapi import HTTPException
-
-        raise HTTPException(
-            status_code=503, detail=f"Rules Engine service unavailable: {e}"
-        )
-    except httpx.HTTPStatusError as e:
-        logger.error(
-            f"Rules Engine returned error {e.response.status_code}: {e.response.text}"
-        )
-        from fastapi import HTTPException
-
-        raise HTTPException(
-            status_code=e.response.status_code,
-            detail=f"Rules Engine error: {e.response.text}",
-        )
-async def get_eligible_talents(
-    stats: Dict[str, int], skills: Dict[str, int]
-) -> List[Dict]:
-    """Fetches eligible talents from the Rules Engine."""
-    request_data = {"stats": stats, "skills": skills} # Pass skill ranks directly
-    return await _call_rules_engine(
-        "POST", "/lookup/talents", json_data=request_data
-    )
-async def _get_rules_engine_data() -> Dict[str, Any]:
+def _get_rules_engine_data() -> Dict[str, Any]:
     """
-    Fetches all necessary data from the rules_engine service asynchronously.
+    Fetches all necessary data from the rules_engine module SYNCHRONOUSLY.
+    This replaces the old async/httpx version.
     """
-    print("Fetching all creation data from Rules Engine...")
-    endpoints = {
-        "kingdom_features": "/lookup/creation/kingdom_features",
-        # "ability_talents_list": "/lookup/creation/ability_talents", # This endpoint is flawed/redundant
-        "ability_schools": "/lookup/all_ability_schools",
-        "stats_list": "/lookup/all_stats",
-        "all_skills": "/lookup/all_skills",
-        "origin_choices": "/lookup/creation/origin_choices",
-        "childhood_choices": "/lookup/creation/childhood_choices",
-        "coming_of_age_choices": "/lookup/creation/coming_of_age_choices",
-        "training_choices": "/lookup/creation/training_choices",
-        "devotion_choices": "/lookup/creation/devotion_choices",
-        # --- ADDED: New endpoint for all talent data ---
-        "all_talents_structured": "/lookup/all_talents_data",
-    }
+    if not rules_api:
+        raise Exception("Rules module is not loaded.")
 
-    rules_data = {}
+    logger.info("Fetching all creation data from Rules Module (sync)...")
 
     try:
-        # GET requests
-        for key, endpoint in endpoints.items():
-            print(f"Fetching {key} from {endpoint}...")
-            rules_data[key] = await _call_rules_engine("GET", endpoint)
+        # All data is already loaded into memory by rules_api,
+        # we just call the helper getters.
+        rules_data = {
+            "kingdom_features": rules_api._get_data("kingdom_features_data"),
+            "ability_schools": list(rules_api._get_data("ability_data").keys()),
+            "stats_list": rules_api._get_data("stats_list"),
+            "all_skills": rules_api._get_data("all_skills"),
+            "origin_choices": rules_api._get_data("origin_choices"),
+            "childhood_choices": rules_api._get_data("childhood_choices"),
+            "coming_of_age_choices": rules_api._get_data("coming_of_age_choices"),
+            "training_choices": rules_api._get_data("training_choices"),
+            "devotion_choices": rules_api._get_data("devotion_choices"),
+            "all_talents_structured": rules_api._get_data("talent_data"),
+        }
 
-        # --- MODIFIED: Flatten the structured talent data into the map ---
+        # --- (This talent-flattening logic is the same as before) ---
         all_talents_map = {}
         structured_talents = rules_data.get("all_talents_structured", {})
-
         if not structured_talents:
-             print("WARNING: 'all_talents_structured' data is empty. Talent map will be empty.")
-             logger.warning("Received empty talent data from rules_engine. This may cause ability talent selection to fail.")
+            logger.warning("Received empty talent data from rules module.")
         else:
-            # Flatten single_stat_mastery
-            single_stat_talents = structured_talents.get("single_stat_mastery", [])
-            if not isinstance(single_stat_talents, list):
-                logger.error(f"Expected single_stat_mastery to be a list, got {type(single_stat_talents)}")
-                single_stat_talents = []
-
-            for talent in single_stat_talents:
-                if not isinstance(talent, dict):
-                    logger.warning(f"Skipping non-dict talent in single_stat_mastery: {talent}")
-                    continue
-                talent_name = talent.get("talent_name")
-                if talent_name:
-                    all_talents_map[talent_name] = talent
-                else:
-                    logger.debug(f"Talent in single_stat_mastery missing 'talent_name': {talent}")
-
-            # Flatten dual_stat_focus
-            dual_stat_talents = structured_talents.get("dual_stat_focus", [])
-            if not isinstance(dual_stat_talents, list):
-                logger.error(f"Expected dual_stat_focus to be a list, got {type(dual_stat_talents)}")
-                dual_stat_talents = []
-
-            for talent in dual_stat_talents:
-                if not isinstance(talent, dict):
-                    logger.warning(f"Skipping non-dict talent in dual_stat_focus: {talent}")
-                    continue
-                talent_name = talent.get("talent_name")
-                if talent_name:
-                    all_talents_map[talent_name] = talent
-                else:
-                    logger.debug(f"Talent in dual_stat_focus missing 'talent_name': {talent}")
-
-            # Flatten single_skill_mastery (this one is nested)
-            skill_mastery_data = structured_talents.get("single_skill_mastery", {})
-            if not isinstance(skill_mastery_data, dict):
-                logger.error(f"Expected single_skill_mastery to be a dict, got {type(skill_mastery_data)}")
-                skill_mastery_data = {}
-
-            for category_name, category_list in skill_mastery_data.items():
-                if not isinstance(category_list, list):
-                    logger.warning(f"Skipping single_skill_mastery category '{category_name}': expected list, got {type(category_list)}")
-                    continue
-
-                for skill_group in category_list:
-                    if not isinstance(skill_group, dict):
-                        logger.warning(f"Skipping non-dict skill_group in category '{category_name}'")
-                        continue
-
-                    talents_list = skill_group.get("talents", [])
-                    if not isinstance(talents_list, list):
-                        logger.warning(f"Skipping talent list in {category_name}/{skill_group.get('skill', 'Unknown')}: expected list, got {type(talents_list)}")
-                        continue
-
-                    for talent in talents_list:
-                        if not isinstance(talent, dict):
-                            logger.warning(f"Skipping non-dict talent in {category_name}")
-                            continue
-
-                        # Check both 'talent_name' (primary) and 'name' (fallback) for inconsistent JSON
-                        talent_name = talent.get("talent_name") or talent.get("name")
-                        if talent_name:
-                            all_talents_map[talent_name] = talent
-                        else:
-                            logger.debug(f"Talent in {category_name} missing both 'talent_name' and 'name' fields: {talent}")
-
+            for talent in structured_talents.get("single_stat_mastery", []):
+                if isinstance(talent, dict) and "talent_name" in talent:
+                    all_talents_map[talent["talent_name"]] = talent
+            for talent in structured_talents.get("dual_stat_focus", []):
+                if isinstance(talent, dict) and "talent_name" in talent:
+                    all_talents_map[talent["talent_name"]] = talent
+            for category_list in structured_talents.get("single_skill_mastery", {}).values():
+                if isinstance(category_list, list):
+                    for skill_group in category_list:
+                        if isinstance(skill_group, dict):
+                            for talent in skill_group.get("talents", []):
+                                if isinstance(talent, dict):
+                                    talent_name = talent.get("talent_name") or talent.get("name")
+                                    if talent_name:
+                                        all_talents_map[talent_name] = talent
         rules_data["all_talents_map"] = all_talents_map
-        print(f"Loaded {len(rules_data['all_talents_map'])} talents into map.")
-        if not all_talents_map:
-            print("WARNING: Talent map is empty after processing. Check rules_engine/data/talents.json")
-            logger.warning("Talent map is completely empty after processing all_talents_structured data.")
-        # --- END MODIFICATION ---
+        logger.info(f"Loaded {len(all_talents_map)} talents into map.")
 
-        # Fetch full ability school data (Series of GETs)
+        # --- Get Ability School Details (Sync) ---
         school_details = {}
+        all_abilities_map = rules_api._get_data("ability_data")
         for school_name in rules_data["ability_schools"]:
-            school_details[school_name] = await _call_rules_engine(
-                "GET", f"/lookup/ability_school/{school_name}"
-            )
+            school_data = all_abilities_map.get(school_name, {})
+            school_details[school_name] = {
+                "school": school_name,
+                "resource_pool": school_data.get("resource_pool", school_data.get("resource")),
+                "associated_stat": school_data.get("associated_stat", "Unknown"),
+                "tiers": school_data.get("branches", [])
+            }
         rules_data["all_abilities_map"] = school_details
 
-        print("Successfully fetched all creation data.")
+        logger.info("Successfully fetched all creation data (sync).")
         return rules_data
 
     except Exception as e:
-        # Errors will be raised as HTTPErrors from the helper
-        print(f"FATAL: Error in _get_rules_engine_data: {e}")
+        logger.exception(f"FATAL: Error in _get_rules_engine_data (sync): {e}")
         raise e
 def _apply_mods(stats: Dict[str, int], mods: Dict[str, List[str]]):
     """
