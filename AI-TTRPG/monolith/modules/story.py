@@ -11,7 +11,7 @@ This module subscribes to:
 
 And publishes story.* events returned by those handlers.
 """
-from typing import Any, Dict
+from typing import Any, Dict, List
 import asyncio
 import logging
 import httpx # Keep httpx for the *internal* async client pattern
@@ -54,6 +54,28 @@ def handle_interaction(request: se_schemas.InteractionRequest) -> Dict[str, Any]
             "items_added": None,
             "items_removed": None,
         }
+
+def handle_narrative_prompt(actor_id: str, prompt_text: str) -> Dict[str, Any]:
+    """
+    Synchronous wrapper for the AI DM narration.
+    This is called directly by other modules (like the Kivy client).
+    """
+    logger.info(f"[story.sync] Narrative prompt from {actor_id}: {prompt_text}")
+
+    # --- AI INTEGRATION POINT ---
+    # This is where you would get the character/world context and
+    # send it to a generative AI model with the prompt.
+
+    # For now, return a placeholder response
+    response_message = f"You ponder: '{prompt_text}'. The world doesn't seem to react... yet."
+
+    return {
+        "success": True,
+        "message": response_message,
+        "updated_annotations": None,
+        "items_added": None,
+        "items_removed": None,
+    }
 
 async def _on_command_start_combat(topic: str, payload: Dict[str, Any]) -> None:
     bus = get_event_bus()
@@ -147,3 +169,21 @@ def register(orchestrator) -> None:
     asyncio.create_task(bus.subscribe("command.story.advance_narrative", _on_command_advance_narrative))
     asyncio.create_task(bus.subscribe("command.story.player_action", _on_command_player_action))
     logger.info("[story] module registered (self-contained logic)")
+
+def get_all_quests(campaign_id: int) -> List[Dict[str, Any]]:
+    """
+    Synchronous wrapper to get all active quests for a campaign.
+    This is called directly by other modules (like the Kivy client).
+    """
+    logger.info(f"[story.sync] Getting all quests for campaign {campaign_id}")
+    db = se_db.SessionLocal()
+    try:
+        db_quests = se_crud.get_all_quests(db, campaign_id)
+        # Convert models to dictionaries
+        quests_list = [se_schemas.ActiveQuest.from_orm(q).model_dump() for q in db_quests]
+        return quests_list
+    except Exception as e:
+        logger.exception(f"[story.sync] Failed to get quests: {e}")
+        return []
+    finally:
+        db.close()
