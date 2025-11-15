@@ -7,19 +7,16 @@ import datetime
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.uix.screenmanager import Screen
-from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.anchorlayout import AnchorLayout
-from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
-from kivy.uix.popup import Popup # <-- ADD THIS IMPORT
+from kivy.uix.popup import Popup
 from kivy.properties import ObjectProperty, ListProperty, StringProperty
 from kivy.core.window import Window
 from kivy.clock import Clock
 from functools import partial
-from typing import Optional
+from typing import Optional, List
 
 # --- Monolith Imports ---
 try:
@@ -30,28 +27,26 @@ try:
     from monolith.modules.world_pkg.database import SessionLocal as WorldSession
     from monolith.modules import character as character_api
     from monolith.modules import story as story_api
-    from monolith.modules import save_api # <-- ADD THIS IMPORT
+    from monolith.modules import save_api
     from monolith.modules.story_pkg import schemas as story_schemas
+    from monolith.modules.character_pkg.schemas import CharacterContextResponse
 except ImportError as e:
     logging.error(f"MAIN_INTERFACE: Failed to import monolith modules: {e}")
     char_crud, char_services, CharSession = None, None, None
     world_crud, WorldSession = None, None
     character_api, story_api, story_schemas = None, None, None
-    save_api = None # <-- ADD THIS
+    save_api = None
+    CharacterContextResponse = None
 
 # --- Client Imports ---
 try:
     from game_client import asset_loader
-    from game_client.views.map_view_widget import MapViewWidget # <-- IMPORT OUR NEW WIDGET
+    from game_client.views.map_view_widget import MapViewWidget
 except ImportError as e:
     logging.error(f"MAIN_INTERFACE: Failed to import client modules: {e}")
     asset_loader = None
     MapViewWidget = None
 
-# Constants
-TILE_SIZE = 64 # Must match the MapViewWidget's TILE_SIZE
-
-# --- Kivy Language (KV) String for the UI Layout ---
 MAIN_INTERFACE_KV = """
 <MainInterfaceScreen>:
     log_label: log_label
@@ -188,11 +183,9 @@ MAIN_INTERFACE_KV = """
                 Button:
                     text: 'Menu'
                     on_release: app.root.current = 'main_menu'
-
                 Button:
-                    text: 'Save Game' # <-- ADD THIS BUTTON
+                    text: 'Save Game'
                     on_release: root.show_save_popup()
-
                 Button:
                     text: 'Character'
                     on_release: app.root.current = 'character_sheet'
@@ -206,6 +199,7 @@ MAIN_INTERFACE_KV = """
 Builder.load_string(MAIN_INTERFACE_KV)
 
 class MainInterfaceScreen(Screen):
+    # ... (all existing ObjectProperty references) ...
     log_label = ObjectProperty(None)
     narration_label = ObjectProperty(None)
     dm_input = ObjectProperty(None)
@@ -215,11 +209,16 @@ class MainInterfaceScreen(Screen):
     party_list_container = ObjectProperty(None)
     map_view_widget = ObjectProperty(None)
     map_view_anchor = ObjectProperty(None)
-    context_menu = ObjectProperty(None, allownone=True)
+    save_popup = ObjectProperty(None, allownone=True)
+
+    # --- MODIFIED: State Properties ---
     active_character_context = ObjectProperty(None, force_dispatch=True)
     location_context = ObjectProperty(None, force_dispatch=True)
+
+    # This holds the full context for ALL party members
+    party_contexts = ListProperty([])
+    # This is bound to the UI panel
     party_list = ListProperty([])
-    save_popup = ObjectProperty(None, allownone=True) # <-- ADD THIS
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -227,11 +226,12 @@ class MainInterfaceScreen(Screen):
             self.map_view_widget = MapViewWidget()
         else:
             logging.error("CRITICAL: MapViewWidget failed to import, UI will be broken.")
+
+        # --- BINDINGS ---
         self.bind(active_character_context=self.update_active_character_ui)
-        self.bind(party_list=self.update_party_list_ui)
+        self.bind(party_list=self.update_party_list_ui) # This now updates the party panel
         Window.bind(on_resize=self.center_layout)
 
-        # --- ADD BINDING FOR DM INPUT ---
         # We must schedule this to run after the KV string is loaded
         Clock.schedule_once(self._bind_inputs)
 
@@ -250,6 +250,9 @@ class MainInterfaceScreen(Screen):
             )
 
     def on_enter(self, *args):
+        """
+        MODIFIED: Loads the *entire party* and the location.
+        """
         logging.info("Entering Main Interface Screen. Loading game state...")
         if self.map_view_anchor and self.map_view_widget:
             self.map_view_anchor.clear_widgets()
@@ -257,38 +260,56 @@ class MainInterfaceScreen(Screen):
         else:
             logging.error("CRITICAL: 'map_view_anchor' not found or MapViewWidget is None.")
             return
+
         app = App.get_running_app()
         if not app.game_settings:
             logging.error("No game settings found! Returning to menu.")
             app.root.current = 'main_menu'
             return
-        char_name = app.game_settings.get('selected_character_name')
-        if not char_name:
-            logging.error("No character name in game settings! Returning to menu.")
+
+        # --- MODIFIED: Load Full Party ---
+        char_names = app.game_settings.get('party_list')
+        if not char_names:
+            logging.error("No party_list in game settings! Returning to menu.")
             app.root.current = 'main_menu'
             return
+
         if not char_crud or not world_crud or not asset_loader:
             logging.error("A required monolith module or asset loader is not available.")
             return
+
+        self.party_contexts.clear()
         char_db = None
         try:
             char_db = CharSession()
-            db_char = char_crud.get_character_by_name(char_db, char_name)
-            if not db_char:
-                raise Exception(f"Character '{char_name}' not found in database.")
-            self.active_character_context = char_services.get_character_context(db_char)
-            self.party_list = [self.active_character_context]
-            logging.info(f"Loaded context for {self.active_character_context.name}")
+            for char_name in char_names:
+                db_char = char_crud.get_character_by_name(char_db, char_name)
+                if not db_char:
+                    raise Exception(f"Character '{char_name}' not found in database.")
+
+                context = char_services.get_character_context(db_char)
+                self.party_contexts.append(context)
+
+            # Set the first character as active by default
+            self.active_character_context = self.party_contexts[0]
+            # Set the party_list to trigger the UI update
+            self.party_list = self.party_contexts
+
+            logging.info(f"Loaded party: {[c.name for c in self.party_contexts]}")
+
         except Exception as e:
-            logging.error(f"Failed to load character '{char_name}': {e}")
+            logging.error(f"Failed to load party: {e}")
             if char_db: char_db.close()
             app.root.current = 'main_menu'
             return
         finally:
             if char_db: char_db.close()
+        # --- END MODIFIED ---
+
+        # ... (Location loading is unchanged) ...
         world_db = None
         try:
-            loc_id = self.active_character_context.current_location_id
+            loc_id = self.active_character_context.current_location_id # Use active char's location
             world_db = WorldSession()
             self.location_context = world_crud.get_location_context(world_db, loc_id)
             if not self.location_context:
@@ -301,14 +322,16 @@ class MainInterfaceScreen(Screen):
             return
         finally:
             if world_db: world_db.close()
+
         self.build_scene()
         self.center_layout(Window, Window.width, Window.height)
 
     def build_scene(self):
         if self.map_view_widget:
+            # --- MODIFIED: Pass the full party list ---
             self.map_view_widget.build_scene(
                 self.location_context,
-                self.active_character_context
+                self.party_contexts # Pass the full list
             )
             self.map_view_anchor.size = self.map_view_widget.size
         else:
@@ -323,14 +346,34 @@ class MainInterfaceScreen(Screen):
             self.ids.active_char_status.text = "HP: --/--"
 
     def update_party_list_ui(self, *args):
+        """
+        MODIFIED: Creates clickable buttons for each party member.
+        """
         self.ids.party_list_container.clear_widgets()
         for char_context in self.party_list:
-            party_member_label = Label(
+
+            # --- Use a Button instead of a Label ---
+            party_member_button = Button(
                 text=f"{char_context.name} (HP: {char_context.current_hp})",
                 size_hint_y=None,
                 height='30dp'
             )
-            self.ids.party_list_container.add_widget(party_member_label)
+
+            # Highlight the active character
+            if char_context.id == self.active_character_context.id:
+                party_member_button.background_color = (0.5, 0.5, 1, 1) # Blueish tint
+
+            # Bind the button to switch active character
+            party_member_button.bind(on_release=partial(self.set_active_character, char_context))
+
+            self.ids.party_list_container.add_widget(party_member_button)
+
+    def set_active_character(self, char_context, *args):
+        """Callback to switch the active character."""
+        self.active_character_context = char_context
+        self.update_log(f"{char_context.name} is now the active character.")
+        # Re-firing update_party_list_ui will update the highlighting
+        self.update_party_list_ui()
 
     def update_log(self, message: str):
         self.ids.log_label.text += f"\n- {message}"
@@ -364,160 +407,61 @@ class MainInterfaceScreen(Screen):
         if not self.active_character_context or not self.map_view_widget:
             return
         try:
-            char_id = self.active_character_context.id
+            char_id = self.active_character_context.id # Use active char's ID
             loc_id = self.active_character_context.current_location_id
             new_coords = [tile_x, tile_y]
+
+            # This API call is correct, it updates the specific char
             updated_context_dict = character_api.update_character_location(
                 char_id, loc_id, new_coords
             )
+
+            # Update the context in our list
             self.active_character_context.position_x = updated_context_dict.get('position_x', tile_x)
             self.active_character_context.position_y = updated_context_dict.get('position_y', tile_y)
-            self.map_view_widget.move_player_sprite(tile_x, tile_y, self.get_map_height())
-            self.update_log(f"Moved to ({tile_x}, {tile_y})")
+
+            # --- MODIFIED: Call the new move function ---
+            self.map_view_widget.move_active_player_sprite(
+                char_id, tile_x, tile_y, self.get_map_height()
+            )
+            self.update_log(f"{self.active_character_context.name} moved to ({tile_x}, {tile_y})")
+
         except Exception as e:
             logging.exception(f"Failed to move player: {e}")
             self.update_log(f"Error: Could not move player.")
 
-    def get_target_at_coord(self, tile_x: int, tile_y: int) -> Optional[tuple[str, dict]]:
-        for npc in self.location_context.get('npcs', []):
-            coords = npc.get('coordinates')
-            if coords and coords[0] == tile_x and coords[1] == tile_y:
-                return "npc", npc
-        annotations = self.location_context.get('ai_annotations', {})
-        for obj_id, obj_data in annotations.items():
-            coords = obj_data.get('coordinates')
-            if coords and coords[0] == tile_x and coords[1] == tile_y:
-                obj_data['id'] = obj_id
-                return "object", obj_data
-        return None
+    def on_submit_narration(self, instance):
+        """Called when the user presses Enter in the DM input box."""
+        prompt_text = instance.text
+        if not prompt_text:
+            return
 
-    def handle_examine(self, target_type: str, target_data: dict, *args):
-        self.close_context_menu()
-        desc = "You see nothing special."
-        if target_type == "npc":
-            desc = f"You see a {target_data.get('template_id', 'creature')}."
-        elif target_type == "object":
-            desc = target_data.get('description', f"You see a {target_data.get('id', 'thing')}.")
-        self.update_narration(desc)
-        self.update_log(f"Examined: {target_data.get('id', target_data.get('template_id', 'target'))}")
+        instance.text = ""
 
-    def open_context_menu(self, target_type: str, target_data: dict, touch_pos):
-        self.close_context_menu()
-        menu_items = []
-        target_id = target_data.get('id') or target_data.get('template_id')
-        if target_type == "npc":
-            menu_items.append(("Examine", partial(self.handle_examine, target_type, target_data)))
-            menu_items.append(("Attack", partial(self.initiate_combat, target_data)))
-            menu_items.append(("Talk", partial(self.handle_interaction, target_id, "talk")))
-        elif target_type == "object":
-            menu_items.append(("Examine", partial(self.handle_examine, target_type, target_data)))
-            menu_items.append(("Use", partial(self.handle_interaction, target_id, "use")))
-            menu_items.append(("Bash", partial(self.handle_interaction, target_id, "bash")))
-        if not menu_items: return
-        self.context_menu = BoxLayout(
-            orientation='vertical', size_hint=(None, None),
-            width='150dp', height=f"{len(menu_items) * 44}dp",
-            pos=touch_pos
-        )
-        for text, callback in menu_items:
-            btn = Button(text=text, size_hint_y=None, height='44dp')
-            btn.bind(on_release=callback)
-            self.context_menu.add_widget(btn)
-        self.add_widget(self.context_menu)
+        if not self.active_character_context:
+            logging.error("Cannot submit prompt, no active character.")
+            return
 
-    def close_context_menu(self, *args):
-        if self.context_menu:
-            self.remove_widget(self.context_menu)
-            self.context_menu = None
-
-    def handle_interaction(self, target_id: str, action_type: str, *args):
-        self.close_context_menu()
-        if not story_api or not story_schemas:
+        if not story_api:
+            logging.error("Cannot submit prompt, story_api not loaded.")
             self.update_narration("Error: Story module not loaded.")
             return
+
         actor_id = self.active_character_context.id
-        loc_id = self.active_character_context.current_location_id
-        self.update_log(f"Attempting '{action_type}' on '{target_id}'...")
+        self.update_log(f"You: {prompt_text}")
+
         try:
-            request = story_schemas.InteractionRequest(
-                actor_id=actor_id, location_id=loc__id,
-                target_object_id=target_id, interaction_type=action_type
-            )
-            response_dict = story_api.handle_interaction(request)
-            response = story_schemas.InteractionResponse(**response_dict)
-            self.update_narration(response.message)
-            if response.success and response.updated_annotations:
-                self.location_context['ai_annotations'] = response.updated_annotations
-                self.build_scene()
+            response = story_api.handle_narrative_prompt(actor_id, prompt_text)
+            self.update_narration(response.get("message", "An error occurred."))
         except Exception as e:
-            logging.exception(f"Interaction failed: {e}")
-            self.update_narration(f"An error occurred: {e}")
-
-    def initiate_combat(self, target_npc: dict, *args):
-        self.close_context_menu()
-        if not story_api or not story_schemas:
-            self.update_narration("Error: Story module not loaded.")
-            return
-        app = App.get_running_app()
-        actor_id = self.active_character_context.id
-        loc_id = self.active_character_context.current_location_id
-        npc_template_id = target_npc.get('template_id')
-        if not npc_template_id:
-            self.update_log(f"Cannot start combat: NPC has no template_id.")
-            return
-        self.update_log(f"You attack the {npc_template_id}!")
-        try:
-            request = story_schemas.CombatStartRequest(
-                location_id=loc_id, player_ids=[actor_id],
-                npc_template_ids=[npc_template_id]
-            )
-            combat_state_dict = story_api.start_combat(request)
-            app.game_settings['combat_state'] = combat_state_dict
-            app.root.current = 'combat_screen'
-        except Exception as e:
-            logging.exception(f"Failed to start combat: {e}")
-            self.update_narration(f"An error occurred: {e}")
-
-    def on_touch_down(self, touch):
-        if self.context_menu:
-            if not self.context_menu.collide_point(*touch.pos):
-                self.close_context_menu()
-            return True
-        if not self.map_view_widget or not self.map_view_widget.collide_point(*touch.pos):
-            return super().on_touch_down(touch)
-        local_pos = self.map_view_widget.to_local(*touch.pos)
-        tile_x = int(local_pos[0] // TILE_SIZE)
-        map_height = self.get_map_height()
-        if map_height == 0: return True
-        tile_y = (map_height - 1) - int(local_pos[1] // TILE_SIZE)
-        logging.debug(f"Map click at tile ({tile_x}, {tile_y}) - Button: {touch.button}")
-        target = self.get_target_at_coord(tile_x, tile_y)
-        if touch.button == 'left':
-            if target:
-                target_type, target_data = target
-                self.handle_examine(target_type, target_data)
-            else:
-                if self.is_tile_passable(tile_x, tile_y):
-                    self.move_player_to(tile_x, tile_y)
-                else:
-                    logging.info(f"Clicked impassable tile at ({tile_x}, {tile_y})")
-                    self.update_log("You can't move there.")
-        elif touch.button == 'right':
-            if target:
-                target_type, target_data = target
-                self.open_context_menu(target_type, target_data, touch.pos)
-            else:
-                logging.debug("Right-clicked on empty tile.")
-        return True
-
-    # --- ADD THESE NEW METHODS for the Save Popup ---
+            logging.exception(f"Error handling narrative prompt: {e}")
+            self.update_narration(f"Error: {e}")
 
     def show_save_popup(self):
         """Displays a popup to get a save game name."""
         if self.save_popup:
             self.save_popup.dismiss()
 
-        # Get a default name
         char_name = self.active_character_context.name if self.active_character_context else "save"
         default_save_name = f"{char_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}"
 
@@ -557,7 +501,7 @@ class MainInterfaceScreen(Screen):
     def do_save_game(self, slot_name: str):
         """Calls the save_api and closes the popup."""
         if not slot_name:
-            return # Or show an error in the popup
+            return
 
         if not save_api:
             logging.error("Save API not loaded. Cannot save.")
