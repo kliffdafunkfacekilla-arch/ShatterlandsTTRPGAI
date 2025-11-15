@@ -5,63 +5,44 @@ import os
 import sys
 import logging
 from pathlib import Path
-import asyncio # <-- 1. Import asyncio
+import asyncio
 
-# --- 1. SET SYS.PATH (Unchanged) ---
+# --- 1. SET SYS.PATH ---
 APP_ROOT = Path(__file__).resolve().parent.parent
+if str(APP_ROOT) not in sys.path:
+    sys.path.insert(0, str(APP_ROOT))
 MONOLITH_PATH = APP_ROOT / "AI-TTRPG"
 if str(MONOLITH_PATH) not in sys.path:
     sys.path.insert(0, str(MONOLITH_PATH))
 
-# --- 2. IMPORT AND INITIALIZE THE MONOLITH ---
+# --- 2. DELAYED MONOLITH & ASSET IMPORTS ---
+# Initialization is moved into the async main() function.
 try:
     from monolith.start_monolith import _run_migrations_for_module, ROOT
     from monolith.orchestrator import get_orchestrator
     from monolith.modules import register_all
+    from game_client import asset_loader
 except ImportError as e:
-    print(f"FATAL: Could not import monolith modules.")
-    print(f"Attempted to load from: {MONOLITH_PATH}")
+    # We can't log here yet, as logging isn't configured.
+    print(f"FATAL: A critical module could not be imported. Check paths and dependencies.")
     print(f"Error: {e}")
     sys.exit(1)
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s')
-logger = logging.getLogger("game_client")
-logger.info("--- Shatterlands Client Starting ---")
-logger.info("Running database migrations...")
-_run_migrations_for_module("character", ROOT, "auto")
-_run_migrations_for_module("world", ROOT, "auto")
-_run_migrations_for_module("story", ROOT, "auto")
-logger.info("Database migrations complete.")
-logger.info("Registering all monolith modules...")
-register_all(get_orchestrator())
-logger.info("Monolith modules registered and data loaded.")
 
 # --- 3. KIVY APPLICATION IMPORTS ---
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager
 from kivy.core.window import Window
 
-# --- 4. IMPORT OUR VIEW FILES ---
+# --- 4. VIEW IMPORTS ---
 from views.main_menu_screen import MainMenuScreen
 from views.game_setup_screen import GameSetupScreen
 from views.character_creation_screen import CharacterCreationScreen
 from views.main_interface_screen import MainInterfaceScreen
-from views.combat_screen import CombatScreen # <-- ADD THIS IMPORT
+from views.combat_screen import CombatScreen
 
-# --- 5. INITIALIZE ASSET LOADER ---
-# (Must be after monolith register so data is loaded)
-try:
-    from game_client import asset_loader
-    asset_loader.initialize_assets()
-    logger.info("Asset loader initialized.")
-except Exception as e:
-    logger.exception(f"FATAL: Could not initialize asset_loader: {e}")
-    sys.exit(1)
-
-# --- 6. THE MAIN APP CLASS (Unchanged) ---
+# --- 6. THE MAIN APP CLASS (Unchanged from refactor) ---
 class ShatterlandsClientApp(App):
-
-    game_settings = {} # Stores settings from GameSetupScreen
+    game_settings = {}
 
     def build(self):
         Window.size = (1280, 720)
@@ -71,46 +52,48 @@ class ShatterlandsClientApp(App):
         sm.add_widget(MainMenuScreen(name='main_menu'))
         sm.add_widget(GameSetupScreen(name='game_setup'))
         sm.add_widget(CharacterCreationScreen(name='character_creation'))
-
-        # --- USE THE NEW, REAL SCREEN ---
         sm.add_widget(MainInterfaceScreen(name='main_interface'))
-sm.add_widget(CombatScreen(name='combat_screen')) # <-- ADD THIS LINE
+        sm.add_widget(CombatScreen(name='combat_screen'))
 
         sm.current = 'main_menu'
         return sm
 
-# --- 7. NEW ASYNC MAIN FUNCTION ---
+# --- 7. ASYNC MAIN FUNCTION ---
 async def main():
     """
-    This function will run the monolith setup and then
-    run the Kivy app asynchronously.
+    Configures logging, runs monolith setup, and then starts the Kivy app.
     """
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s')
+    logger = logging.getLogger("game_client")
     logger.info("--- Shatterlands Client Starting ---")
 
-    # --- Run Monolith Startup (Synchronous parts) ---
-    logger.info("Running database migrations...")
-    _run_migrations_for_module("character", ROOT, "auto")
-    _run_migrations_for_module("world", ROOT, "auto")
-    _run_migrations_for_module("story", ROOT, "auto")
-    logger.info("Database migrations complete.")
+    try:
+        # --- Run Monolith Startup (Synchronous parts) ---
+        logger.info("Running database migrations...")
+        _run_migrations_for_module("character", ROOT, "auto")
+        _run_migrations_for_module("world", ROOT, "auto")
+        _run_migrations_for_module("story", ROOT, "auto")
+        logger.info("Database migrations complete.")
 
-    logger.info("Registering all monolith modules...")
-    # This will now work because an event loop is running
-    register_all(get_orchestrator())
-    logger.info("Monolith modules registered and data loaded.")
+        logger.info("Registering all monolith modules...")
+        register_all(get_orchestrator())
+        logger.info("Monolith modules registered.")
 
-    # --- Initialize Asset Loader (Synchronous) ---
-    asset_loader.initialize_assets()
-    logger.info("Asset loader initialized.")
+        # --- Initialize Asset Loader (Synchronous) ---
+        asset_loader.initialize_assets()
+        logger.info("Asset loader initialized.")
+
+    except Exception as e:
+        logger.exception(f"FATAL: An error occurred during startup: {e}")
+        sys.exit(1)
+
 
     # --- Run Kivy App (Asynchronous) ---
     logger.info("Starting Kivy application...")
     app = ShatterlandsClientApp()
-
-    # This tells Kivy to use the existing asyncio loop
     await app.async_run(async_lib='asyncio')
     logger.info("Kivy application finished.")
 
-# --- 8. RUN THE APP (Modified) ---
+# --- 8. RUN THE APP ---
 if __name__ == '__main__':
-    asyncio.run(main()) # Use asyncio.run to start the main function
+    asyncio.run(main())
