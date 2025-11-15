@@ -1,5 +1,6 @@
 import kivy
 kivy.require('2.1.0')
+
 import os
 import sys
 import logging
@@ -34,30 +35,32 @@ logger.info("Registering all monolith modules...")
 register_all(get_orchestrator())
 logger.info("Monolith modules registered and data loaded.")
 
-# --- 3. KIVY APPLICATION IMPORTS (Updated) ---
+# --- 3. KIVY APPLICATION IMPORTS ---
 from kivy.app import App
-from kivy.uix.screenmanager import ScreenManager, Screen
-from kivy.uix.label import Label # Keep for placeholder
+from kivy.uix.screenmanager import ScreenManager
 from kivy.core.window import Window
 
-# --- 4. IMPORT OUR NEW VIEW FILES ---
+# --- 4. IMPORT OUR VIEW FILES ---
 from views.main_menu_screen import MainMenuScreen
 from views.game_setup_screen import GameSetupScreen
 from views.character_creation_screen import CharacterCreationScreen
+# --- IMPORT THE NEW SCREEN ---
+from views.main_interface_screen import MainInterfaceScreen
 
-# --- 5. DEFINE PLACEHOLDER SCREENS (Updated) ---
-# (MainMenuScreen and GameSetupScreen are now imported)
-
-# Placeholder for the main game interface
-class MainInterfaceScreen(Screen):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.add_widget(Label(text="Main Game Screen (Placeholder)"))
+# --- 5. INITIALIZE ASSET LOADER ---
+# (Must be after monolith register so data is loaded)
+try:
+    from game_client import asset_loader
+    asset_loader.initialize_assets()
+    logger.info("Asset loader initialized.")
+except Exception as e:
+    logger.exception(f"FATAL: Could not initialize asset_loader: {e}")
+    sys.exit(1)
 
 # --- 6. THE MAIN APP CLASS (Updated) ---
 class ShatterlandsClientApp(App):
 
-    game_settings = {}
+    game_settings = {} # Stores settings from GameSetupScreen
 
     def build(self):
         Window.size = (1280, 720)
@@ -66,10 +69,9 @@ class ShatterlandsClientApp(App):
         sm = ScreenManager()
         sm.add_widget(MainMenuScreen(name='main_menu'))
         sm.add_widget(GameSetupScreen(name='game_setup'))
-
-        # Use our new, real creation screen
         sm.add_widget(CharacterCreationScreen(name='character_creation'))
 
+        # --- USE THE NEW, REAL SCREEN ---
         sm.add_widget(MainInterfaceScreen(name='main_interface'))
 
         sm.current = 'main_menu'
