@@ -316,8 +316,31 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
         log.append(f"{actor_id} uses ability: {action.ability_id} on {target_id}!")
 
         # TODO: Implement real ability logic based on the ability_id.
-        # For now, we will just log the action and proceed
-        # with the normal attack logic below.
+        # For now, we will just log the action and fall through
+        # to the attack logic below.
+        pass # Let it fall through
+
+    elif action.action == "use_item":
+        log.append(f"{actor_id} uses item: {action.item_id} on {target_id}!")
+
+        # --- This is a self-contained action ---
+        # TODO: Implement real item logic (e.g., healing, apply status)
+        # For now, it just consumes the turn.
+
+        # We must advance the turn and check for combat end.
+        combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
+        combat_over = check_combat_end_condition(db, combat)
+        db.commit()
+        db.refresh(combat)
+
+        return schemas.PlayerActionResponse(
+            success=True,
+            message=f"{actor_id} used {action.item_id}.",
+            log=log,
+            new_turn_index=combat.current_turn_index,
+            combat_over=combat_over
+        )
+        # --- End self-contained action ---
 
     else:
         log.append(f"Action '{action.action}' not fully implemented. Waiting instead.")
