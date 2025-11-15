@@ -9,7 +9,7 @@ class StoryFlagBase(BaseModel):
 class StoryFlag(StoryFlagBase):
     id: int
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- ActiveQuest ---
 class ActiveQuestBase(BaseModel):
@@ -26,7 +26,7 @@ class ActiveQuestCreate(ActiveQuestBase):
 class ActiveQuest(ActiveQuestBase):
     id: int
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class ActiveQuestUpdate(BaseModel):
     # Only these fields can be updated
@@ -48,7 +48,7 @@ class Campaign(CampaignBase):
     # This will automatically include the quests
     active_quests: List[ActiveQuest] = []
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Orchestration Schemas (for talking to other services) ---
 
