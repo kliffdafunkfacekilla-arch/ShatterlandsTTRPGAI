@@ -137,3 +137,8 @@ def list_characters(
 ) -> List[models.Character]:
     """Retrieves a list of characters."""
     return db.query(models.Character).offset(skip).limit(limit).all()
+
+
+def get_character_by_name(db: Session, name: str) -> models.Character | None:
+    """Retrieves a single character by their name."""
+    return db.query(models.Character).filter(models.Character.name == name).first()

@@ -422,7 +422,6 @@ class StatusEffectResponse(BaseModel):
 
     class Config:
         from_attributes = True  # Use this for Pydantic V2+
-        # orm_mode = True # Use this for Pydantic V1
 
 
 # ADD THESE MODELS for Base Vitals Calculation
