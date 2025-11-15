@@ -302,20 +302,31 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
     if action.action == "wait":
         return handle_no_action(db, combat, actor_id)
 
-    if action.action != "attack":
+    # --- NEW: Handle actions that require a target ---
+    target_id = action.target_id
+    if not target_id:
+        log.append(f"Action '{action.action}' requires a target, but none provided. Waiting instead.")
+        return handle_no_action(db, combat, actor_id)
+
+    if action.action == "attack":
+        log.append(f"{actor_id} targets {target_id} with an attack.")
+
+    elif action.action == "use_ability":
+        # We now correctly log the ability_id from the request
+        log.append(f"{actor_id} uses ability: {action.ability_id} on {target_id}!")
+
+        # TODO: Implement real ability logic based on the ability_id.
+        # For now, we will just log the action and proceed
+        # with the normal attack logic below.
+
+    else:
         log.append(f"Action '{action.action}' not fully implemented. Waiting instead.")
         return handle_no_action(db, combat, actor_id)
 
-    target_id = action.target_id
-    if not target_id:
-        raise HTTPException(status_code=400, detail="Attack action requires a target_id.")
-
-    # --- REMOVED 'async with httpx.AsyncClient() as client:' ---
+    # --- (The rest of the function is now shared) ---
     try:
-        # --- ALL 'AWAIT' KEYWORDS REMOVED FROM THIS BLOCK ---
         _, attacker_context = get_actor_context(actor_id)
         target_type, defender_context = get_actor_context(target_id)
-        log.append(f"{actor_id} targets {target_id} with an attack.")
 
         hp = defender_context.get("current_hp", 0)
         if hp <= 0:
