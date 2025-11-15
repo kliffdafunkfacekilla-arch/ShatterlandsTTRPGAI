@@ -274,12 +274,16 @@ def determine_npc_action(db: Session, combat: models.CombatEncounter, npc_actor_
     if not living_players:
         return None
 
+    log = []
     target_id, action_type = None, "attack"
-    if "cowardly" in behavior_tags and npc_current_hp < npc_max_hp * 0.3:
-        action_type = "wait"
-    elif "targets_weakest" in behavior_tags:
-        living_players.sort(key=lambda p: p["current_hp"])
+    if "cowardly" in behavior_tags and npc_current_hp < (npc_max_hp * 0.3):
+        log.append(f"{npc_actor_id} is cowardly and badly wounded. It waits!")
+        return None
+
+    if "targets_weakest" in behavior_tags:
+        living_players.sort(key=lambda p: p.get("current_hp", 999))
         target_id = living_players[0]['id']
+        log.append(f"{npc_actor_id} targets the weakest player, {target_id}!")
     else:
         target_id = random.choice(living_players)['id']
 
@@ -315,17 +319,33 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
         # We now correctly log the ability_id from the request
         log.append(f"{actor_id} uses ability: {action.ability_id} on {target_id}!")
 
-        # TODO: Implement real ability logic based on the ability_id.
-        # For now, we will just log the action and fall through
-        # to the attack logic below.
-        pass # Let it fall through
+        if "Minor Shove" in action.ability_id:
+            npc_instance_id = int(action.target_id.split('_')[1])
+            _, defender_context = get_actor_context(action.target_id)
+            current_coords = defender_context.get("coordinates", [1, 1])
+            new_coords = [current_coords[0], current_coords[1] + 1]
+            services.update_npc_state(npc_instance_id, {"coordinates": new_coords})
+            log.append(f"{actor_id} shoves {action.target_id} 1m north!")
+
+            combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
+            combat_over = check_combat_end_condition(db, combat)
+            db.commit()
+            db.refresh(combat)
+            return schemas.PlayerActionResponse(
+                success=True,
+                message=f"{actor_id} used {action.ability_id}.",
+                log=log,
+                new_turn_index=combat.current_turn_index,
+                combat_over=combat_over
+            )
 
     elif action.action == "use_item":
         log.append(f"{actor_id} uses item: {action.item_id} on {target_id}!")
 
-        # --- This is a self-contained action ---
-        # TODO: Implement real item logic (e.g., healing, apply status)
-        # For now, it just consumes the turn.
+        item_template = services.get_item_template_params(action.item_id)
+        if item_template.get("category") == "healing_potion":
+            services.apply_damage_to_character(action.target_id, -15)
+            log.append(f"{actor_id} uses {action.item_id} on {target_id}, healing for 15 HP.")
 
         # We must advance the turn and check for combat end.
         combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)

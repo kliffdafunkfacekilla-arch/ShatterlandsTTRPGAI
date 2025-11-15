@@ -111,3 +111,7 @@ def update_combat_encounter(db: Session, combat_id: int, updates: dict) -> Optio
         db.commit()
         db.refresh(db_combat)
     return db_combat
+
+def get_all_quests(db: Session, campaign_id: int) -> List[models.ActiveQuest]:
+    """Retrieves all quests for a given campaign."""
+    return db.query(models.ActiveQuest).filter(models.ActiveQuest.campaign_id == campaign_id).all()
