@@ -26,6 +26,15 @@ except ImportError as e:
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s')
 logger = logging.getLogger("game_client")
+logger.info("--- Shatterlands Client Starting ---")
+logger.info("Running database migrations...")
+_run_migrations_for_module("character", ROOT, "auto")
+_run_migrations_for_module("world", ROOT, "auto")
+_run_migrations_for_module("story", ROOT, "auto")
+logger.info("Database migrations complete.")
+logger.info("Registering all monolith modules...")
+register_all(get_orchestrator())
+logger.info("Monolith modules registered and data loaded.")
 
 # --- 3. KIVY APPLICATION IMPORTS ---
 from kivy.app import App
@@ -36,11 +45,15 @@ from kivy.core.window import Window
 from views.main_menu_screen import MainMenuScreen
 from views.game_setup_screen import GameSetupScreen
 from views.character_creation_screen import CharacterCreationScreen
+# --- IMPORT THE NEW SCREEN ---
 from views.main_interface_screen import MainInterfaceScreen
 
 # --- 5. INITIALIZE ASSET LOADER ---
+# (Must be after monolith register so data is loaded)
 try:
     from game_client import asset_loader
+    asset_loader.initialize_assets()
+    logger.info("Asset loader initialized.")
 except Exception as e:
     logger.exception(f"FATAL: Could not initialize asset_loader: {e}")
     sys.exit(1)
@@ -58,6 +71,8 @@ class ShatterlandsClientApp(App):
         sm.add_widget(MainMenuScreen(name='main_menu'))
         sm.add_widget(GameSetupScreen(name='game_setup'))
         sm.add_widget(CharacterCreationScreen(name='character_creation'))
+
+        # --- USE THE NEW, REAL SCREEN ---
         sm.add_widget(MainInterfaceScreen(name='main_interface'))
 
         sm.current = 'main_menu'
