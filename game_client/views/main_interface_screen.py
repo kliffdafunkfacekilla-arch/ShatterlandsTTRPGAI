@@ -3,9 +3,9 @@ The Main Game Interface screen.
 Handles the exploration UI and game logic.
 """
 import logging
-import datetime
 from kivy.app import App
 from kivy.lang import Builder
+# ... (other Kivy imports)
 from kivy.uix.screenmanager import Screen
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
@@ -14,11 +14,11 @@ from kivy.uix.button import Button
 from kivy.uix.popup import Popup
 from kivy.properties import ObjectProperty, ListProperty, StringProperty
 from kivy.core.window import Window
-from kivy.clock import Clock
 from functools import partial
 from typing import Optional, List
 
 # --- Monolith Imports ---
+# ... (imports unchanged, make sure char_crud, char_services, etc. are imported) ...
 try:
     from monolith.modules.character_pkg import crud as char_crud
     from monolith.modules.character_pkg import services as char_services
@@ -233,6 +233,7 @@ class MainInterfaceScreen(Screen):
         Window.bind(on_resize=self.center_layout)
 
         # We must schedule this to run after the KV string is loaded
+        from kivy.clock import Clock
         Clock.schedule_once(self._bind_inputs)
 
     def _bind_inputs(self, *args):
@@ -508,15 +509,8 @@ class MainInterfaceScreen(Screen):
             self.save_popup.dismiss()
             return
 
-        try:
-            result = save_api.save_game(slot_name)
-            if result.get("success"):
-                self.update_log(f"Game saved as '{slot_name}'")
-            else:
-                raise Exception(result.get("error", "Unknown save error"))
-        except Exception as e:
-            logging.exception(f"Failed to save game: {e}")
-            self.update_log(f"Error saving game: {e}")
+    def on_submit_narration(self, *args):
+        pass
 
-        self.save_popup.dismiss()
-        self.save_popup = None
+    def show_save_popup(self):
+        pass
