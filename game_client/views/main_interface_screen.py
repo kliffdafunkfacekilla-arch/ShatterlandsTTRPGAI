@@ -576,31 +576,3 @@ class MainInterfaceScreen(Screen):
 
         self.save_popup.dismiss()
         self.save_popup = None
-
-    def on_submit_narration(self, instance):
-        """Called when the user presses Enter in the DM input box."""
-        prompt_text = instance.text
-        if not prompt_text:
-            return # Ignore empty submits
-
-        instance.text = "" # Clear the input box
-
-        if not self.active_character_context:
-            logging.error("Cannot submit prompt, no active character.")
-            return
-
-        if not story_api:
-            logging.error("Cannot submit prompt, story_api not loaded.")
-            self.update_narration("Error: Story module not loaded.")
-            return
-
-        actor_id = self.active_character_context.id
-        self.update_log(f"You: {prompt_text}") # Log the player's prompt
-
-        try:
-            # Call the new backend function
-            response = story_api.handle_narrative_prompt(actor_id, prompt_text)
-            self.update_narration(response.get("message", "An error occurred."))
-        except Exception as e:
-            logging.exception(f"Error handling narrative prompt: {e}")
-            self.update_narration(f"Error: {e}")

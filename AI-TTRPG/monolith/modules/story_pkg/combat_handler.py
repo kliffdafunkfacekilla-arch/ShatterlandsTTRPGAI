@@ -282,13 +282,16 @@ def determine_npc_action(db: Session, combat: models.CombatEncounter, npc_actor_
     if not living_players:
         return None
 
+    log = []
     target_id, action_type = None, "attack"
+    if "cowardly" in behavior_tags and npc_current_hp < (npc_max_hp * 0.3):
+        log.append(f"{npc_actor_id} is cowardly and badly wounded. It waits!")
+        return None
 
-    # --- MODIFIED: Targeting Logic ---
     if "targets_weakest" in behavior_tags:
         living_players.sort(key=lambda p: p.get("current_hp", 999))
         target_id = living_players[0]['id']
-        logger.info(f"NPC {npc_actor_id} targets weakest player: {target_id}")
+        log.append(f"{npc_actor_id} targets the weakest player, {target_id}!")
     else:
         # Default aggressive behavior
         target_id = random.choice(living_players)['id']
@@ -325,65 +328,33 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
     elif action.action == "use_ability":
         log.append(f"{actor_id} uses ability: {action.ability_id} on {target_id}!")
 
-        # --- NEW: Ability Logic ---
         if "Minor Shove" in action.ability_id:
-            try:
-                log.append(f"{actor_id} attempts to shove {target_id}!")
-                npc_instance_id = int(target_id.split('_')[1])
-                _, defender_context = get_actor_context(target_id)
-                current_coords = defender_context.get("coordinates", [1, 1])
+            npc_instance_id = int(action.target_id.split('_')[1])
+            _, defender_context = get_actor_context(action.target_id)
+            current_coords = defender_context.get("coordinates", [1, 1])
+            new_coords = [current_coords[0], current_coords[1] + 1]
+            services.update_npc_state(npc_instance_id, {"coordinates": new_coords})
+            log.append(f"{actor_id} shoves {action.target_id} 1m north!")
 
-                # Simple push "north" (increase Y)
-                new_coords = [current_coords[0], current_coords[1] + 1]
-
-                # TODO: Add check for map bounds and impassable tiles
-
-                services.update_npc_state(npc_instance_id, {"coordinates": new_coords})
-                log.append(f"{target_id} is pushed to {new_coords}!")
-
-            except Exception as e:
-                log.append(f"Ability failed: {e}")
-
-        else:
-            log.append("That ability's effect is not yet implemented.")
-
-        # --- CRITICAL: Add turn advancement logic copied from use_item ---
-        combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
-        combat_over = check_combat_end_condition(db, combat)
-        db.commit()
-        db.refresh(combat)
-
-        return schemas.PlayerActionResponse(
-            success=True,
-            message=f"{actor_id} used {action.ability_id}.",
-            log=log,
-            new_turn_index=combat.current_turn_index,
-            combat_over=combat_over
-        )
-        # --- End ability logic ---
+            combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
+            combat_over = check_combat_end_condition(db, combat)
+            db.commit()
+            db.refresh(combat)
+            return schemas.PlayerActionResponse(
+                success=True,
+                message=f"{actor_id} used {action.ability_id}.",
+                log=log,
+                new_turn_index=combat.current_turn_index,
+                combat_over=combat_over
+            )
 
     elif action.action == "use_item":
         log.append(f"{actor_id} uses item: {action.item_id} on {target_id}!")
 
-        # --- NEW: Item Logic ---
-        try:
-            item_template = services.get_item_template_params(action.item_id)
-            if item_template.get("type") == "healing": # Check type
-                healing_amount = item_template.get("potency", 15) # Use potency
-
-                if target_id.startswith("player_"):
-                    services.apply_healing_to_character(target_id, healing_amount)
-                elif target_id.startswith("npc_"):
-                    # TODO: Add NPC healing logic
-                    pass
-                log.append(f"{actor_id} heals {target_id} for {healing_amount} HP.")
-
-            else:
-                log.append(f"Item {action.item_id} has no combat effect.")
-
-        except Exception as e:
-            log.append(f"Could not use item: {e}")
-        # --- End item logic ---
+        item_template = services.get_item_template_params(action.item_id)
+        if item_template.get("category") == "healing_potion":
+            services.apply_damage_to_character(action.target_id, -15)
+            log.append(f"{actor_id} uses {action.item_id} on {target_id}, healing for 15 HP.")
 
         # This part (turn advancement) is correct and remains
         combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)

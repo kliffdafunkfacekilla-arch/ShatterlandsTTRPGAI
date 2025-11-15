@@ -1,7 +1,4 @@
-"""
-Inventory & Equipment Screen
-Allows the player to see their inventory and equip/unequip items.
-"""
+# game_client/views/inventory_screen.py
 import logging
 from kivy.app import App
 from kivy.lang import Builder
@@ -14,18 +11,15 @@ from kivy.uix.button import Button
 from kivy.properties import ObjectProperty
 from functools import partial
 
-# --- Monolith Imports ---
+# --- Direct Monolith Imports ---
 try:
     from monolith.modules import character as character_api
     from monolith.modules import rules as rules_api
-    from monolith.modules.character_pkg.schemas import CharacterContextResponse
 except ImportError as e:
-    logging.error(f"INVENTORY_SCREEN: Failed to import monolith modules: {e}")
+    logging.error(f"INVENTORY: Failed to import monolith modules: {e}")
     character_api = None
     rules_api = None
-    CharacterContextResponse = None
 
-# --- Kivy Language (KV) String ---
 INVENTORY_SCREEN_KV = """
 <InventoryScreen>:
     BoxLayout:
@@ -92,125 +86,67 @@ INVENTORY_SCREEN_KV = """
                         spacing: '5dp'
 """
 
-# Load the KV string
 Builder.load_string(INVENTORY_SCREEN_KV)
 
 class InventoryScreen(Screen):
-    # Kivy properties to hold widget references
     char_name_label = ObjectProperty(None)
     equipment_list = ObjectProperty(None)
     inventory_list = ObjectProperty(None)
 
     def on_enter(self, *args):
-        """Called when this screen is shown. Fetches data and populates UI."""
         app = App.get_running_app()
         main_screen = app.root.get_screen('main_interface')
         char_context = main_screen.active_character_context
-
         if not char_context:
-            logging.error("INVENTORY_SCREEN: No active character context found!")
-            if self.ids.char_name_label:
-                self.ids.char_name_label.text = "Error: No Character Loaded"
+            logging.error("INVENTORY: No character context found!")
             return
 
-        if self.ids.char_name_label:
-            self.ids.char_name_label.text = f"{char_context.name}'s Inventory"
-
+        self.ids.char_name_label.text = f"{char_context.name}'s Inventory"
         self.populate_lists(char_context)
 
-    def populate_lists(self, context: CharacterContextResponse):
-        """Fills the equipment and inventory lists."""
-        if not self.ids:
-            return
+    def populate_lists(self, context):
+        self.ids.equipment_list.clear_widgets()
+        self.ids.inventory_list.clear_widgets()
 
-        equipment_container = self.ids.equipment_list
-        inventory_container = self.ids.inventory_list
-
-        equipment_container.clear_widgets()
-        inventory_container.clear_widgets()
-
-        if not rules_api or not character_api:
-            logging.error("INVENTORY_SCREEN: Missing rules_api or character_api.")
-            return
-
-        # --- Populate Equipment ---
+        # Populate Equipment
         for slot, item_id in context.equipment.items():
-            if not item_id:
-                continue
-
-            item_box = BoxLayout(orientation='horizontal', size_hint_y=None, height='44dp')
-
-            try:
-                template = rules_api.get_item_template_params(item_id)
-                item_name = template.get("name", item_id)
-            except Exception:
-                item_name = item_id
-
-            item_label = Label(text=f"{slot.title()}: {item_name}")
-            unequip_btn = Button(text='Unequip', size_hint_x=0.3)
-
-            # TODO: Add unequip logic (more complex, involves finding empty inv slot or stacking)
+            box = BoxLayout(orientation='horizontal', size_hint_y=None, height='44dp')
+            box.add_widget(Label(text=f"{slot.title()}: {item_id}"))
+            unequip_btn = Button(text="Unequip", size_hint_x=0.3)
             # unequip_btn.bind(on_release=partial(self.on_unequip_item, context.id, slot))
+            box.add_widget(unequip_btn)
+            self.ids.equipment_list.add_widget(box)
 
-            item_box.add_widget(item_label)
-            item_box.add_widget(unequip_btn)
-            equipment_container.add_widget(item_box)
-
-        # --- Populate Inventory ---
+        # Populate Inventory
         for item_id, quantity in context.inventory.items():
-            if quantity <= 0:
-                continue
+            box = BoxLayout(orientation='horizontal', size_hint_y=None, height='44dp')
+            box.add_widget(Label(text=f"{item_id} (x{quantity})"))
+            equip_btn = Button(text="Equip", size_hint_x=0.3)
+            equip_btn.bind(on_release=partial(self.on_equip_item, context.id, item_id))
+            box.add_widget(equip_btn)
+            self.ids.inventory_list.add_widget(box)
 
-            item_box = BoxLayout(orientation='horizontal', size_hint_y=None, height='44dp')
+    def on_equip_item(self, char_id, item_id, *args):
+        logging.info(f"Equipping {item_id} for {char_id}")
+        if not rules_api:
+            logging.error("Rules API not available.")
+            return
 
-            try:
-                template = rules_api.get_item_template_params(item_id)
-                item_name = template.get("name", item_id)
-                item_type = template.get("type", "misc")
-            except Exception:
-                item_name = item_id
-                item_type = "misc"
+        template = rules_api.get_item_template_params(item_id)
+        item_type = template.get("type")
 
-            item_label = Label(text=f"{item_name} (x{quantity})")
-            equip_btn = Button(text='Equip', size_hint_x=0.3)
-
-            if item_type in ("melee", "ranged", "armor"):
-                equip_btn.bind(on_release=partial(self.on_equip_item, context.id, item_id, item_type))
-            else:
-                equip_btn.disabled = True
-
-            item_box.add_widget(item_label)
-            item_box.add_widget(equip_btn)
-            inventory_container.add_widget(item_box)
-
-    def on_equip_item(self, char_id: str, item_id: str, item_type: str, *args):
-        """Handles the 'Equip' button press."""
-        logging.info(f"Attempting to equip {item_id} (type: {item_type}) for {char_id}")
-
-        slot = None
-        if item_type in ("melee", "ranged"):
+        if item_type == "weapon":
             slot = "weapon"
         elif item_type == "armor":
             slot = "armor"
-
-        if not slot:
-            logging.warning(f"Item {item_id} has no valid equipment slot.")
+        else:
+            logging.error(f"Item {item_id} is not equippable.")
             return
 
-        try:
-            # Call the backend API
-            new_context_dict = character_api.equip_item(char_id, item_id, slot)
+        new_context_dict = character_api.equip_item(char_id, item_id, slot)
 
-            # CRITICAL: Update the main interface's context
-            app = App.get_running_app()
-            main_screen = app.root.get_screen('main_interface')
+        main_screen = App.get_running_app().root.get_screen('main_interface')
+        context_schema = main_screen.active_character_context.__class__
+        main_screen.active_character_context = context_schema(**new_context_dict)
 
-            # Re-create the Pydantic model from the new dict
-            if CharacterContextResponse:
-                main_screen.active_character_context = CharacterContextResponse(**new_context_dict)
-
-            # Refresh this screen
-            self.on_enter()
-
-        except Exception as e:
-            logging.exception(f"Failed to equip item: {e}")
+        self.on_enter()

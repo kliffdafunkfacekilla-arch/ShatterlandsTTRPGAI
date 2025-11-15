@@ -122,27 +122,19 @@ def register(orchestrator) -> None:
     logger.info("[character] module registered (direct-call adapter)")
 
 def apply_healing_to_character(char_id: str, amount: int):
-    """Applies healing to a character. Fire and forget."""
     db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         char_crud.apply_healing(db, db_char, amount)
-    except Exception as e:
-        logger.exception(f"[character.apply_healing_to_character] Error: {e}")
-        # Don't raise, just log
     finally:
         db.close()
 
 def equip_item(char_id: str, item_id: str, slot: str) -> Dict[str, Any]:
-    """Equips an item and returns the updated character context."""
     db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         updated_char = char_crud.equip_item(db, db_char, item_id, slot)
         schema_char = char_services.get_character_context(updated_char)
         return schema_char.model_dump()
-    except Exception as e:
-        logger.exception(f"[character.equip_item] Error: {e}")
-        raise
     finally:
         db.close()
