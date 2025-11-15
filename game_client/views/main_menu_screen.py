@@ -28,7 +28,8 @@ MAIN_MENU_KV = """
             text: 'Load Game'
             font_size: '24sp'
             size_hint_y: 0.2
-            disabled: True # We will implement this later
+            disabled: False # <-- CHANGED FROM True
+            on_release: app.root.current = 'load_game' # <-- ADDED THIS
 
         Button:
             text: 'Quit'
