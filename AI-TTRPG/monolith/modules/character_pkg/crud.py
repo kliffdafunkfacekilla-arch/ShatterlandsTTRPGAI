@@ -3,6 +3,9 @@ from sqlalchemy.orm import Session
 from . import models
 from typing import Dict, Any, List
 from sqlalchemy.orm.attributes import flag_modified
+import logging
+
+logger = logging.getLogger("monolith.character.crud")
 
 def get_character(db: Session, char_id: str) -> models.Character | None:
     """Retrieves a single character by ID."""
@@ -33,21 +36,31 @@ def apply_damage_to_character(
     return character
 
 def apply_status_to_character(
-    db: Session, character: models.Character, status_id: str
-) -> models.Character:
+db: Session, character: models.Character, status_id: str) -> models.Character:
     """Adds a status effect ID to the status_effects list."""
-    # --- MODIFICATION: Update the correct column ---
     status_effects = character.status_effects or []
 
     if status_id not in status_effects:
         status_effects.append(status_id)
-        print(f"Applying status '{status_id}' to {character.name}")
-
-    character.status_effects = status_effects # Assign modified list back
-    flag_modified(character, "status_effects") # Mark as modified
-    # --- END MODIFICATION ---
+        logger.info(f"Applying status '{status_id}' to {character.name}")
+    character.status_effects = status_effects
+    flag_modified(character, "status_effects")
     db.commit()
     db.refresh(character)
+    return character
+
+def remove_status_from_character(
+db: Session, character: models.Character, status_id: str) -> models.Character:
+    """Removes a status effect ID from the status_effects list."""
+    status_effects = character.status_effects or []
+
+    if status_id in status_effects:
+        status_effects.remove(status_id)
+        logger.info(f"Removing status '{status_id}' from {character.name}")
+        character.status_effects = status_effects
+        flag_modified(character, "status_effects")
+        db.commit()
+        db.refresh(character)
     return character
 
 # --- MODIFIED: THIS NEW FUNCTION ---
@@ -128,10 +141,6 @@ def remove_item_from_inventory(
     db.refresh(character)
     return character
 
-# This function is duplicated in your file, removing the second copy.
-# def apply_damage_to_character( ... )
-# This function is duplicated in your file, removing the second copy.
-# def apply_status_to_character( ... )
 def list_characters(
     db: Session, skip: int = 0, limit: int = 100
 ) -> List[models.Character]:

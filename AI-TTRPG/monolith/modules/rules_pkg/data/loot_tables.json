@@ -1,0 +1,24 @@
+{
+  "goblin_easy": {
+    "item_scrap_metal": {
+      "chance": 0.75,
+      "quantity": 1
+    }
+  },
+  "beast_medium": {
+    "item_beast_pelt": {
+      "chance": 0.5,
+      "quantity": 1
+    }
+  },
+  "cultist_medium": {
+    "item_cultist_robes": {
+      "chance": 0.25,
+      "quantity": 1
+    },
+    "item_iron_key": {
+      "chance": 0.1,
+      "quantity": 1
+    }
+  }
+}

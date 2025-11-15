@@ -156,6 +156,37 @@ def update_location_map(location_id: int, map_update: Dict[str, Any]) -> Dict[st
     finally:
         db.close()
 
+def apply_status_to_npc(npc_id: int, status_id: str) -> Dict[str, Any]:
+    """Applies a status to an NPC and returns new context."""
+    db = we_db.SessionLocal()
+    try:
+        updated_npc = we_crud.apply_status_to_npc(db, npc_id, status_id)
+        if not updated_npc:
+            raise Exception(f"NPC {npc_id} not found")
+        schema_npc = we_schemas.NpcInstance.from_orm(updated_npc)
+        return schema_npc.model_dump()
+    except Exception as e:
+        logger.exception(f"[world.apply_status_to_npc] Error: {e}")
+        raise
+    finally:
+        db.close()
+
+def remove_status_from_npc(npc_id: int, status_id: str) -> Dict[str, Any]:
+    """Removes a status from an NPC and returns new context."""
+    db = we_db.SessionLocal()
+    try:
+        updated_npc = we_crud.remove_status_from_npc(db, npc_id, status_id)
+        if not updated_npc:
+            raise Exception(f"NPC {npc_id} not found")
+        schema_npc = we_schemas.NpcInstance.from_orm(updated_npc)
+        return schema_npc.model_dump()
+    except Exception as e:
+        logger.exception(f"[world.remove_status_from_npc] Error: {e}")
+        raise
+    finally:
+        db.close()
+
+
 def register(orchestrator) -> None:
     # This module doesn't subscribe to commands directly.
     # It's imported and called directly by other modules (like story.py)

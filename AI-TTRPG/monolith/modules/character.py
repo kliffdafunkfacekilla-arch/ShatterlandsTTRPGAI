@@ -116,6 +116,21 @@ def update_character_location(char_id: str, location_id: int, coordinates: List[
     finally:
         db.close()
 
+def remove_status_from_character(char_id: str, status_id: str) -> Dict[str, Any]:
+    """Removes a status from a character and returns new context."""
+    db = char_db.SessionLocal()
+    try:
+        db_char = _get_character_db(db, char_id)
+        updated_char = char_crud.remove_status_from_character(db, db_char, status_id)
+        schema_char = char_services.get_character_context(updated_char)
+        return schema_char.model_dump()
+    except Exception as e:
+        logger.exception(f"[character.remove_status_from_character] Error: {e}")
+        raise
+    finally:
+        db.close()
+
+
 def register(orchestrator) -> None:
     # This module is called directly by other modules (like story.py)
     # and does not currently subscribe to any event bus commands.
