@@ -35,36 +35,36 @@ def _get_character_db(db: char_db.SessionLocal, char_id: str) -> Character:
     return db_character
 
 # --- Public API functions for other modules ---
-async def get_character_context(_client: Any, char_id: str) -> Dict[str, Any]:
-    """Gets the full data for a single character."""
+def get_character_context(char_id: str) -> Dict[str, Any]:
+    # --- REMOVED ASYNC AND _client ---
     db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
-        # Use the service function to map the DB model to the Pydantic schema
         schema_char = char_services.get_character_context(db_char)
-        return schema_char.model_dump() # Use .model_dump() for Pydantic v2
+        return schema_char.model_dump()
     except Exception as e:
         logger.exception(f"[character.get_character_context] Error: {e}")
         raise
     finally:
         db.close()
 
-async def apply_damage_to_character(_client: Any, char_id: str, damage_amount: int) -> Dict[str, Any]:
-    """Applies HP damage to a character."""
+def apply_damage_to_character(char_id: str, damage_amount: int) -> Dict[str, Any]:
+    # --- REMOVED ASYNC AND _client ---
     db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         updated_char = char_crud.apply_damage_to_character(db, db_char, damage_amount)
         schema_char = char_services.get_character_context(updated_char)
         return schema_char.model_dump()
+    # ... (rest of function unchanged) ...
     except Exception as e:
         logger.exception(f"[character.apply_damage_to_character] Error: {e}")
         raise
     finally:
         db.close()
 
-async def apply_status_to_character(_client: Any, char_id: str, status_id: str) -> Dict[str, Any]:
-    """Applies a status effect to a character."""
+# --- (Apply same sync refactor to all other functions in this file) ---
+def apply_status_to_character(char_id: str, status_id: str) -> Dict[str, Any]:
     db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
@@ -77,12 +77,10 @@ async def apply_status_to_character(_client: Any, char_id: str, status_id: str) 
     finally:
         db.close()
 
-async def add_item_to_character(_client: Any, char_id: str, item_id: str, quantity: int) -> Dict[str, Any]:
-    """Adds an item to a character's inventory."""
+def add_item_to_character(char_id: str, item_id: str, quantity: int) -> Dict[str, Any]:
     db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
-        # This function *exists* in crud.py but was not exposed via an endpoint
         updated_char = char_crud.add_item_to_inventory(db, db_char, item_id, quantity)
         schema_char = char_services.get_character_context(updated_char)
         return schema_char.model_dump()
@@ -92,12 +90,10 @@ async def add_item_to_character(_client: Any, char_id: str, item_id: str, quanti
     finally:
         db.close()
 
-async def remove_item_from_character(_client: Any, char_id: str, item_id: str, quantity: int) -> Dict[str, Any]:
-    """Removes an item from a character's inventory."""
+def remove_item_from_character(char_id: str, item_id: str, quantity: int) -> Dict[str, Any]:
     db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
-        # This function *exists* in crud.py but was not exposed via an endpoint
         updated_char = char_crud.remove_item_from_inventory(db, db_char, item_id, quantity)
         schema_char = char_services.get_character_context(updated_char)
         return schema_char.model_dump()
@@ -107,8 +103,7 @@ async def remove_item_from_character(_client: Any, char_id: str, item_id: str, q
     finally:
         db.close()
 
-async def update_character_location(_client: Any, char_id: str, location_id: int, coordinates: List[int]) -> Dict[str, Any]:
-    """Updates a character's location and coordinates."""
+def update_character_location(char_id: str, location_id: int, coordinates: List[int]) -> Dict[str, Any]:
     db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
