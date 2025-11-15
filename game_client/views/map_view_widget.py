@@ -7,9 +7,10 @@ It does not contain any game logic, only rendering logic.
 import logging
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.image import Image
-from kivy.properties import ListProperty, ObjectProperty
+from kivy.properties import ListProperty, ObjectProperty, DictProperty
 
 # --- Client Asset Loader ---
+# ... (imports unchanged) ...
 try:
     from game_client import asset_loader
 except ImportError as e:
@@ -23,6 +24,10 @@ class MapViewWidget(FloatLayout):
     # Keep track of rendered sprites
     tile_sprites = ListProperty([])
     entity_sprites = ListProperty([])
+
+    # --- MODIFIED: Store all player sprites by ID ---
+    player_sprites = DictProperty({})
+    # player_sprite is now just a reference to the *active* one
     player_sprite = ObjectProperty(None, allownone=True)
 
     def __init__(self, **kwargs):
@@ -31,10 +36,10 @@ class MapViewWidget(FloatLayout):
         # be set from the outside.
         self.size_hint = (None, None)
 
-    def build_scene(self, location_context, player_context):
+    def build_scene(self, location_context, party_contexts_list):
         """
         Clears and rebuilds the entire map visual.
-        This is called by the parent screen (e.g., Interface or Combat).
+        - party_contexts_list: A LIST of player character contexts.
         """
         if not asset_loader:
             logging.error("Cannot build scene, asset_loader is not available.")
@@ -43,6 +48,7 @@ class MapViewWidget(FloatLayout):
         self.clear_widgets()
         self.tile_sprites = []
         self.entity_sprites = []
+        self.player_sprites = {} # Clear the sprite dict
         self.player_sprite = None
 
         tile_map = location_context.get('generated_map_data')
@@ -79,26 +85,31 @@ class MapViewWidget(FloatLayout):
                 self.add_widget(tile_image)
                 self.tile_sprites.append(tile_image)
 
+
         # --- 2. Render NPCs ---
         for npc in location_context.get('npcs', []):
             self.add_entity_sprite(npc, map_height)
 
-        # --- 3. Render Player ---
-        if player_context:
-            self.add_entity_sprite(player_context, map_height, is_player=True)
+        # --- 3. Render Players ---
+        if party_contexts_list:
+            for i, player_context in enumerate(party_contexts_list):
+                is_first_player = (i == 0) # The first player is active by default
+                self.add_entity_sprite(player_context, map_height, is_player=True, is_active=is_first_player)
 
         logging.info("MapViewWidget: Scene built.")
 
-    def add_entity_sprite(self, entity_context, map_height, is_player=False):
+    def add_entity_sprite(self, entity_context, map_height, is_player=False, is_active=False):
         """Adds a single NPC or player sprite to the map."""
         if is_player:
             sprite_id = entity_context.portrait_id or 'character_1'
             coords = [entity_context.position_x, entity_context.position_y]
             entity_id_log = entity_context.name
+            player_uuid = entity_context.id # Get the unique ID
         else:
             sprite_id = entity_context.get('template_id', 'goblin_scout')
             coords = entity_context.get('coordinates', [1, 1])
             entity_id_log = sprite_id
+            player_uuid = None
 
         render_info = asset_loader.get_sprite_render_info(sprite_id)
         if not render_info:
@@ -120,16 +131,28 @@ class MapViewWidget(FloatLayout):
         )
 
         self.add_widget(entity_image)
-        self.entity_sprites.append(entity_image)
 
         if is_player:
-            self.player_sprite = entity_image
-        logging.info(f"Player '{entity_id_log}' rendered at ({coords[0]}, {coords[1]})")
-
-    def move_player_sprite(self, tile_x: int, tile_y: int, map_height: int):
-        """Updates the position of the player's sprite."""
-        if self.player_sprite:
-            render_y = (map_height - 1 - tile_y) * TILE_SIZE
-            self.player_sprite.pos = (tile_x * TILE_SIZE, render_y)
+            self.entity_sprites.append(entity_image) # Add to general list
+            self.player_sprites[player_uuid] = entity_image # Add to player-specific dict
+            if is_active:
+                self.player_sprite = entity_image # Set the active sprite
+            logging.info(f"Player '{entity_id_log}' rendered at ({coords[0]}, {coords[1]})")
         else:
-            logging.warning("Cannot move player sprite, it does not exist.")
+            self.entity_sprites.append(entity_image)
+
+
+    def move_active_player_sprite(self, player_id: str, tile_x: int, tile_y: int, map_height: int):
+        """Updates the position of the specified player's sprite."""
+
+        # Find the correct sprite from our dictionary
+        sprite_to_move = self.player_sprites.get(player_id)
+
+        if sprite_to_move:
+            render_y = (map_height - 1 - tile_y) * TILE_SIZE
+            sprite_to_move.pos = (tile_x * TILE_SIZE, render_y)
+
+            # Also update the main 'player_sprite' reference
+            self.player_sprite = sprite_to_move
+        else:
+            logging.warning(f"Cannot move player sprite {player_id}, it does not exist in dict.")
