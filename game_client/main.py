@@ -39,6 +39,7 @@ from views.game_setup_screen import GameSetupScreen
 from views.character_creation_screen import CharacterCreationScreen
 from views.main_interface_screen import MainInterfaceScreen
 from views.combat_screen import CombatScreen
+from views.character_sheet_screen import CharacterSheetScreen
 
 # --- 6. THE MAIN APP CLASS (Unchanged from refactor) ---
 class ShatterlandsClientApp(App):
@@ -54,6 +55,7 @@ class ShatterlandsClientApp(App):
         sm.add_widget(CharacterCreationScreen(name='character_creation'))
         sm.add_widget(MainInterfaceScreen(name='main_interface'))
         sm.add_widget(CombatScreen(name='combat_screen'))
+        sm.add_widget(CharacterSheetScreen(name='character_sheet'))
 
         sm.current = 'main_menu'
         return sm

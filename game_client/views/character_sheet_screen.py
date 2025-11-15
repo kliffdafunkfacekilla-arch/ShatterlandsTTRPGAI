@@ -1,0 +1,197 @@
+"""
+Character Sheet Screen
+Displays all stats, skills, abilities, and talents for the
+active character.
+"""
+import logging
+from kivy.app import App
+from kivy.lang import Builder
+from kivy.uix.screenmanager import Screen
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.label import Label
+from kivy.properties import ObjectProperty
+from kivy.clock import Clock
+
+# --- Kivy Language (KV) String for the Layout ---
+CHARACTER_SHEET_KV = """
+<CharacterSheetScreen>:
+    # Main layout with a back button
+    BoxLayout:
+        orientation: 'vertical'
+
+        # --- Top Bar ---
+        BoxLayout:
+            size_hint_y: None
+            height: '48dp'
+            canvas.before:
+                Color:
+                    rgba: 0.1, 0.1, 0.1, 0.9
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+
+            Label:
+                id: char_name_label
+                text: 'Character Sheet'
+                font_size: '24sp'
+
+            Button:
+                text: 'Back to Game'
+                size_hint_x: 0.3
+                on_release: app.root.current = 'main_interface'
+
+        # --- Main Content Area ---
+        ScrollView:
+            BoxLayout:
+                orientation: 'vertical'
+                size_hint_y: None
+                height: self.minimum_height
+                padding: '10dp'
+                spacing: '15dp'
+
+                # --- STATS ---
+                Label:
+                    text: 'Core Stats'
+                    font_size: '20sp'
+                    size_hint_y: None
+                    height: '30dp'
+
+                # We will populate this grid from the .py file
+                GridLayout:
+                    id: stats_grid
+                    cols: 4
+                    size_hint_y: None
+                    height: self.minimum_height
+                    spacing: '5dp'
+
+                # --- SKILLS ---
+                Label:
+                    text: 'Skills'
+                    font_size: '20sp'
+                    size_hint_y: None
+                    height: '30dp'
+
+                # We will populate this grid
+                GridLayout:
+                    id: skills_grid
+                    cols: 3
+                    size_hint_y: None
+                    height: self.minimum_height
+                    spacing: '5dp'
+
+                # --- TALENTS & ABILITIES ---
+                BoxLayout:
+                    size_hint_y: None
+                    height: self.minimum_height
+                    spacing: '10dp'
+
+                    BoxLayout:
+                        orientation: 'vertical'
+                        Label:
+                            text: 'Talents'
+                            font_size: '20sp'
+                        # We will populate this list
+                        BoxLayout:
+                            id: talents_list
+                            orientation: 'vertical'
+                            size_hint_y: None
+                            height: self.minimum_height
+
+                    BoxLayout:
+                        orientation: 'vertical'
+                        Label:
+                            text: 'Abilities'
+                            font_size: '20sp'
+                        # We will populate this list
+                        BoxLayout:
+                            id: abilities_list
+                            orientation: 'vertical'
+                            size_hint_y: None
+                            height: self.minimum_height
+"""
+
+# Load the KV string
+Builder.load_string(CHARACTER_SHEET_KV)
+
+class CharacterSheetScreen(Screen):
+    # --- UI References ---
+    char_name_label = ObjectProperty(None)
+    stats_grid = ObjectProperty(None)
+    skills_grid = ObjectProperty(None)
+    talents_list = ObjectProperty(None)
+    abilities_list = ObjectProperty(None)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # We must bind to the 'ids' *after* the KV string is loaded
+        Clock.schedule_once(self._bind_widgets)
+
+    def _bind_widgets(self, *args):
+        """Bind Python properties to the widgets loaded from KV."""
+        self.char_name_label = self.ids.char_name_label
+        self.stats_grid = self.ids.stats_grid
+        self.skills_grid = self.ids.skills_grid
+        self.talents_list = self.ids.talents_list
+        self.abilities_list = self.ids.abilities_list
+
+    def on_enter(self, *args):
+        """Called when this screen is shown. Fetches data and populates UI."""
+        app = App.get_running_app()
+
+        # Get the active character from the MainInterfaceScreen
+        main_screen = app.root.get_screen('main_interface')
+        char_context = main_screen.active_character_context
+
+        if not char_context:
+            logging.error("CHAR_SHEET: No active character context found!")
+            self.char_name_label.text = "Error: No Character Loaded"
+            return
+
+        self.populate_sheet(char_context)
+
+    def populate_sheet(self, context):
+        """Fills all UI elements with character data."""
+
+        self.char_name_label.text = f"{context.name} (Lvl {context.level} {context.kingdom})"
+
+        # --- Populate Stats ---
+        self.stats_grid.clear_widgets()
+        if context.stats:
+            for stat_name, value in context.stats.items():
+                self.stats_grid.add_widget(
+                    Label(text=f"{stat_name}:", font_size='16sp', size_hint_x=0.6, height='30dp')
+                )
+                self.stats_grid.add_widget(
+                    Label(text=f"{value}", font_size='16sp', size_hint_x=0.4, height='30dp')
+                )
+
+        # --- Populate Skills ---
+        self.skills_grid.clear_widgets()
+        if context.skills:
+            # We only want to show skills the character actually has
+            for skill_name, data in context.skills.items():
+                rank = data.get('rank', 0)
+                if rank > 0:
+                    self.skills_grid.add_widget(
+                        Label(text=f"{skill_name}:", font_size='14sp', size_hint_x=0.7, height='30dp')
+                    )
+                    self.skills_grid.add_widget(
+                        Label(text=f"Rank {rank}", font_size='14sp', size_hint_x=0.3, height='30dp')
+                    )
+
+        # --- Populate Talents ---
+        self.talents_list.clear_widgets()
+        if context.talents:
+            for talent_name in context.talents:
+                self.talents_list.add_widget(
+                    Label(text=talent_name, font_size='14sp', text_size=(self.talents_list.width, None), size_hint_y=None, height='40dp')
+                )
+
+        # --- Populate Abilities ---
+        self.abilities_list.clear_widgets()
+        if context.abilities:
+            for ability_desc in context.abilities:
+                self.abilities_list.add_widget(
+                    Label(text=ability_desc, font_size='14sp', text_size=(self.abilities_list.width, None), size_hint_y=None, height='60dp')
+                )
