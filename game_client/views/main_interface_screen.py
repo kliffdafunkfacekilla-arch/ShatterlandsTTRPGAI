@@ -169,6 +169,7 @@ MAIN_INTERFACE_KV = """
                     height: '44dp'
                     font_size: '16sp'
                     multiline: False
+                    on_text_validate: root.on_submit_narration(self)
         AnchorLayout:
             anchor_x: 'center'
             anchor_y: 'top'
@@ -196,8 +197,10 @@ MAIN_INTERFACE_KV = """
                     on_release: app.root.current = 'character_sheet'
                 Button:
                     text: 'Inventory'
+                    on_release: app.root.current = 'inventory'
                 Button:
                     text: 'Quests'
+                    on_release: app.root.current = 'quest_log'
 """
 Builder.load_string(MAIN_INTERFACE_KV)
 

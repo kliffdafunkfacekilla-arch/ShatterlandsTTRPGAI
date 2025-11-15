@@ -58,6 +58,8 @@ class ShatterlandsClientApp(App):
         sm.add_widget(MainInterfaceScreen(name='main_interface'))
         sm.add_widget(CombatScreen(name='combat_screen'))
         sm.add_widget(CharacterSheetScreen(name='character_sheet'))
+        sm.add_widget(InventoryScreen(name='inventory'))
+        sm.add_widget(QuestLogScreen(name='quest_log'))
 
         sm.current = 'main_menu'
         return sm

@@ -140,5 +140,43 @@ def list_characters(
 
 
 def get_character_by_name(db: Session, name: str) -> models.Character | None:
-    """Retrieves a single character by their name."""
+    """Retriees a single character by their name."""
     return db.query(models.Character).filter(models.Character.name == name).first()
+
+def apply_healing(db: Session, character: models.Character, amount: int) -> models.Character:
+    """Applies healing to a character."""
+    new_hp = min(character.current_hp + amount, character.max_hp)
+    character.current_hp = new_hp
+    flag_modified(character, "current_hp")
+    db.commit()
+    db.refresh(character)
+    return character
+
+def equip_item(db: Session, character: models.Character, item_id: str, slot: str) -> models.Character:
+    """Equips an item to a character."""
+    inventory = character.inventory or {}
+    equipment = character.equipment or {}
+
+    if item_id not in inventory or inventory[item_id] <= 0:
+        # Item not in inventory, do nothing
+        return character
+
+    # Unequip old item if any
+    currently_equipped_item_id = equipment.get(slot)
+    if currently_equipped_item_id:
+        inventory[currently_equipped_item_id] = inventory.get(currently_equipped_item_id, 0) + 1
+
+    # Equip new item
+    inventory[item_id] -= 1
+    if inventory[item_id] == 0:
+        del inventory[item_id]
+    equipment[slot] = item_id
+
+    character.inventory = inventory
+    character.equipment = equipment
+    flag_modified(character, "inventory")
+    flag_modified(character, "equipment")
+
+    db.commit()
+    db.refresh(character)
+    return character

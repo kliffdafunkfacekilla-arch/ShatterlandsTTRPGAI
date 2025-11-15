@@ -11,7 +11,7 @@ This module subscribes to:
 
 And publishes story.* events returned by those handlers.
 """
-from typing import Any, Dict
+from typing import Any, Dict, List
 import asyncio
 import logging
 import httpx # Keep httpx for the *internal* async client pattern
@@ -54,6 +54,18 @@ def handle_interaction(request: se_schemas.InteractionRequest) -> Dict[str, Any]
             "items_added": None,
             "items_removed": None,
         }
+
+def handle_narrative_prompt(actor_id: str, prompt_text: str) -> Dict[str, Any]:
+    """
+    Handles a player's narrative input from the 'DM input' box.
+    """
+    logger.info(f"[story.sync] Handling narrative prompt from '{actor_id}': '{prompt_text}'")
+    # In the future, this would call a generative AI model.
+    # For now, it returns a simple placeholder response.
+    return {
+        "success": True,
+        "message": f"You said: '{prompt_text}'. The DM ponders this..."
+    }
 
 async def _on_command_start_combat(topic: str, payload: Dict[str, Any]) -> None:
     bus = get_event_bus()
@@ -147,3 +159,12 @@ def register(orchestrator) -> None:
     asyncio.create_task(bus.subscribe("command.story.advance_narrative", _on_command_advance_narrative))
     asyncio.create_task(bus.subscribe("command.story.player_action", _on_command_player_action))
     logger.info("[story] module registered (self-contained logic)")
+
+def get_all_quests(campaign_id: int) -> List[Dict[str, Any]]:
+    """Retrieves all active quests for a campaign."""
+    db = se_db.SessionLocal()
+    try:
+        db_quests = se_crud.get_all_quests(db, campaign_id)
+        return [se_schemas.ActiveQuest.from_orm(q).model_dump() for q in db_quests]
+    finally:
+        db.close()
