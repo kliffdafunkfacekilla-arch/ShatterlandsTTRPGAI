@@ -564,20 +564,3 @@ class MainInterfaceScreen(Screen):
 
         self.save_popup.dismiss()
         self.save_popup = None
-
-    def on_submit_narration(self, instance):
-        """Handles the submission of the DM input."""
-        prompt_text = instance.text
-        if not prompt_text:
-            return
-
-        instance.text = ""
-        self.update_log(f"You: {prompt_text}")
-
-        if not story_api:
-            self.update_narration("Error: Story module not loaded.")
-            return
-
-        actor_id = self.active_character_context.id
-        response = story_api.handle_narrative_prompt(actor_id, prompt_text)
-        self.update_narration(response.get("message", "Error"))

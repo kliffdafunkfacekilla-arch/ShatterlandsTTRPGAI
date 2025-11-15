@@ -41,8 +41,6 @@ from views.main_interface_screen import MainInterfaceScreen
 from views.combat_screen import CombatScreen
 from views.character_sheet_screen import CharacterSheetScreen
 from views.load_game_screen import LoadGameScreen # <-- ADD THIS IMPORT
-from views.inventory_screen import InventoryScreen
-from views.quest_log_screen import QuestLogScreen
 
 # --- 6. THE MAIN APP CLASS (Unchanged from refactor) ---
 class ShatterlandsClientApp(App):
