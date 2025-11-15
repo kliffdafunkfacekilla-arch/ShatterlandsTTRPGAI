@@ -323,14 +323,25 @@ class CombatScreen(Screen):
             self.add_to_log("Error refreshing world state.")
 
     def get_target_at_coord(self, tile_x: int, tile_y: int) -> Optional[tuple[str, dict]]:
-        """Finds an NPC at the clicked tile."""
+        """Finds an NPC or Player at the clicked tile."""
+        # Check NPCs
         for npc in self.location_context.get('npcs', []):
             coords = npc.get('coordinates')
             if coords and coords[0] == tile_x and coords[1] == tile_y:
                 # Check if NPC is alive
                 if npc.get('current_hp', 0) > 0:
                     return "npc", npc
-        return None # Only care about living NPCs in combat
+
+        # Check Player (self)
+        if (self.player_context and
+            self.player_context.position_x == tile_x and
+            self.player_context.position_y == tile_y):
+            # Return the dict version of the context
+            return "player", self.player_context.model_dump()
+
+        # TODO: Check other allied players in party_list
+
+        return None
 
     # --- NEW: Methods for the Ability Pop-up Menu ---
 
@@ -447,31 +458,26 @@ class CombatScreen(Screen):
     def on_touch_down(self, touch):
         """Handle mouse clicks for targeting."""
 
-        # If a menu is open, a click outside it should close it.
+        # ... (menu closing logic is unchanged) ...
         if self.ability_menu:
             if not self.ability_menu.collide_point(*touch.pos):
                 self.close_ability_menu()
-            return True # Consume the touch
-
+            return True
         if self.item_menu:
             if not self.item_menu.collide_point(*touch.pos):
                 self.close_item_menu()
-            return True # Consume the touch
+            return True
 
-        # We only care about clicks if it's the player's turn
-        # and they are in a targeting mode
         if not self.is_player_turn or not self.current_action:
             return super().on_touch_down(touch)
 
-        # Check if click is on the map
         if not self.map_view_widget or not self.map_view_widget.collide_point(*touch.pos):
             self.add_to_log("Targeting cancelled. Click an action.")
             self.current_action = None
             self.selected_ability_id = None
-            self.selected_item_id = None # <-- ADD THIS
+            self.selected_item_id = None
             return super().on_touch_down(touch)
 
-        # --- Click is on the map and player is targeting ---
         local_pos = self.map_view_widget.to_local(*touch.pos)
         tile_x = int(local_pos[0] // TILE_SIZE)
 
@@ -482,35 +488,64 @@ class CombatScreen(Screen):
 
         target = self.get_target_at_coord(tile_x, tile_y)
 
-        # TODO: Allow targeting self or allies for healing items
-
+        # --- MODIFIED: Target Validation Logic ---
         if target:
             target_type, target_data = target
-            if target_type == "npc":
+
+            # Define what a friendly action is
+            is_friendly_action = (
+                self.selected_item_id == "item_health_potion_small" or
+                self.selected_ability_id == "Minor Heal"
+            )
+
+            # Case 1: Hostile action on an enemy (OK)
+            if target_type == "npc" and not is_friendly_action:
                 target_id = f"npc_{target_data.get('id')}"
-                action_name = self.current_action
-                ability_id = self.selected_ability_id if action_name == "use_ability" else None
-                item_id = self.selected_item_id if action_name == "use_item" else None
 
-                self.add_to_log(f"You target {target_id} with {action_name}!")
+            # Case 2: Friendly action on an ally (OK)
+            elif target_type == "player" and is_friendly_action:
+                target_id = target_data.get('id') # Already in "player_UUID" format
 
-                # Create the action request
-                action = story_schemas.PlayerActionRequest(
-                    action=action_name,
-                    target_id=target_id,
-                    ability_id=ability_id,
-                    item_id=item_id # <-- Pass the selected item
-                )
-
-                # Send it to the monolith
-                self.handle_player_action(self.player_context.id, action)
-
-                # Clear targeting mode
+            # Case 3: Hostile action on an ally (BAD)
+            elif target_type == "player" and not is_friendly_action:
+                self.add_to_log("You can't attack an ally!")
                 self.current_action = None
-                self.selected_ability_id = None
-                self.selected_item_id = None
+                return True # Consume touch
+
+            # Case 4: Friendly action on an enemy (BAD)
+            elif target_type == "npc" and is_friendly_action:
+                self.add_to_log("You can't use that on an enemy!")
+                self.current_action = None
+                return True # Consume touch
+
+            else:
+                self.add_to_log("Invalid target.")
+                self.current_action = None
+                return True
+
+            # --- If we got here, we have a valid target_id ---
+            action_name = self.current_action
+            ability_id = self.selected_ability_id if action_name == "use_ability" else None
+            item_id = self.selected_item_id if action_name == "use_item" else None
+
+            self.add_to_log(f"You use {action_name} on {target_id}!")
+
+            action = story_schemas.PlayerActionRequest(
+                action=action_name,
+                target_id=target_id,
+                ability_id=ability_id,
+                item_id=item_id
+            )
+
+            self.handle_player_action(self.player_context.id, action)
+
+            # Clear targeting mode
+            self.current_action = None
+            self.selected_ability_id = None
+            self.selected_item_id = None
+
         else:
-            self.add_to_log("You must target an enemy.")
+            self.add_to_log("You must target an enemy or ally.")
             self.current_action = None # Cancel targeting
             self.selected_ability_id = None
             self.selected_item_id = None
