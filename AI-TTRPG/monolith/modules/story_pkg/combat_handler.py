@@ -1643,6 +1643,12 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
                             elif effect_type in ("modify_attack", "special_move", "move_self", "move_self_roll", "reaction_damage", "reaction_move_ally", "move_target_roll"):
                                 # Requires actor/target context
                                 handler(actor_id, target_id, attacker_context, defender_context, log, effect)
+                            elif effect_type == "aoe_damage":
+                                # Pass the full combat object
+                                handler(actor_id, target_id, attacker_context, defender_context, log, effect, combat)
+                            elif effect_type == "summon":
+                                # Pass both combat and db session for intrusive state changes
+                                handler(actor_id, target_id, attacker_context, defender_context, log, effect, combat, db)
                             else:
                                 # Simple target effects (heal, status, composure_damage, resource_damage, create_item)
                                 handler(target_id, log, effect)
