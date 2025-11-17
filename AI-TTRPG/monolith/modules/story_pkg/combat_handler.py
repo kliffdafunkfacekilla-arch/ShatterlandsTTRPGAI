@@ -1,4 +1,4 @@
-# AI-TTRPG/story_engine/app/combat_handler.py
+# AI-TTRPG/monolith/modules/story_pkg/combat_handler.py
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from typing import List, Dict, Any, Tuple, Optional, Callable

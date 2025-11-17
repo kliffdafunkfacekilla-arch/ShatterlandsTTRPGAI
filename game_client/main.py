@@ -40,7 +40,9 @@ from views.character_creation_screen import CharacterCreationScreen
 from views.main_interface_screen import MainInterfaceScreen
 from views.combat_screen import CombatScreen
 from views.character_sheet_screen import CharacterSheetScreen
-from views.load_game_screen import LoadGameScreen # <-- ADD THIS IMPORT
+from views.load_game_screen import LoadGameScreen
+from views.inventory_screen import InventoryScreen
+from views.quest_log_screen import QuestLogScreen
 
 # --- 6. THE MAIN APP CLASS (Unchanged from refactor) ---
 class ShatterlandsClientApp(App):
@@ -54,7 +56,7 @@ class ShatterlandsClientApp(App):
         sm.add_widget(MainMenuScreen(name='main_menu'))
         sm.add_widget(GameSetupScreen(name='game_setup'))
         sm.add_widget(CharacterCreationScreen(name='character_creation'))
-        sm.add_widget(LoadGameScreen(name='load_game')) # <-- ADD THIS LINE
+        sm.add_widget(LoadGameScreen(name='load_game'))
         sm.add_widget(MainInterfaceScreen(name='main_interface'))
         sm.add_widget(CombatScreen(name='combat_screen'))
         sm.add_widget(CharacterSheetScreen(name='character_sheet'))
