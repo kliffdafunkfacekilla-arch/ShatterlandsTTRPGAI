@@ -51,6 +51,10 @@ def get_character_context(
         ),
         max_hp=getattr(db_character, "max_hp", 1),
         current_hp=getattr(db_character, "current_hp", 1),
+
+        # --- ADD THIS LINE ---
+        temp_hp=getattr(db_character, "temp_hp", 0),
+        # --- END ADD ---
         max_composure=getattr(db_character, "max_composure", 10),
         current_composure=getattr(db_character, "current_composure", 10),
         resource_pools=(
@@ -373,6 +377,10 @@ def create_character(
         skills=base_skills,
         max_hp=max_hp,
         current_hp=max_hp,
+
+        # --- ADD THIS LINE ---
+        temp_hp=0,
+        # --- END ADD ---
         max_composure=10,
         current_composure=10,
         resource_pools=resource_pools,

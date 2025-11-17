@@ -197,3 +197,11 @@ def apply_resource_damage_to_target(target_id: str, resource_name: str, damage_a
         return apply_status_to_target(target_id, "Staggered")
     else:
         raise ValueError(f"Unknown target type for ID {target_id}")
+
+def apply_temp_hp_to_character(char_id: str, amount: int) -> Dict:
+    logger.debug(f"Calling internal character_api.apply_temp_hp_to_character for {char_id}")
+    return character_api.apply_temp_hp_to_character(char_id, amount)
+
+def update_character_resource_pool(char_id: str, pool_name: str, new_value: int) -> Dict:
+    logger.debug(f"Calling internal character_api.update_character_resource_pool for {char_id}")
+    return character_api.update_character_resource_pool(char_id, pool_name, new_value)

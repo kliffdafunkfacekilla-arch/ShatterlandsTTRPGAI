@@ -12,25 +12,40 @@ def get_character(db: Session, char_id: str) -> models.Character | None:
     return db.query(models.Character).filter(models.Character.id == char_id).first()
 
 def apply_damage_to_character(
-    db: Session, character: models.Character, damage_amount: int
-) -> models.Character:
-    """Subtracts damage from current_hp."""
+db: Session, character: models.Character, damage_amount: int) -> models.Character:
+    """
+    Subtracts damage from current_hp, depleting temp_hp first.
+    """
     if damage_amount <= 0:
         return character # No damage
 
-    # --- MODIFICATION: Update the correct column ---
-    current_hp = character.current_hp
-    new_hp = current_hp - damage_amount
-    new_hp = max(0, new_hp) # Clamp HP at 0
+    # --- THIS FUNCTION IS HEAVILY MODIFIED ---
+    current_temp_hp = character.temp_hp or 0
+    damage_to_hp = damage_amount
 
-    print(
-        f"Applying {damage_amount} damage to {character.name}. HP: {current_hp} -> {new_hp}"
-    )
-    character.current_hp = new_hp # Update the direct column
+    logger.info(f"Applying {damage_amount} damage to {character.name}. (HP: {character.current_hp}, TempHP: {current_temp_hp})")
 
+    if current_temp_hp > 0:
+        if damage_amount <= current_temp_hp:
+            # Damage is fully absorbed by Temp HP
+            character.temp_hp = current_temp_hp - damage_amount
+            damage_to_hp = 0
+            logger.info(f"Damage absorbed by Temp HP. New Temp HP: {character.temp_hp}")
+        else:
+            # Damage breaks Temp HP and overflows
+            damage_to_hp = damage_amount - current_temp_hp
+            character.temp_hp = 0
+            logger.info(f"Temp HP depleted. {damage_to_hp} damage overflows to HP.")
+
+        flag_modified(character, "temp_hp")
+
+    if damage_to_hp > 0:
+        new_hp = character.current_hp - damage_to_hp
+        character.current_hp = max(0, new_hp) # Clamp HP at 0
+        logger.info(f"New HP: {character.current_hp}")
+        flag_modified(character, "current_hp")
     # --- END MODIFICATION ---
 
-    flag_modified(character, "current_hp") # Mark as modified
     db.commit()
     db.refresh(character)
     return character
@@ -213,11 +228,19 @@ def apply_temp_hp(db: Session, character: models.Character, amount: int) -> mode
     Applies temporary HP to a character.
     Temp HP does not stack; the highest value is taken.
     """
+    # --- THIS FUNCTION IS NO LONGER A PLACEHOLDER ---
+    logger.info(f"Applying {amount} Temp HP to {character.name}. Current Temp HP: {character.temp_hp}")
+
+    # Temp HP takes the highest value, it does not stack
     new_temp_hp = max(character.temp_hp or 0, amount)
-    character.temp_hp = new_temp_hp
-    flag_modified(character, "temp_hp")
-    db.commit()
-    db.refresh(character)
+
+    if new_temp_hp > (character.temp_hp or 0):
+        character.temp_hp = new_temp_hp
+        flag_modified(character, "temp_hp")
+        db.commit()
+        db.refresh(character)
+        logger.info(f"New Temp HP set to {new_temp_hp}.")
+    # --- END MODIFICATION ---
     return character
 
 def update_resource_pool(db: Session, character: models.Character, pool_name: str, new_value: int) -> models.Character:

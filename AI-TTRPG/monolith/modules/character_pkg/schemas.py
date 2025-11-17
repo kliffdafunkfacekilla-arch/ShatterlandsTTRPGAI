@@ -1,5 +1,5 @@
 # app/schemas.py
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 
 
@@ -63,6 +63,10 @@ class CharacterContextResponse(CharacterBase):
     skills: Dict[str, Any]
     max_hp: int
     current_hp: int
+
+    # --- ADD THIS LINE ---
+    temp_hp: int = Field(default=0, description="Current Temporary HP")
+    # --- END ADD ---
     max_composure: int
     current_composure: int
     resource_pools: Dict[str, Any]  # e.g., {"Stamina": {"current": 10, "max": 10}, ...}
