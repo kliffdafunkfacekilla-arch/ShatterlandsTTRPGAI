@@ -224,3 +224,32 @@ def apply_temp_hp_to_character(char_id: str, amount: int) -> Dict[str, Any]:
         raise
     finally:
         db.close()
+
+def apply_temp_hp_to_character(char_id: str, amount: int) -> Dict[str, Any]:
+    """Applies temporary HP to a character and returns new context."""
+    db = char_db.SessionLocal()
+    try:
+        db_char = _get_character_db(db, char_id)
+        # This now calls the real CRUD function
+        updated_char = char_crud.apply_temp_hp(db, db_char, amount)
+        schema_char = char_services.get_character_context(updated_char)
+        return schema_char.model_dump()
+    except Exception as e:
+        logger.exception(f"[character.apply_temp_hp_to_character] Error: {e}")
+        raise
+    finally:
+        db.close()
+
+def update_character_resource_pool(char_id: str, pool_name: str, new_value: int) -> Dict[str, Any]:
+    """Updates a specific resource pool for a character and returns new context."""
+    db = char_db.SessionLocal()
+    try:
+        db_char = _get_character_db(db, char_id)
+        updated_char = char_crud.update_resource_pool(db, db_char, pool_name, new_value)
+        schema_char = char_services.get_character_context(updated_char)
+        return schema_char.model_dump()
+    except Exception as e:
+        logger.exception(f"[character.update_character_resource_pool] Error: {e}")
+        raise
+    finally:
+        db.close()

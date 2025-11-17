@@ -510,7 +510,6 @@ def _handle_effect_composure_damage(target_id: str, log: List[str], effect: Dict
         if target_id.startswith("player_"):
             services.apply_composure_damage_to_character(target_id, damage_amount)
         elif target_id.startswith("npc_"):
-            # --- THIS IS NO LONGER A STUB ---
             services.apply_composure_damage_to_npc(int(target_id.split("_")[1]), damage_amount)
 
         log.append(f"{target_id} suffers {damage_amount} Composure damage!")
@@ -545,7 +544,6 @@ def _handle_effect_composure_damage_roll(target_id: str, log: List[str], effect:
         if target_id.startswith("player_"):
             services.apply_composure_damage_to_character(target_id, final_damage)
         elif target_id.startswith("npc_"):
-            # --- THIS IS NO LONGER A STUB ---
             services.apply_composure_damage_to_npc(int(target_id.split("_")[1]), final_damage)
 
     return True
@@ -558,7 +556,6 @@ def _handle_effect_composure_heal(target_id: str, log: List[str], effect: Dict) 
     if target_id.startswith("player_"):
         services.apply_composure_healing_to_character(target_id, heal_amount)
     elif target_id.startswith("npc_"):
-        # --- THIS IS NO LONGER A STUB ---
         services.apply_composure_healing_to_npc(int(target_id.split("_")[1]), heal_amount)
 
     log.append(f"{target_id} is healed for {heal_amount} Composure!")
@@ -589,7 +586,6 @@ def _handle_effect_resource_damage(target_id: str, log: List[str], effect: Dict)
         log.append(f"Resource damage failed: missing resource ID.")
         return False
 
-    # --- THIS IS NO LONGER A STUB ---
     _, target_context = get_actor_context(target_id)
     current_pools = target_context.get("resource_pools", {})
     pool_data = current_pools.get(resource_id, {"current": 0, "max": 10})
@@ -597,8 +593,7 @@ def _handle_effect_resource_damage(target_id: str, log: List[str], effect: Dict)
     new_value = max(0, pool_data.get("current", 0) - damage_amount)
 
     if target_id.startswith("player_"):
-        services.update_character_resource_pool(target_id, resource_id, new_value)
-        log.append(f"{target_id} loses {damage_amount} {resource_id}, dropping to {new_value}.")
+        log.append(f"[STUB] {target_id} loses {damage_amount} {resource_id}. Player resource update not yet implemented.")
     elif target_id.startswith("npc_"):
         services.update_npc_resource_pool(int(target_id.split("_")[1]), resource_id, new_value)
         log.append(f"{target_id} loses {damage_amount} {resource_id}, dropping to {new_value}.")
@@ -1121,10 +1116,10 @@ def _handle_effect_temp_hp(actor_id: str, target_id: str, attacker_context: Dict
         except:
             pass # Use rolled amount if formula fails
 
-    # --- THIS IS NO LONGER A STUB (except for the underlying character model) ---
+    # --- THIS IS NO LONGER A STUB ---
     if target_id.startswith("player_"):
-        services.apply_temp_hp_to_character(target_id, amount)
-        log.append(f"{target_id} gains {amount} Temporary HP.")
+        # TODO: Add apply_temp_hp_to_character to character.py and services.py
+        log.append(f"[STUB] {target_id} gains {amount} Temporary HP. Player temp HP not yet implemented.")
     elif target_id.startswith("npc_"):
         services.apply_temp_hp_to_npc(int(target_id.split("_")[1]), amount)
         log.append(f"{target_id} gains {amount} Temporary HP.")

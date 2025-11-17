@@ -16,6 +16,10 @@ class CharacterSave(BaseModel):
     skills: Optional[Dict[str, Any]] = {}
     max_hp: int = 1
     current_hp: int = 1
+
+    # --- ADD THIS LINE ---
+    temp_hp: Optional[int] = 0
+    # --- END ADD ---
     max_composure: int = 10
     current_composure: int = 10
     resource_pools: Optional[Dict[str, Any]] = {}
