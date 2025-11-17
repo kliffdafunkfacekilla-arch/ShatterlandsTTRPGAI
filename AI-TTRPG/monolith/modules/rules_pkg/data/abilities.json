@@ -245,5 +245,84 @@
             ]
         }
     ]
+},
+"Cunning": {
+    "resource": "Guile",
+    "associated_stat": "Finesse",
+    "branches": [
+        {
+            "branch": "Misdirection",
+            "tiers": [
+                {
+                    "tier": "T1",
+                    "name": "Quick Feint",
+                    "description": "Grant one ally +1 to their next attack roll (Minor Action).",
+                    "target_type": "ally",
+                    "effects": [
+                        {
+                            "type": "apply_status",
+                            "status_id": "Aimed",
+                            "duration": 1
+                        }
+                    ]
+                },
+                {
+                    "tier": "T2",
+                    "name": "Alarm Snare",
+                    "description": "Place an invisible tripwire trap at a target location that alerts the party when triggered.",
+                    "target_type": "ground",
+                    "cost": {
+                        "resource": "Guile",
+                        "amount": 2
+                    },
+                    "effects": [
+                        {
+                            "type": "create_trap",
+                            "trap_template_id": "alarm_snare_t1"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+},
+"Psionics": {
+    "resource": "Instinct",
+    "associated_stat": "Willpower",
+    "branches": [
+        {
+            "branch": "Telekinesis",
+            "tiers": [
+                {
+                    "tier": "T1",
+                    "name": "Minor Telepathy",
+                    "description": "Send a non-verbal message to a target within 10m (Minor Action).",
+                    "target_type": "ally",
+                    "effects": [
+                        {
+                            "type": "special_move",
+                            "effect_id": "telepathy"
+                        }
+                    ]
+                },
+                {
+                    "tier": "T2",
+                    "name": "Push Object",
+                    "description": "Mentally push a target 1m away (Willpower contested check).",
+                    "target_type": "enemy",
+                    "cost": {
+                        "resource": "Instinct",
+                        "amount": 1
+                    },
+                    "effects": [
+                        {
+                            "type": "special_move",
+                            "effect_id": "push_object_psi"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
 }
 }
