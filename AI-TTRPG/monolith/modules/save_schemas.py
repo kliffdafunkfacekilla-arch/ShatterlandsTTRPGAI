@@ -16,6 +16,8 @@ class CharacterSave(BaseModel):
     skills: Optional[Dict[str, Any]] = {}
     max_hp: int = 1
     current_hp: int = 1
+    max_composure: int = 10
+    current_composure: int = 10
     resource_pools: Optional[Dict[str, Any]] = {}
     talents: Optional[List[str]] = []
     abilities: Optional[List[str]] = []
@@ -73,6 +75,11 @@ class NpcInstanceSave(BaseModel):
     name_override: Optional[str] = None
     current_hp: int
     max_hp: int
+    temp_hp: Optional[int] = 0
+    max_composure: Optional[int] = 10
+    current_composure: Optional[int] = 10
+    resource_pools: Optional[Dict[str, Any]] = {}
+    abilities: Optional[List[str]] = []
     status_effects: List[str]
     location_id: int
     behavior_tags: List[str] = []

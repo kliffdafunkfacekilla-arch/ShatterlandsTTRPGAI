@@ -59,6 +59,11 @@ class OrchestrationSpawnNpc(BaseModel):
     # --- ADD THIS LINE ---
     coordinates: Optional[Any] = None # e.g., [x, y]
 
+class TrapInstanceCreate(BaseModel):
+    template_id: str
+    location_id: int
+    coordinates: List[int]
+
 class OrchestrationSpawnItem(BaseModel):
     template_id: str
     location_id: Optional[int] = None

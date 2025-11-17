@@ -88,15 +88,31 @@ def get_npc(db: Session, npc_id: int) -> Optional[models.NpcInstance]:
     return db.query(models.NpcInstance).filter(models.NpcInstance.id == npc_id).first()
 
 def spawn_npc(db: Session, npc: schemas.NpcSpawnRequest) -> models.NpcInstance:
+    # --- THIS FUNCTION IS MODIFIED ---
     db_npc = models.NpcInstance(
         template_id=npc.template_id,
         location_id=npc.location_id,
         name_override=npc.name_override,
+
+        # Core Vitals
         current_hp=npc.current_hp if npc.current_hp is not None else 10,
         max_hp=npc.max_hp if npc.max_hp is not None else 10,
+
+        # New Vitals
+        temp_hp=npc.temp_hp if npc.temp_hp is not None else 0,
+        max_composure=npc.max_composure if npc.max_composure is not None else 10,
+        current_composure=npc.current_composure if npc.current_composure is not None else 10,
+
+        # New JSON fields
+        resource_pools=npc.resource_pools if npc.resource_pools is not None else {},
+        abilities=npc.abilities if npc.abilities is not None else [],
+
+        # Existing fields
         behavior_tags=npc.behavior_tags,
         coordinates=npc.coordinates # Save the coordinates
     )
+    # --- END MODIFICATION ---
+
     db.add(db_npc)
     db.commit()
     db.refresh(db_npc)
@@ -115,11 +131,17 @@ def update_npc(db: Session, npc_id: int, updates: schemas.NpcUpdate) -> Optional
         for key, value in update_data.items():
             setattr(db_npc, key, value)
 
+        # --- THIS SECTION IS MODIFIED ---
+        # Flag all JSON fields as modified if they are in the update
         if "status_effects" in update_data:
             flag_modified(db_npc, "status_effects")
-
         if "coordinates" in update_data:
             flag_modified(db_npc, "coordinates")
+        if "resource_pools" in update_data:
+            flag_modified(db_npc, "resource_pools")
+        if "abilities" in update_data:
+            flag_modified(db_npc, "abilities")
+        # --- END MODIFICATION ---
 
         db.commit()
         db.refresh(db_npc)

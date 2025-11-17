@@ -96,6 +96,11 @@ class NpcInstanceBase(BaseModel):
     name_override: Optional[str] = None
     current_hp: int
     max_hp: int
+    temp_hp: int = 0
+    max_composure: int = 10
+    current_composure: int = 10
+    resource_pools: Dict[str, Any] = {}
+    abilities: List[str] = []
     status_effects: List[str]
     location_id: int
     # --- ADD THIS LINE ---
@@ -155,6 +160,15 @@ class NpcSpawnRequest(BaseModel):
     # the story_engine should get them from the rules.
     current_hp: Optional[int] = None
     max_hp: Optional[int] = None
+
+    # --- ADD THESE NEW OPTIONAL FIELDS ---
+    temp_hp: Optional[int] = 0
+    max_composure: Optional[int] = 10
+    current_composure: Optional[int] = 10
+    resource_pools: Optional[Dict[str, Any]] = {}
+    abilities: Optional[List[str]] = []
+    # --- END NEW OPTIONAL FIELDS ---
+
     behavior_tags: List[str] = []
     # --- ADD THIS LINE ---
     coordinates: Optional[Any] = None # Expecting [x, y]
@@ -165,6 +179,14 @@ class LocationAnnotationUpdate(BaseModel):
 class NpcUpdate(BaseModel):
     # All fields are optional. We only update what is provided.
     current_hp: Optional[int] = None
+
+    # --- ADD THESE NEW OPTIONAL FIELDS ---
+    temp_hp: Optional[int] = None
+    current_composure: Optional[int] = None
+    resource_pools: Optional[Dict[str, Any]] = None
+    abilities: Optional[List[str]] = None
+    # --- END NEW OPTIONAL FIELDS ---
+
     status_effects: Optional[List[str]] = None
     location_id: Optional[int] = None
     # --- ADD THIS LINE ---

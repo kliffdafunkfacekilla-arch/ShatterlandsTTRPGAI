@@ -557,33 +557,56 @@ def find_eligible_talents(
     return unlocked_talents
 
 
-# ADD THIS FUNCTION
 def calculate_base_vitals(stats: Dict[str, int]) -> models.BaseVitalsResponse:
     """
     Calculates Max HP and Base Resource Pools based on final stat scores.
-    This replaces the placeholder logic from character_engine.
+    The resource pool calculations now sum two stat modifiers as provided.
     """
 
-    # --- 1. Calculate HP ---
+    # --- 1. Calculate HP (Keeping existing simplified formula until new 12-stat formula is provided) ---
     # Rule: Base 5 + Vitality Score + Endurance Modifier
     vit_score = stats.get("Vitality", 10)
     end_mod = calculate_modifier(stats.get("Endurance", 10))
     max_hp = 5 + vit_score + end_mod
-    max_hp = max(1, max_hp)  # Ensure HP is at least 1
+    max_hp = max(1, max_hp) # Ensure HP is at least 1
 
-    # --- 2. Calculate Resources ---
-    # Rule: Base 5 + Modifier of associated stat
+    # --- 2. Calculate Resources (Dual-Stat Modifiers) ---
+    # Formula: 5 (Base) + (Stat1 Modifier + Stat2 Modifier)
+
+    # Chi: Finesse + Reflexes (used in place of Agility)
+    chi_mod = calculate_modifier(stats.get("Finesse", 10)) + calculate_modifier(stats.get("Reflexes", 10))
+
+    # Stamina: Endurance + Vitality (used in place of Constitution)
+    stamina_mod = calculate_modifier(stats.get("Endurance", 10)) + calculate_modifier(stats.get("Vitality", 10))
+
+    # Guile: Finesse + Knowledge
+    guile_mod = calculate_modifier(stats.get("Finesse", 10)) + calculate_modifier(stats.get("Knowledge", 10))
+
+    # Presence: Might + Charm
+    presence_mod = calculate_modifier(stats.get("Might", 10)) + calculate_modifier(stats.get("Charm", 10))
+
+    # Tactics: Awareness + Logic
+    tactics_mod = calculate_modifier(stats.get("Awareness", 10)) + calculate_modifier(stats.get("Logic", 10))
+
+    # Instinct: Intuition + Willpower
+    instinct_mod = calculate_modifier(stats.get("Intuition", 10)) + calculate_modifier(stats.get("Willpower", 10))
+
+
     resources = {
-        "Presence": {"max": 5 + calculate_modifier(stats.get("Charm", 10))},
-        "Stamina": {"max": 5 + calculate_modifier(stats.get("Endurance", 10))},
-        "Chi": {"max": 5 + calculate_modifier(stats.get("Finesse", 10))},
-        "Guile": {"max": 5 + calculate_modifier(stats.get("Knowledge", 10))},
-        "Tactics": {"max": 5 + calculate_modifier(stats.get("Logic", 10))},
-        "Instinct": {"max": 5 + calculate_modifier(stats.get("Intuition", 10))},
+        "Chi": {"max": 5 + chi_mod},
+        "Stamina": {"max": 5 + stamina_mod},
+        "Guile": {"max": 5 + guile_mod},
+        "Presence": {"max": 5 + presence_mod},
+        "Tactics": {"max": 5 + tactics_mod},
+        "Instinct": {"max": 5 + instinct_mod},
     }
 
-    # Set current to max for initial creation
+    # NOTE: Removed the Composure resource pool added previously as it is not present in this new 6-pool schema.
+
+    # Set current to max for initial creation, ensuring a minimum of 1
     for pool in resources.values():
+        if pool["max"] < 1:
+            pool["max"] = 1
         pool["current"] = pool["max"]
 
     return models.BaseVitalsResponse(max_hp=max_hp, resources=resources)

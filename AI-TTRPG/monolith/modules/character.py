@@ -48,6 +48,20 @@ def get_character_context(char_id: str) -> Dict[str, Any]:
     finally:
         db.close()
 
+def update_character_resource_pool(char_id: str, pool_name: str, new_value: int) -> Dict[str, Any]:
+    """Updates a specific resource pool for a character and returns new context."""
+    db = char_db.SessionLocal()
+    try:
+        db_char = _get_character_db(db, char_id)
+        updated_char = char_crud.update_resource_pool(db, db_char, pool_name, new_value)
+        schema_char = char_services.get_character_context(updated_char)
+        return schema_char.model_dump()
+    except Exception as e:
+        logger.exception(f"[character.update_character_resource_pool] Error: {e}")
+        raise
+    finally:
+        db.close()
+
 def apply_damage_to_character(char_id: str, damage_amount: int) -> Dict[str, Any]:
     # --- REMOVED ASYNC AND _client ---
     db = char_db.SessionLocal()
@@ -136,6 +150,48 @@ def register(orchestrator) -> None:
     # and does not currently subscribe to any event bus commands.
     logger.info("[character] module registered (direct-call adapter)")
 
+def apply_composure_damage_to_character(char_id: str, damage_amount: int) -> Dict[str, Any]:
+    """Applies composure damage to a character and returns the updated context."""
+    db = char_db.SessionLocal()
+    try:
+        db_char = _get_character_db(db, char_id)
+        updated_char = char_crud.apply_composure_damage(db, db_char, damage_amount)
+        schema_char = char_services.get_character_context(updated_char)
+        return schema_char.model_dump()
+    except Exception as e:
+        logger.exception(f"[character.apply_composure_damage_to_character] Error: {e}")
+        raise
+    finally:
+        db.close()
+
+def apply_composure_healing_to_character(char_id: str, amount: int):
+    """Applies composure healing to a character. Fire and forget."""
+    db = char_db.SessionLocal()
+    try:
+        db_char = _get_character_db(db, char_id)
+        updated_char = char_crud.apply_composure_healing(db, db_char, amount)
+        schema_char = char_services.get_character_context(updated_char)
+        return schema_char.model_dump()
+    except Exception as e:
+        logger.exception(f"[character.apply_composure_healing_to_character] Error: {e}")
+        raise
+    finally:
+        db.close()
+
+def apply_resource_damage_to_character(char_id: str, resource_name: str, damage_amount: int) -> Dict[str, Any]:
+    """Applies damage to a specific resource pool (e.g., Chi, Stamina)."""
+    db = char_db.SessionLocal()
+    try:
+        db_char = _get_character_db(db, char_id)
+        updated_char = char_crud.apply_resource_damage(db, db_char, resource_name, damage_amount)
+        schema_char = char_services.get_character_context(updated_char)
+        return schema_char.model_dump()
+    except Exception as e:
+        logger.exception(f"[character.apply_resource_damage_to_character] Error: {e}")
+        raise
+    finally:
+        db.close()
+
 def apply_healing_to_character(char_id: str, amount: int):
     db = char_db.SessionLocal()
     try:
@@ -151,5 +207,20 @@ def equip_item(char_id: str, item_id: str, slot: str) -> Dict[str, Any]:
         updated_char = char_crud.equip_item(db, db_char, item_id, slot)
         schema_char = char_services.get_character_context(updated_char)
         return schema_char.model_dump()
+    finally:
+        db.close()
+
+def apply_temp_hp_to_character(char_id: str, amount: int) -> Dict[str, Any]:
+    """Applies temporary HP to a character and returns new context."""
+    db = char_db.SessionLocal()
+    try:
+        db_char = _get_character_db(db, char_id)
+        # NOTE: This will call the placeholder CRUD function for now
+        updated_char = char_crud.apply_temp_hp(db, db_char, amount)
+        schema_char = char_services.get_character_context(updated_char)
+        return schema_char.model_dump()
+    except Exception as e:
+        logger.exception(f"[character.apply_temp_hp_to_character] Error: {e}")
+        raise
     finally:
         db.close()

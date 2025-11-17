@@ -95,6 +95,26 @@ def update_location_map(location_id: int, map_update: Dict[str, Any]) -> Dict:
     logger.debug(f"Calling internal world_api.update_location_map for {location_id}")
     return world_api.update_location_map(location_id, map_update)
 
+def spawn_trap_in_world(trap_request: schemas.TrapInstanceCreate) -> Dict:
+    logger.debug(f"Calling internal world_api.spawn_trap_in_world for {trap_request.template_id}")
+    return world_api.spawn_trap_in_world(trap_request)
+
+def apply_composure_damage_to_npc(npc_id: int, damage_amount: int) -> Dict:
+    logger.debug(f"Calling internal world_api.apply_composure_damage_to_npc for {npc_id}")
+    return world_api.apply_composure_damage_to_npc(npc_id, damage_amount)
+
+def apply_composure_healing_to_npc(npc_id: int, amount: int) -> Dict:
+    logger.debug(f"Calling internal world_api.apply_composure_healing_to_npc for {npc_id}")
+    return world_api.apply_composure_healing_to_npc(npc_id, amount)
+
+def apply_temp_hp_to_npc(npc_id: int, amount: int) -> Dict:
+    logger.debug(f"Calling internal world_api.apply_temp_hp_to_npc for {npc_id}")
+    return world_api.apply_temp_hp_to_npc(npc_id, amount)
+
+def update_npc_resource_pool(npc_id: int, pool_name: str, new_value: int) -> Dict:
+    logger.debug(f"Calling internal world_api.update_npc_resource_pool for {npc_id}")
+    return world_api.update_npc_resource_pool(npc_id, pool_name, new_value)
+
 # --- Character Engine Functions ---
 def get_character_context(char_id: str) -> Dict:
     logger.debug(f"Calling internal character_api.get_character_context for {char_id}")
@@ -104,10 +124,19 @@ def apply_damage_to_character(char_id: str, damage_amount: int) -> Dict:
     logger.debug(f"Calling internal character_api.apply_damage_to_character for {char_id}")
     return char_api.apply_damage_to_character(char_id, damage_amount)
 
+def apply_composure_damage_to_character(char_id: str, damage_amount: int) -> Dict:
+    logger.debug(f"Calling internal character_api.apply_composure_damage_to_character for {char_id}")
+    return character_api.apply_composure_damage_to_character(char_id, damage_amount)
+
 def apply_healing_to_character(char_id: str, amount: int):
     """Applies healing to a character. Fire and forget."""
     logger.debug(f"Calling internal character_api.apply_healing_to_character for {char_id}")
     return character_api.apply_healing_to_character(char_id, amount)
+
+def apply_composure_healing_to_character(char_id: str, amount: int):
+    """Applies healing to a character's composure pool. Fire and forget."""
+    logger.debug(f"Calling internal character_api.apply_composure_healing_to_character for {char_id}")
+    return character_api.apply_composure_healing_to_character(char_id, amount)
 
 def add_item_to_character(char_id: str, item_id: str, quantity: int) -> Dict:
     logger.debug(f"Calling internal character_api.add_item_to_character for {char_id}")
@@ -116,6 +145,14 @@ def add_item_to_character(char_id: str, item_id: str, quantity: int) -> Dict:
 def remove_item_from_character(char_id: str, item_id: str, quantity: int) -> Dict:
     logger.debug(f"Calling internal character_api.remove_item_from_character for {char_id}")
     return char_api.remove_item_from_character(char_id, item_id, quantity)
+
+def apply_temp_hp_to_character(char_id: str, amount: int) -> Dict:
+    logger.debug(f"Calling internal character_api.apply_temp_hp_to_character for {char_id}")
+    return character_api.apply_temp_hp_to_character(char_id, amount)
+
+def update_character_resource_pool(char_id: str, pool_name: str, new_value: int) -> Dict:
+    logger.debug(f"Calling internal character_api.update_character_resource_pool for {char_id}")
+    return character_api.update_character_resource_pool(char_id, pool_name, new_value)
 
 def get_ability_data(ability_name: str) -> Dict:
     """Gets the data for a single ability from the rules engine."""
@@ -149,3 +186,14 @@ def remove_status_from_npc(npc_id: int, status_id: str) -> Dict:
     """Removes a status from an NPC."""
     logger.debug(f"Removing status {status_id} from NPC {npc_id}")
     return world_api.remove_status_from_npc(npc_id, status_id)
+
+def apply_resource_damage_to_target(target_id: str, resource_name: str, damage_amount: int) -> Dict:
+    """Applies damage to a player's resource pool or logs for an NPC."""
+    logger.debug(f"Applying {damage_amount} damage to {target_id}'s {resource_name} pool.")
+    if target_id.startswith("player_"):
+        return character_api.apply_resource_damage_to_character(target_id, resource_name, damage_amount)
+    elif target_id.startswith("npc_"):
+        # For NPCs, consuming resources is complex. For now, resource loss results in Staggered status.
+        return apply_status_to_target(target_id, "Staggered")
+    else:
+        raise ValueError(f"Unknown target type for ID {target_id}")
