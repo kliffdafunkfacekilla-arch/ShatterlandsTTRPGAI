@@ -603,6 +603,8 @@ def _handle_effect_resource_damage(target_id: str, log: List[str], effect: Dict)
 # --- Status and Move ---
 
 def _handle_effect_modify_attack(
+    db: Session,
+    combat: models.CombatEncounter,
     actor_id: str,
     target_id: str,
     attacker_context: Dict,
@@ -610,7 +612,7 @@ def _handle_effect_modify_attack(
     log: List[str],
     effect: Dict) -> bool:
     """Handles abilities that modify a basic attack (e.g., "Concussive Strike")."""
-    return _handle_basic_attack(actor_id, target_id, attacker_context, defender_context, log, ability_mod=effect)
+    return _handle_basic_attack(db, combat, actor_id, target_id, attacker_context, defender_context, log, ability_mod=effect)
 
 def _handle_effect_direct_damage(
     target_id: str,
@@ -939,13 +941,14 @@ def _handle_effect_aoe_heal(actor_id: str, target_id: str, attacker_context: Dic
     return True
 
 def _handle_effect_aoe_damage(
+    db: Session,
+    combat: models.CombatEncounter,
     actor_id: str,
     target_id: str, # This is the epicenter of the AoE
     attacker_context: Dict,
     defender_context: Dict, # Context of the epicenter target
     log: List[str],
-    effect: Dict,
-    combat: models.CombatEncounter # Pass in the combat object
+    effect: Dict
 ) -> bool:
     """
     Handles effects that deal AoE damage.
@@ -1019,14 +1022,14 @@ def _handle_effect_aoe_damage(
 # --- Utility / Special Handlers ---
 
 def _handle_effect_summon_creature(
+    db: Session,
+    combat: models.CombatEncounter,
     actor_id: str,
     target_id: str, # The target acts as the spawn point
     attacker_context: Dict,
     defender_context: Dict,
     log: List[str],
-    effect: Dict,
-    combat: models.CombatEncounter,
-    db: Session # We need the session to modify the turn order tables
+    effect: Dict
 ) -> bool:
     """
     Handles abilities that spawn a new NPC into the combat encounter.
@@ -1197,6 +1200,28 @@ def _handle_effect_special_move(
     log.append(f"Performing special action: {effect_id}! [STUB: Custom logic required].")
     return True
 
+# --- ADD THESE NEW HANDLERS ---
+def _handle_effect_apply_injury(target_id: str, log: List[str], effect: Dict) -> bool:
+    """
+    Handles effects that directly apply an injury.
+    e.g., Chaos T9 "Full Entropy"
+    """
+    injury_location = effect.get("location", "Torso")
+    injury_severity = effect.get("severity", "Minor")
+
+    log.append(f"[STUB] {target_id} suffers a {injury_severity} Injury to their {injury_location}!")
+    return True
+
+def _handle_effect_repair_injury(target_id: str, log: List[str], effect: Dict) -> bool:
+    """
+    Handles effects that repair or downgrade an injury.
+    e.g., Biomancy T5 "Repair Minor Injury"
+    """
+    severity_to_remove = effect.get("severity", "Minor")
+    log.append(f"[STUB] A {severity_to_remove} Injury on {target_id} is repaired!")
+    return True
+# --- END ADD ---
+
 
 # This is the "router" that maps `effect["type"]` to the functions above
 ABILITY_EFFECT_HANDLERS: Dict[str, Callable] = {
@@ -1238,13 +1263,90 @@ ABILITY_EFFECT_HANDLERS: Dict[str, Callable] = {
     "reaction_damage": _handle_effect_reaction_damage,
     "reaction_move_ally": _handle_effect_reaction_move_ally,
     "reaction_contest": _handle_effect_reaction_contest,
-    "special_move": _handle_effect_special_move,
-    "special_action": _handle_effect_special_move,
+
+    # --- UPDATE THIS SECTION ---
+    "special_move": _handle_effect_special_move, # Default "special_move"
+    "special_action": _handle_effect_special_move, # Default "special_action"
     "special_action_roll": _handle_effect_special_move,
+
+    # --- ADD THESE NEW KEYS ---
+    "apply_injury": _handle_effect_apply_injury,
+    "repair_injury": _handle_effect_repair_injury
+    # --- END ADD ---
 }
 
-# --- Main Attack Handler (Original/Core) ---
+# --- ADD THE NEW REACTION CHECKER FUNCTION ---
+def _check_and_trigger_reactions(
+db: Session,
+combat: models.CombatEncounter,
+trigger_event: str,
+trigger_actor_id: str,
+target_actor_id: str,
+log: List[str]) -> bool:
+    """
+    Checks all participants for readied or innate reactions to an event.
+    Returns True if a reaction was triggered, False otherwise.
+
+    Args:
+        trigger_event (str): The event that just happened (e.g., "attack_hit", "actor_move").
+        trigger_actor_id (str): The actor who *caused* the event.
+        target_actor_id (str): The actor who was *affected* by the event.
+        log (List[str]): The combat log to append to.
+    """
+    logger.info(f"Checking reactions for event: {trigger_event} (Actor: {trigger_actor_id}, Target: {target_actor_id})")
+
+    # This logic checks if the TARGET (target_actor_id) has a reaction
+    # In a move event, this means we check if the person *being moved past* (target)
+    # has a reaction to the *mover* (trigger_actor).
+
+    try:
+        _, target_context = get_actor_context(target_actor_id)
+        if target_context.get("current_hp", 0) <= 0:
+            return False # Defeated actors can't react
+    except HTTPException:
+        return False # Actor not found
+
+    # 1. Check for Innate Reactions (from abilities)
+    # Example: Check for "Retaliatory Stun" (Bastion T3)
+    if trigger_event == "attack_hit" and "Retaliatory Stun" in target_context.get("abilities", []):
+        log.append(f"REACTION: {target_actor_id}'s 'Retaliatory Stun' triggers!")
+        # Apply the effect back to the attacker
+        services.apply_status_to_target(trigger_actor_id, "Staggered")
+        log.append(f" -> {trigger_actor_id} is now Staggered!")
+        return True # A reaction happened
+
+    # 2. Check for Player-Readied Actions
+    participant = db.query(models.CombatParticipant).filter(
+        models.CombatParticipant.combat_id == combat.id,
+        models.CombatParticipant.actor_id == target_actor_id
+    ).first()
+
+    if participant and participant.readied_action:
+        readied = participant.readied_action
+
+        # Check if the event matches the readied action's trigger
+        if trigger_event == "actor_move" and readied.get("trigger") == "enemy_moves_in_range":
+            log.append(f"REACTION: {target_actor_id}'s readied action triggers!")
+
+            # We clear the readied action *before* executing it
+            crud.set_readied_action(db, combat.id, target_actor_id, None)
+
+            # Execute the readied action (e.g., a basic attack)
+            try:
+                _, attacker_context = get_actor_context(target_actor_id) # The reactor is the attacker
+                _, defender_context = get_actor_context(trigger_actor_id) # The mover is the defender
+                _handle_basic_attack(db, combat, target_actor_id, trigger_actor_id, attacker_context, defender_context, log)
+                return True
+            except Exception as e:
+                log.append(f" -> Readied action failed: {e}")
+
+    return False # No reaction was triggered
+# --- END ADD ---
+
+# --- UPDATE FUNCTION SIGNATURE ---
 def _handle_basic_attack(
+    db: Session,
+    combat: models.CombatEncounter,
     actor_id: str,
     target_id: str,
     attacker_context: Dict,
@@ -1287,6 +1389,11 @@ def _handle_basic_attack(
     outcome = attack_result.get("outcome")
     if outcome in ["hit", "solid_hit", "critical_hit"]:
         log.append(f"Result: {actor_id} hits {target_id}!")
+
+        # --- REACTION CALL (1) ---
+        # Check for reactions to the *hit*
+        _check_and_trigger_reactions(db, combat, "attack_hit", actor_id, target_id, log)
+        # --- END REACTION CALL ---
 
         # Apply status effects from hit
         if outcome == "solid_hit":
@@ -1331,6 +1438,12 @@ def _handle_basic_attack(
         return True
     else:
         log.append(f"Result: {actor_id} misses {target_id}.")
+
+        # --- REACTION CALL (2) ---
+        # Check for reactions to the *miss*
+        _check_and_trigger_reactions(db, combat, "attack_miss", actor_id, target_id, log)
+        # --- END REACTION CALL ---
+
         return False
 
 # --- Main Action Handler (Original/Core) ---
@@ -1362,6 +1475,71 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
     if action.action == "wait":
         return handle_no_action(db, combat, actor_id)
 
+    # --- ADD THIS NEW ACTION HANDLER ---
+    if action.action == "ready":
+        # This is a simple version. We'll expand it to let the user
+        # choose the trigger and the specific action.
+        ready_action_data = {
+            "trigger": "enemy_moves_in_range",
+            "action": "attack"
+        }
+        # Use details from client if provided
+        if action.ready_action_details:
+            ready_action_data = action.ready_action_details
+
+        crud.set_readied_action(db, combat.id, actor_id, ready_action_data)
+        log.append(f"{actor_id} readies an action ({ready_action_data['trigger']}).")
+
+        # Advancing the turn is the same as 'wait'
+        return handle_no_action(db, combat, actor_id, reason="readies an action")
+    # --- END ADD ---
+
+    # --- ADD MOVE ACTION ---
+    if action.action == "move":
+        coords = action.coordinates
+        if not coords or len(coords) != 2:
+            log.append("Invalid move coordinates. Waiting instead.")
+            return handle_no_action(db, combat, actor_id)
+
+        if not _is_passable_and_in_bounds(combat.location_id, coords[0], coords[1], log):
+            log.append(f"Move failed. Waiting instead.")
+            return handle_no_action(db, combat, actor_id)
+
+        try:
+            # Update the actor's position in the DB
+            if actor_id.startswith("player_"):
+                services.character_api.update_character_location(actor_id, combat.location_id, coords)
+            elif actor_id.startswith("npc_"):
+                services.world_api.update_npc_state(int(actor_id.split('_')[1]), {"coordinates": coords})
+
+            log.append(f"{actor_id} moves to ({coords[0]}, {coords[1]}).")
+
+            # --- REACTION CALL (3) ---
+            # Check if this move triggered anyone's readied action
+            # Here, the 'trigger_actor' is the one who moved.
+            # We must check *all other* participants to see if they react.
+            for p in combat.participants:
+                if p.actor_id != actor_id:
+                    _check_and_trigger_reactions(db, combat, "actor_move", actor_id, p.actor_id, log)
+
+        except Exception as e:
+            log.append(f"Error during move: {e}")
+
+        # Move action completes the turn
+        combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
+        combat_over = check_combat_end_condition(db, combat, log)
+        db.commit()
+        db.refresh(combat)
+
+        return schemas.PlayerActionResponse(
+            success=True,
+            message=f"{actor_id} moved.",
+            log=log,
+            new_turn_index=combat.current_turn_index,
+            combat_over=combat_over
+        )
+    # --- END ADD ---
+
     target_id = action.target_id
     if (action.action in ["attack", "use_ability", "use_item"]) and (not target_id):
         log.append(f"Action '{action.action}' requires a target, but none provided. Waiting instead.")
@@ -1377,7 +1555,7 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
 
         if action.action == "attack":
             log.append(f"{actor_id} targets {target_id} with an attack.")
-            _handle_basic_attack(actor_id, target_id, attacker_context, defender_context, log)
+            _handle_basic_attack(db, combat, actor_id, target_id, attacker_context, defender_context, log)
 
         elif action.action == "use_ability":
             ability_name = action.ability_id
@@ -1398,19 +1576,16 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
                     if handler:
                         try:
                             # --- Pass correct context to handlers ---
-                            if effect_type in ("modify_attack", "special_move", "create_trap", "move_self", "reaction_damage", "reaction_move_ally", "move_target_roll"):
-                                # Handlers that need the actor's context
-                                handler(actor_id, target_id, attacker_context, defender_context, log, effect)
-
-                            # --- THIS IS THE MODIFIED LINE ---
-                            elif effect_type == "aoe_damage":
-                                # Pass the full combat object
-                                handler(actor_id, target_id, attacker_context, defender_context, log, effect, combat)
-                            elif effect_type == "summon":
-                                # Pass both combat and db session for intrusive state changes
-                                handler(actor_id, target_id, attacker_context, defender_context, log, effect, combat, db)
-                            # --- END MODIFICATION ---
-
+                            if effect_type in (
+                                "modify_attack", # <-- This calls _handle_basic_attack
+                                "aoe_damage",
+                                "summon"
+                            ):
+                                handler(db, combat, actor_id, target_id, attacker_context, defender_context, log, effect)
+                            # --- MODIFIED: Pass db/combat to reaction stubs just in case ---
+                            elif effect_type in ("special_move", "create_trap", "move_self", "reaction_damage", "reaction_move_ally", "move_target_roll", "reaction_contest"):
+                                handler(db, combat, actor_id, target_id, attacker_context, defender_context, log, effect)
+                            # --- END MODIFIED ---
                             else:
                                 # Handlers that only need the target's context
                                 handler(target_id, log, effect)

@@ -138,11 +138,15 @@ class CombatEncounter(BaseModel):
         from_attributes = True # or orm_mode = True
 
 class PlayerActionRequest(BaseModel):
-    action: str # e.g., "attack", "move", "use_ability", "wait"
+    action: str # e.g., "attack", "move", "use_ability", "wait", "ready"
     target_id: Optional[str] = None # e.g., "npc_12", "player_2"
     ability_id: Optional[str] = None
     item_id: Optional[str] = None
-    # Add other fields like ability_id, position, etc. as needed
+
+    # --- ADD THESE LINES ---
+    coordinates: Optional[List[int]] = None # For move actions, e.g., [x, y]
+    ready_action_details: Optional[Dict[str, Any]] = None # For complex "ready" actions
+    # --- END ADD ---
 
 class PlayerActionResponse(BaseModel):
     success: bool
