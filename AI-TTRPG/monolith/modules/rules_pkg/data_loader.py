@@ -90,12 +90,41 @@ def _process_skills() -> (
     print(f"Processed {len(all_skills)} skills into master map.")
     return stats_list, skill_categories, all_skills
 
+# --- ADD THIS NEW HELPER FUNCTION ---
+def _build_ability_map(ability_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Processes the nested ability data into a flat map for fast lookups.
+    The key is the ability 'name', value is the ability data dict.
+    """
+    ability_map = {}
+    for school_name, school_data in ability_data.items():
+        if not isinstance(school_data, dict): continue
+        for branch in school_data.get("branches", []):
+            if not isinstance(branch, dict): continue
+            for tier in branch.get("tiers", []):
+                if not isinstance(tier, dict): continue
+
+                ability_name = tier.get("name")
+                if ability_name:
+                    # Add reference to parent school for resource/stat lookups
+                    tier["_school_resource"] = school_data.get("resource")
+                    tier["_school_stat"] = school_data.get("associated_stat")
+                    ability_map[ability_name] = tier
+                else:
+                    # This will catch all the T2-T9 abilities we haven't refactored
+                    pass
+
+    print(f"Processed {len(ability_map)} abilities into fast lookup map.")
+    return ability_map
+# --- END NEW FUNCTION ---
+
 # --- Main Loading Function ---
 # Global variables to hold the loaded data
 STATS_LIST: List[str] = []
 SKILL_CATEGORIES: Dict[str, List[str]] = {}
 ALL_SKILLS: Dict[str, Dict[str, str]] = {}
 ABILITY_DATA: Dict[str, Any] = {}
+ABILITY_MAP: Dict[str, Any] = {} # <-- ADD THIS NEW GLOBAL
 TALENT_DATA: Dict[str, Any] = {}
 FEATURE_STATS_MAP: Dict[str, Any] = {}
 KINGDOM_FEATURES_DATA: Dict[str, Any] = {}
@@ -119,7 +148,7 @@ DEVOTION_CHOICES: List[Dict[str, Any]] = []
 
 def load_data() -> Dict[str, Any]:
     """Loads all rules data and returns it in a dictionary."""
-    global STATS_LIST, SKILL_CATEGORIES, ALL_SKILLS, ABILITY_DATA, TALENT_DATA, FEATURE_STATS_MAP, GENERATION_RULES
+    global STATS_LIST, SKILL_CATEGORIES, ALL_SKILLS, ABILITY_DATA, ABILITY_MAP, TALENT_DATA, FEATURE_STATS_MAP, GENERATION_RULES
     global MELEE_WEAPONS, RANGED_WEAPONS, ARMOR, INJURY_EFFECTS, STATUS_EFFECTS, EQUIPMENT_CATEGORY_TO_SKILL_MAP, KINGDOM_FEATURES_DATA, NPC_TEMPLATES, ITEM_TEMPLATES
     global ORIGIN_CHOICES, CHILDHOOD_CHOICES, COMING_OF_AGE_CHOICES, TRAINING_CHOICES, DEVOTION_CHOICES
 
@@ -136,6 +165,10 @@ def load_data() -> Dict[str, Any]:
                 f"--- WARNING: ABILITY_DATA did NOT load as a dictionary. Type: {type(ABILITY_DATA)} ---"
             )
             ABILITY_DATA = {}
+
+        # --- NEW: Build the fast lookup map ---
+        ABILITY_MAP = _build_ability_map(ABILITY_DATA)
+        # --- END NEW ---
 
         # Load talents
         TALENT_DATA = _load_json("talents.json")
@@ -199,7 +232,8 @@ def load_data() -> Dict[str, Any]:
             "stats_list": STATS_LIST,
             "skill_categories": SKILL_CATEGORIES,
             "all_skills": ALL_SKILLS,
-            "ability_data": ABILITY_DATA,
+            "ability_data": ABILITY_DATA, # The full structure for char creation
+            "ability_map": ABILITY_MAP, # The fast map for combat
             "talent_data": TALENT_DATA,
             "feature_stats_map": FEATURE_STATS_MAP,
             "kingdom_features_data": KINGDOM_FEATURES_DATA,
@@ -224,6 +258,7 @@ def load_data() -> Dict[str, Any]:
         print(f"DEBUG: STATS_LIST len: {len(STATS_LIST)}")
         print(f"DEBUG: ALL_SKILLS len: {len(ALL_SKILLS)}")
         print(f"DEBUG: ABILITY_DATA len: {len(ABILITY_DATA)}")
+        print(f"DEBUG: ABILITY_MAP len: {len(ABILITY_MAP)}")
         print(f"DEBUG: TALENT_DATA len: {len(TALENT_DATA)}")
         print(f"DEBUG: FEATURE_STATS_MAP len: {len(FEATURE_STATS_MAP)}")
         print(
