@@ -7,11 +7,7 @@ from kivy.app import App
 from kivy.lang import Builder
 # ... (other Kivy imports)
 from kivy.uix.screenmanager import Screen
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.label import Label
-from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
-from kivy.uix.popup import Popup
 from kivy.properties import ObjectProperty, ListProperty, StringProperty
 from kivy.core.window import Window
 from functools import partial
@@ -32,11 +28,8 @@ try:
     from monolith.modules.character_pkg.schemas import CharacterContextResponse
 except ImportError as e:
     logging.error(f"MAIN_INTERFACE: Failed to import monolith modules: {e}")
-    char_crud, char_services, CharSession = None, None, None
-    world_crud, WorldSession = None, None
-    character_api, story_api, story_schemas = None, None, None
-    save_api = None
-    CharacterContextResponse = None
+    # ... (all set to None)
+    CharacterContextResponse = None # Add this
 
 # --- Client Imports ---
 try:
@@ -209,7 +202,6 @@ class MainInterfaceScreen(Screen):
     party_list_container = ObjectProperty(None)
     map_view_widget = ObjectProperty(None)
     map_view_anchor = ObjectProperty(None)
-    save_popup = ObjectProperty(None, allownone=True)
 
     # --- MODIFIED: State Properties ---
     active_character_context = ObjectProperty(None, force_dispatch=True)
@@ -430,84 +422,6 @@ class MainInterfaceScreen(Screen):
         except Exception as e:
             logging.exception(f"Failed to move player: {e}")
             self.update_log(f"Error: Could not move player.")
-
-    def on_submit_narration(self, instance):
-        """Called when the user presses Enter in the DM input box."""
-        prompt_text = instance.text
-        if not prompt_text:
-            return
-
-        instance.text = ""
-
-        if not self.active_character_context:
-            logging.error("Cannot submit prompt, no active character.")
-            return
-
-        if not story_api:
-            logging.error("Cannot submit prompt, story_api not loaded.")
-            self.update_narration("Error: Story module not loaded.")
-            return
-
-        actor_id = self.active_character_context.id
-        self.update_log(f"You: {prompt_text}")
-
-        try:
-            response = story_api.handle_narrative_prompt(actor_id, prompt_text)
-            self.update_narration(response.get("message", "An error occurred."))
-        except Exception as e:
-            logging.exception(f"Error handling narrative prompt: {e}")
-            self.update_narration(f"Error: {e}")
-
-    def show_save_popup(self):
-        """Displays a popup to get a save game name."""
-        if self.save_popup:
-            self.save_popup.dismiss()
-
-        char_name = self.active_character_context.name if self.active_character_context else "save"
-        default_save_name = f"{char_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}"
-
-        content = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
-
-        content.add_widget(Label(text='Enter a name for your save file:'))
-
-        text_input = TextInput(
-            text=default_save_name,
-            size_hint_y=None,
-            height='44dp',
-            multiline=False
-        )
-        content.add_widget(text_input)
-
-        button_layout = BoxLayout(size_hint_y=None, height='44dp', spacing='10dp')
-
-        save_btn = Button(text='Save')
-        cancel_btn = Button(text='Cancel')
-
-        button_layout.add_widget(save_btn)
-        button_layout.add_widget(cancel_btn)
-        content.add_widget(button_layout)
-
-        self.save_popup = Popup(
-            title='Save Game',
-            content=content,
-            size_hint=(0.5, 0.4),
-            auto_dismiss=False
-        )
-
-        save_btn.bind(on_release=lambda x: self.do_save_game(text_input.text))
-        cancel_btn.bind(on_release=self.save_popup.dismiss)
-
-        self.save_popup.open()
-
-    def do_save_game(self, slot_name: str):
-        """Calls the save_api and closes the popup."""
-        if not slot_name:
-            return
-
-        if not save_api:
-            logging.error("Save API not loaded. Cannot save.")
-            self.save_popup.dismiss()
-            return
 
     def on_submit_narration(self, *args):
         pass
