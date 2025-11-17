@@ -45,6 +45,11 @@ def _grant_combat_rewards(db: Session, combat: models.CombatEncounter, log: List
                     continue
 
                 # 3. Get loot table info from rules
+                template_data = services.get_npc_generation_params(template_id)
+                loot_table_ref = template_data.get("loot_table_ref")
+
+                # 4. Get loot table data and roll for drops
+                # --- MODIFIED: Call new service function ---
                 template_data = await services.get_npc_generation_params(template_id)
                 loot_table_ref = template_data.get("loot_table_ref")
                 template_data = services.get_npc_generation_params(template_id)
@@ -63,6 +68,7 @@ def _grant_combat_rewards(db: Session, combat: models.CombatEncounter, log: List
                 for item_id, loot_info in loot_table.items():
                     if random.random() < loot_info.get("chance", 0):
                         quantity = loot_info.get("quantity", 1)
+                        # --- END MODIFIED ---
                         services.add_item_to_character(primary_player_id, item_id, quantity)
                         log.append(f"The {template_id} dropped {item_id} (x{quantity})!")
 
@@ -92,6 +98,7 @@ def _find_spawn_points(map_data: List[List[int]], num_points: int) -> List[List[
     return [valid_spawns[i % len(valid_spawns)] for i in range(num_points)]
 
 def _extract_initiative_stats(stats_dict: Dict) -> Dict:
+    # This function is now correct based on our previous fix
     # ... (this function is unchanged) ...
     return {
         "endurance": stats_dict.get("Endurance", 10),
@@ -120,6 +127,17 @@ def start_combat(db: Session, start_request: schemas.CombatStartRequest) -> mode
         location_context = services.get_world_location_context(start_request.location_id)
         map_data = location_context.get("generated_map_data")
         num_npcs = len(start_request.npc_template_ids)
+        spawn_points = _find_spawn_points(map_data, num_npcs)
+    except Exception as e:
+        logger.exception(f"Error finding spawn points: {e}.")
+        spawn_points = [[5, 5]] * len(start_request.npc_template_ids)
+
+    for i, template_id in enumerate(start_request.npc_template_ids):
+        try:
+            coords = spawn_points[i]
+            template_lookup = services.get_npc_generation_params(template_id)
+            generation_params = template_lookup.get("generation_params")
+            if not generation_params: continue
 
         # --- Use spawn_points from map if available ---
         map_spawn_points = location_context.get("spawn_points", {}).get("enemy")
@@ -159,6 +177,9 @@ def start_combat(db: Session, start_request: schemas.CombatStartRequest) -> mode
                 current_hp=npc_max_hp,
                 max_hp=npc_max_hp,
                 behavior_tags=full_npc_template.get("behavior_tags", ["aggressive"]),
+                abilities=npc_abilities
+            )
+            npc_instance_data = services.spawn_npc_in_world(spawn_data)
             )
             npc_instance_data = await services.spawn_npc_in_world(spawn_data)
             npc_instance_data = services.spawn_npc_in_world(spawn_data)
@@ -175,10 +196,15 @@ def start_combat(db: Session, start_request: schemas.CombatStartRequest) -> mode
         except Exception as e:
             logger.exception(f"Unexpected error spawning NPC template '{template_id}': {e}")
             continue
+
     for player_id_str in start_request.player_ids:
         try:
             if not isinstance(player_id_str, str) or not player_id_str.startswith("player_"):
                 continue
+            char_context = services.get_character_context(player_id_str)
+            player_stats = char_context.get("stats", {})
+            stats_for_init = _extract_initiative_stats(player_stats)
+            init_result = services.roll_initiative(**stats_for_init)
             char_context = await services.get_character_context(player_id_str)
             char_context = services.get_character_context(player_id_str)
             player_stats = char_context.get("stats", {})
@@ -189,6 +215,11 @@ def start_combat(db: Session, start_request: schemas.CombatStartRequest) -> mode
         except Exception as e:
             logger.exception(f"Unexpected error processing Player {player_id_str}: {e}")
             participants_data.append((player_id_str, "player", 0))
+
+    for npc_data in spawned_npc_details:
+        actor_id_str = f"npc_{npc_data.get('id')}"
+        try:
+            # We already have the full template from spawn, no need to regen
     for npc_data in spawned_npc_details:
         actor_id_str = f"npc_{npc_data.get('id')}"
         try:
@@ -198,6 +229,13 @@ def start_combat(db: Session, start_request: schemas.CombatStartRequest) -> mode
             if not template_id:
                 npc_stats = {}
             else:
+                template_lookup = services.get_npc_generation_params(template_id)
+                generation_params = template_lookup.get("generation_params")
+                full_npc_template = services.generate_npc_template(generation_params)
+                npc_stats = full_npc_template.get("stats", {})
+
+            stats_for_init = _extract_initiative_stats(npc_stats)
+            init_result = services.roll_initiative(**stats_for_init)
                 template_lookup = await services.get_npc_generation_params(template_id)
                 generation_params = template_lookup.get("generation_params")
                 full_npc_template = await services.generate_npc_template(generation_params)
@@ -216,6 +254,20 @@ def start_combat(db: Session, start_request: schemas.CombatStartRequest) -> mode
         except Exception as e:
             logger.exception(f"Unexpected error processing NPC {npc_data.get('id')}: {e}")
             participants_data.append((actor_id_str, "npc", 0))
+
+    if not participants_data:
+        raise HTTPException(status_code=400, detail="Cannot start combat: No valid participants found.")
+
+    participants_data.sort(key=lambda x: x[2], reverse=True)
+    turn_order = [p[0] for p in participants_data]
+
+    db_combat = crud.create_combat_encounter(db, location_id=start_request.location_id, turn_order=turn_order)
+    for actor_id, actor_type, initiative in participants_data:
+        crud.create_combat_participant(db, combat_id=db_combat.id, actor_id=actor_id, actor_type=actor_type, initiative=initiative)
+
+    db.refresh(db_combat)
+    return db_combat
+
     if not participants_data:
         raise HTTPException(status_code=400, detail="Cannot start combat: No valid participants found.")
     participants_data.sort(key=lambda x: x[2], reverse=True)
@@ -373,6 +425,7 @@ def determine_npc_action(db: Session, combat: models.CombatEncounter, npc_actor_
     status_effects = npc_context.get("status_effects", [])
     if "Staggered" in status_effects:
         logger.info(f"NPC {npc_actor_id} is Staggered and skips its turn.")
+        # --- FIXED: Called correct function ---
         await services.remove_status_from_npc(int(npc_actor_id.split('_')[1]), "Staggered")
         services.remove_status_from_npc(int(npc_actor_id.split('_')[1]), "Staggered")
         return None # Return None to signify a "wait" action
@@ -483,6 +536,9 @@ def _handle_effect_modify_attack(
     target_id: str,
     attacker_context: Dict,
     defender_context: Dict,
+    log: List[str],
+    effect: Dict
+) -> bool:
     log: List[str]) -> bool:
     """
     Performs the core attack roll, damage, and HP update logic.
@@ -558,6 +614,8 @@ async def handle_player_action(db: Session, combat: models.CombatEncounter, acto
 def _handle_effect_direct_damage(
     target_id: str,
     log: List[str],
+    effect: Dict
+) -> bool:
     effect: Dict) -> bool:
     """
     Handles effects that deal direct damage without an attack roll.
@@ -585,6 +643,8 @@ def _handle_effect_direct_damage(
 def _handle_effect_heal(
     target_id: str,
     log: List[str],
+    effect: Dict
+) -> bool:
     effect: Dict) -> bool:
     """
     Handles effects that restore HP.
@@ -602,6 +662,7 @@ def _handle_effect_heal(
                 target_context.get("current_hp", 0) + heal_amount,
                 target_context.get("max_hp", 99)
             )
+            services.apply_damage_to_npc(npc_instance_id, new_hp) # Use apply_damage to set HP
             services.world_api.update_npc_state(npc_instance_id, {"current_hp": new_hp})
         except Exception as e:
             log.append(f"Failed to apply heal to {target_id}: {e}")
@@ -613,6 +674,8 @@ def _handle_effect_heal(
 def _handle_effect_apply_status(
     target_id: str,
     log: List[str],
+    effect: Dict
+) -> bool:
     effect: Dict) -> bool:
     """
     Handles effects that apply a status, no save.
@@ -628,6 +691,8 @@ def _handle_effect_apply_status(
 def _handle_effect_apply_status_roll(
     target_id: str,
     log: List[str],
+    effect: Dict
+) -> bool:
     effect: Dict) -> bool:
     """
     Handles effects that apply a status, WITH a save.
@@ -642,6 +707,7 @@ def _handle_effect_apply_status_roll(
     # Get target's save modifier
     _, target_context = get_actor_context(target_id)
     stat_score = get_stat_score(target_context, save_stat)
+    # --- FIXED: Called correct function from imported rules_core ---
     stat_mod = rules_core.calculate_modifier(stat_score)
 
     # Make the roll
@@ -656,6 +722,11 @@ def _handle_effect_apply_status_roll(
         services.apply_status_to_target(target_id, status_id)
         return True
 
+def _handle_effect_move_target(
+    target_id: str,
+    log: List[str],
+    effect: Dict
+) -> bool:
 def _handle_effect_move_target_roll(
     actor_id: str,
     target_id: str,
@@ -713,6 +784,7 @@ def _handle_effect_move_target(
 
             # TODO: Add check for map bounds and impassable tiles
 
+            # --- FIXED: Called correct function via services.world_api ---
             services.world_api.update_npc_state(npc_instance_id, {"coordinates": new_coords})
             log.append(f"{target_id} is pushed {distance}m to {new_coords}!")
             return True
@@ -723,6 +795,8 @@ def _handle_effect_move_target(
         log.append(f"Cannot move {target_id} (only NPCs can be moved).")
         return False
 
+# This is the "router" that maps `effect["type"]` to the functions above
+ABILITY_EFFECT_HANDLERS: Dict[str, Callable] = {
 # --- IMPLEMENTED T2 STUB ---
 def _handle_effect_move_self(
     actor_id: str,
@@ -865,6 +939,8 @@ ABILITY_EFFECT_HANDLERS: Dict[str, Callable] = {
     "heal": _handle_effect_heal,
     "apply_status": _handle_effect_apply_status,
     "apply_status_roll": _handle_effect_apply_status_roll,
+    "move_target": _handle_effect_move_target,
+    # TODO: Add handlers for all 53 effect types
     "move_target": _handle_effect_move_target, # T1 Spirit (Bad Juju) uses this
 
     # --- ADDED T2 Handlers ---
@@ -886,6 +962,8 @@ def _handle_basic_attack(
     attacker_context: Dict,
     defender_context: Dict,
     log: List[str],
+    ability_mod: Optional[Dict] = None
+) -> bool:
     ability_mod: Optional[Dict] = None) -> bool:
     """
     Performs the core attack roll, damage, and HP update logic.
@@ -979,6 +1057,8 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
 
         if "Staggered" in status_effects:
             log.append(f"{actor_id} is Staggered and loses their turn!")
+            # --- FIXED: Check actor_type and call correct function ---
+            if actor_type == "player":
             if actor_type == "player":
                 await services.remove_status_from_character(actor_id, "Staggered")
             else:
@@ -997,6 +1077,7 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
 
     # 3. Handle "wait" action
     if action.action == "wait":
+        return handle_no_action(db, combat, actor_id)
         return await handle_no_action(db, combat, actor_id)
 
     # 4. Handle actions that require a target
@@ -1017,6 +1098,7 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
         hp = defender_context.get("current_hp", 0)
         # Allow targeting self/allies even if "dead" for heals
         if hp <= 0 and target_type == "npc":
+            raise HTTPException(status_code=400, detail=f"Target {target_id} is already defeated.")
              raise HTTPException(status_code=400, detail=f"Target {target_id} is already defeated.")
 
         # --- 5. Route Action ---
@@ -1116,6 +1198,9 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
 
                     if handler:
                         try:
+                            if effect_type == "modify_attack":
+                                handler(actor_id, target_id, attacker_context, defender_context, log, effect)
+                            else:
                             # --- Pass correct context to handlers ---
                             if effect_type in ("modify_attack", "special_move", "create_trap", "move_self", "reaction_damage", "reaction_move_ally", "aoe_damage", "move_target_roll"):
                                 # Handlers that need the actor's context
@@ -1144,6 +1229,7 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
                             target_context.get("current_hp", 0) + healing_amount,
                             target_context.get("max_hp", 99)
                         )
+                        services.apply_damage_to_npc(npc_instance_id, new_hp)
                         services.world_api.update_npc_state(npc_instance_id, {"current_hp": new_hp})
 
                     log.append(f"{actor_id} heals {target_id} for {healing_amount} HP.")
