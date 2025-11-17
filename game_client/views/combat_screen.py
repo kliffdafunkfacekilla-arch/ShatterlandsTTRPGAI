@@ -291,11 +291,24 @@ class CombatScreen(Screen):
         attack_btn = Button(text='Attack', font_size='18sp')
         attack_btn.bind(on_release=lambda x: self.set_action_mode("attack"))
 
+        # --- ADD MOVE BUTTON ---
+        move_btn = Button(text='Move', font_size='18sp')
+        move_btn.bind(on_release=lambda x: self.set_action_mode("move"))
+        # --- END ADD ---
+
         ability_btn = Button(text='Ability', font_size='18sp')
         ability_btn.bind(on_release=self.open_ability_menu)
 
         item_btn = Button(text='Item', font_size='18sp')
         item_btn.bind(on_release=self.open_item_menu)
+
+        # --- ADD READY BUTTON ---
+        ready_btn = Button(text='Ready', font_size='18sp')
+        ready_btn.bind(on_release=lambda x: self.handle_player_action(
+            player_id,
+            story_schemas.PlayerActionRequest(action="ready")
+        ))
+        # --- END ADD ---
 
         wait_btn = Button(text='Wait', font_size='18sp')
         wait_btn.bind(on_release=lambda x: self.handle_player_action(
@@ -304,8 +317,10 @@ class CombatScreen(Screen):
         ))
 
         self.action_bar.add_widget(attack_btn)
+        self.action_bar.add_widget(move_btn) # Add move
         self.action_bar.add_widget(ability_btn)
         self.action_bar.add_widget(item_btn)
+        self.action_bar.add_widget(ready_btn) # Add ready
         self.action_bar.add_widget(wait_btn)
 
     def set_action_mode(self, action_name: str):
@@ -549,9 +564,32 @@ class CombatScreen(Screen):
         self.selected_item_id = item_id
         self.set_action_mode("use_item")
 
+    # --- ADD THIS HELPER FUNCTION ---
+    def is_tile_passable(self, tile_x: int, tile_y: int) -> bool:
+        """Checks if a tile is walkable."""
+        if not self.location_context: return False
+        tile_map = self.location_context.get('generated_map_data')
+        if not tile_map: return False
+
+        map_height = len(tile_map)
+        map_width = len(tile_map[0]) if map_height > 0 else 0
+
+        if not (0 <= tile_x < map_width and 0 <= tile_y < map_height):
+            return False
+        try:
+            tile_id = tile_map[tile_y][tile_x]
+        except IndexError:
+            return False
+
+        # Using hardcoded passable IDs from tile_definitions.json (0=Grass, 3=Stone Floor)
+        # We can make this more robust later by loading from asset_loader
+        if tile_id in [0, 3]:
+            return True
+        return False
+    # --- END ADD ---
+
     def on_touch_down(self, touch):
         """Handle mouse clicks for targeting."""
-        # ... (menu closing logic is unchanged) ...
         if self.ability_menu:
             if not self.ability_menu.collide_point(*touch.pos):
                 self.close_ability_menu()
@@ -587,6 +625,25 @@ class CombatScreen(Screen):
         if map_height == 0: return True
 
         tile_y = (map_height - 1) - int(local_pos[1] // TILE_SIZE)
+
+        # --- NEW LOGIC FOR MOVE ACTION ---
+        if self.current_action == "move":
+            if not self.is_tile_passable(tile_x, tile_y):
+                self.add_to_log("You can't move there.")
+                self.current_action = None # Cancel targeting
+                return True
+
+            self.add_to_log(f"{self.active_combat_character.name} moves to ({tile_x}, {tile_y}).")
+
+            action = story_schemas.PlayerActionRequest(
+                action="move",
+                coordinates=[tile_x, tile_y]
+            )
+            self.handle_player_action(self.active_combat_character.id, action)
+
+            self.current_action = None # Clear targeting mode
+            return True # Consumed the touch
+        # --- END NEW LOGIC ---
 
         target = self.get_target_at_coord(tile_x, tile_y)
 

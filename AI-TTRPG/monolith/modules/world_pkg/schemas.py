@@ -102,6 +102,9 @@ class NpcInstanceBase(BaseModel):
     resource_pools: Dict[str, Any] = {}
     abilities: List[str] = []
     status_effects: List[str]
+    # --- ADD THIS LINE ---
+    injuries: List[Dict[str, Any]] = []
+    # --- END ADD ---
     location_id: int
     # --- ADD THIS LINE ---
     coordinates: Optional[Any] = None # Expecting [x, y]
@@ -167,6 +170,9 @@ class NpcSpawnRequest(BaseModel):
     current_composure: Optional[int] = 10
     resource_pools: Optional[Dict[str, Any]] = {}
     abilities: Optional[List[str]] = []
+    # --- ADD THIS LINE ---
+    injuries: Optional[List[Dict[str, Any]]] = []
+    # --- END ADD ---
     # --- END NEW OPTIONAL FIELDS ---
 
     behavior_tags: List[str] = []
@@ -185,6 +191,9 @@ class NpcUpdate(BaseModel):
     current_composure: Optional[int] = None
     resource_pools: Optional[Dict[str, Any]] = None
     abilities: Optional[List[str]] = None
+    # --- ADD THIS LINE ---
+    injuries: Optional[List[Dict[str, Any]]] = None
+    # --- END ADD ---
     # --- END NEW OPTIONAL FIELDS ---
 
     status_effects: Optional[List[str]] = None

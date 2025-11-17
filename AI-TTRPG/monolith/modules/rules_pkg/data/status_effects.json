@@ -63,5 +63,13 @@
 "effects": ["cannot_speak:true"],
 "type": "detrimental",
 "duration_type": "condition"
-}
+},
+"Threat Zone": {
+    "name": "Threat Zone",
+    "description": "Enemies leaving a 3m radius provoke an attack of opportunity.",
+    "effects": ["reaction_trigger:actor_move_exit:3:attack"],
+    "type": "beneficial",
+    "duration_type": "turns",
+    "default_duration": 3
+  }
 }

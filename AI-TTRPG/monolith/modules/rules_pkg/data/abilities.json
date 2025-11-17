@@ -80,10 +80,21 @@
 {
 "tier": "T1",
 "name": "Taunt",
-"description": "Force 1 enemy to target you (Willpower save DC 10).",
+"description": "Force 1 enemy to target you (Willpower save DC 12).",
 "target_type": "enemy",
+"cost": {"resource": "Stamina", "amount": 1},
 "effects": [
-{ "type": "apply_status", "status_id": "Taunted", "duration": 1 }
+{ "type": "apply_status_roll", "status_id": "Taunted", "duration": 1, "save_stat": "Willpower", "dc": 12 }
+]
+},
+{
+"tier": "T2",
+"name": "Threat Zone",
+"description": "Enemies leaving 3m radius provoke AoO for 3 turns.",
+"target_type": "self",
+"cost": {"resource": "Stamina", "amount": 2},
+"effects": [
+{ "type": "apply_status", "status_id": "Threat Zone", "duration": 3 }
 ]
 }
 ]
