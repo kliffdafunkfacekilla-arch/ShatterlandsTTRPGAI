@@ -11,6 +11,7 @@ import asyncio
 APP_ROOT = Path(__file__).resolve().parent.parent
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
+
 MONOLITH_PATH = APP_ROOT / "AI-TTRPG"
 if str(MONOLITH_PATH) not in sys.path:
     sys.path.insert(0, str(MONOLITH_PATH))
@@ -22,6 +23,11 @@ try:
     from monolith.orchestrator import get_orchestrator
     from monolith.modules import register_all
     from game_client import asset_loader
+
+    # --- ADD THIS IMPORT ---
+    from game_client import settings_manager
+    # --- END ADD ---
+
 except ImportError as e:
     # We can't log here yet, as logging isn't configured.
     print(f"FATAL: A critical module could not be imported. Check paths and dependencies.")
@@ -40,11 +46,24 @@ from views.character_creation_screen import CharacterCreationScreen
 from views.main_interface_screen import MainInterfaceScreen
 from views.combat_screen import CombatScreen
 from views.character_sheet_screen import CharacterSheetScreen
-from views.load_game_screen import LoadGameScreen # <-- ADD THIS IMPORT
+from views.load_game_screen import LoadGameScreen
+from views.inventory_screen import InventoryScreen
+from views.quest_log_screen import QuestLogScreen
+# --- ADD THIS IMPORT ---
+from views.settings_screen import SettingsScreen
+# --- END ADD ---
+
 
 # --- 6. THE MAIN APP CLASS (Unchanged from refactor) ---
 class ShatterlandsClientApp(App):
     game_settings = {}
+
+    # --- ADD THIS ---
+    # Make settings and managers globally accessible via the app instance
+    app_settings = {}
+    # settings_manager will be assigned in main()
+    # audio_manager will be assigned in Phase 4
+    # --- END ADD ---
 
     def build(self):
         Window.size = (1280, 720)
@@ -54,12 +73,16 @@ class ShatterlandsClientApp(App):
         sm.add_widget(MainMenuScreen(name='main_menu'))
         sm.add_widget(GameSetupScreen(name='game_setup'))
         sm.add_widget(CharacterCreationScreen(name='character_creation'))
-        sm.add_widget(LoadGameScreen(name='load_game')) # <-- ADD THIS LINE
+        sm.add_widget(LoadGameScreen(name='load_game'))
         sm.add_widget(MainInterfaceScreen(name='main_interface'))
         sm.add_widget(CombatScreen(name='combat_screen'))
         sm.add_widget(CharacterSheetScreen(name='character_sheet'))
         sm.add_widget(InventoryScreen(name='inventory'))
         sm.add_widget(QuestLogScreen(name='quest_log'))
+
+        # --- ADD THIS LINE ---
+        sm.add_widget(SettingsScreen(name='settings'))
+        # --- END ADD ---
 
         sm.current = 'main_menu'
         return sm
@@ -72,6 +95,8 @@ async def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s')
     logger = logging.getLogger("game_client")
     logger.info("--- Shatterlands Client Starting ---")
+
+    app_instance = ShatterlandsClientApp()
 
     try:
         # --- Run Monolith Startup (Synchronous parts) ---
@@ -89,6 +114,12 @@ async def main():
         asset_loader.initialize_assets()
         logger.info("Asset loader initialized.")
 
+        # --- ADD THIS ---
+        # --- Initialize Settings Manager (Synchronous) ---
+        app_instance.app_settings = settings_manager.load_settings()
+        logger.info("Settings manager initialized and settings loaded.")
+        # --- END ADD ---
+
     except Exception as e:
         logger.exception(f"FATAL: An error occurred during startup: {e}")
         sys.exit(1)
@@ -96,8 +127,7 @@ async def main():
 
     # --- Run Kivy App (Asynchronous) ---
     logger.info("Starting Kivy application...")
-    app = ShatterlandsClientApp()
-    await app.async_run(async_lib='asyncio')
+    await app_instance.async_run(async_lib='asyncio')
     logger.info("Kivy application finished.")
 
 # --- 8. RUN THE APP ---
