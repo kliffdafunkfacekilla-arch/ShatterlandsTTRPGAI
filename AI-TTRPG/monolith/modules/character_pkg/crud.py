@@ -152,6 +152,45 @@ def get_character_by_name(db: Session, name: str) -> models.Character | None:
     """Retriees a single character by their name."""
     return db.query(models.Character).filter(models.Character.name == name).first()
 
+def apply_composure_healing(db: Session, character: models.Character, amount: int) -> models.Character:
+    """Applies healing to a character's composure pool."""
+    if amount <= 0:
+        return character
+
+    resource_pools = character.resource_pools or {}
+    composure_pool = resource_pools.get("Composure", {"current": 0, "max": 0})
+
+    new_composure = min(composure_pool.get("current", 0) + amount, composure_pool.get("max", 0))
+
+    composure_pool["current"] = new_composure
+    resource_pools["Composure"] = composure_pool
+    character.resource_pools = resource_pools
+
+    flag_modified(character, "resource_pools")
+    db.commit()
+    db.refresh(character)
+    return character
+
+def apply_resource_damage(db: Session, character: models.Character, resource_name: str, damage_amount: int) -> models.Character:
+    """Subtracts damage from a generic resource pool (e.g., Chi, Stamina)."""
+    if damage_amount <= 0 or resource_name not in character.resource_pools:
+        return character
+
+    resource_pools = character.resource_pools or {}
+    target_pool = resource_pools.get(resource_name, {"current": 0, "max": 0})
+
+    current_value = target_pool.get("current", 0)
+    new_value = max(0, current_value - damage_amount)
+
+    target_pool["current"] = new_value
+    resource_pools[resource_name] = target_pool
+    character.resource_pools = resource_pools
+
+    flag_modified(character, "resource_pools")
+    db.commit()
+    db.refresh(character)
+    return character
+
 def apply_healing(db: Session, character: models.Character, amount: int) -> models.Character:
     """Applies healing to a character."""
     new_hp = min(character.current_hp + amount, character.max_hp)

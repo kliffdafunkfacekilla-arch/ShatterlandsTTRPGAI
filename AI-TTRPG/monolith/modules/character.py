@@ -136,6 +136,34 @@ def register(orchestrator) -> None:
     # and does not currently subscribe to any event bus commands.
     logger.info("[character] module registered (direct-call adapter)")
 
+def apply_composure_healing_to_character(char_id: str, amount: int) -> Dict[str, Any]:
+    """Applies healing to a character's composure pool and returns context."""
+    db = char_db.SessionLocal()
+    try:
+        db_char = _get_character_db(db, char_id)
+        updated_char = char_crud.apply_composure_healing(db, db_char, amount)
+        schema_char = char_services.get_character_context(updated_char)
+        return schema_char.model_dump()
+    except Exception as e:
+        logger.exception(f"[character.apply_composure_healing_to_character] Error: {e}")
+        raise
+    finally:
+        db.close()
+
+def apply_resource_damage_to_character(char_id: str, resource_name: str, damage_amount: int) -> Dict[str, Any]:
+    """Applies damage to a specific resource pool (e.g., Chi, Stamina)."""
+    db = char_db.SessionLocal()
+    try:
+        db_char = _get_character_db(db, char_id)
+        updated_char = char_crud.apply_resource_damage(db, db_char, resource_name, damage_amount)
+        schema_char = char_services.get_character_context(updated_char)
+        return schema_char.model_dump()
+    except Exception as e:
+        logger.exception(f"[character.apply_resource_damage_to_character] Error: {e}")
+        raise
+    finally:
+        db.close()
+
 def apply_healing_to_character(char_id: str, amount: int):
     db = char_db.SessionLocal()
     try:

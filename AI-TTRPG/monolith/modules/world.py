@@ -39,6 +39,34 @@ def get_world_location_context(location_id: int) -> Dict[str, Any]:
     finally:
         db.close()
 
+def spawn_trap_in_world(trap_request: Any) -> Dict[str, Any]:
+    """
+    Spawns a trap instance in the database.
+    """
+    db = we_db.SessionLocal()
+    try:
+        # Deserialize the request into the TrapInstanceCreate schema
+        if hasattr(trap_request, "model_dump"):
+            req_data = trap_request.model_dump()
+        elif hasattr(trap_request, "dict"):
+            req_data = trap_request.dict()
+        else:
+            req_data = dict(trap_request)
+
+        schema = we_schemas.TrapInstanceCreate(**req_data)
+
+        # Use the CRUD function to create the trap
+        trap = we_crud.create_trap(db, schema)
+
+        # Return the created trap's context
+        schema_trap = we_schemas.TrapInstance.from_orm(trap)
+        return schema_trap.model_dump()
+    except Exception as e:
+        logger.exception(f"[world.spawn_trap_in_world] Error: {e}")
+        raise
+    finally:
+        db.close()
+
 def update_location_annotations(location_id: int, annotations: Dict[str, Any]) -> Dict[str, Any]:
     # --- REMOVED ASYNC AND _client ---
     db = we_db.SessionLocal()
