@@ -118,25 +118,15 @@ def remove_item_from_character(char_id: str, item_id: str, quantity: int) -> Dic
     return char_api.remove_item_from_character(char_id, item_id, quantity)
 
 def get_ability_data(ability_name: str) -> Dict:
-    """
-    Gets the data for a single ability from the rules engine's
-    fast lookup map.
-    """
+    """Gets the data for a single ability from the rules engine."""
     logger.debug(f"Calling internal rules_api.get_ability_data for {ability_name}")
-    try:
-        # Ask the rules module for its ability map
-        ability_map = rules_api._get_data("ability_map")
-        ability_data = ability_map.get(ability_name)
-
-        if not ability_data:
-            logger.warning(f"Could not find ability data for '{ability_name}' in map")
-            return {}
-
-        return ability_data
-
-    except Exception as e:
-        logger.exception(f"Error in get_ability_data: {e}")
-        return {}
+    all_abilities = rules_api.get_all_abilities()
+    for school, school_data in all_abilities.items():
+        for branch in school_data.get("branches", []):
+            for tier in branch.get("tiers", []):
+                if tier.get("name") == ability_name:
+                    return tier
+    return {}
 
 # --- NEW HELPER FUNCTIONS ---
 def apply_status_to_target(target_id: str, status_id: str) -> Dict:

@@ -7,6 +7,7 @@ from kivy.app import App
 from kivy.lang import Builder
 # ... (other Kivy imports)
 from kivy.uix.screenmanager import Screen
+from kivy.uix.button import Button
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
@@ -16,6 +17,7 @@ from kivy.properties import ObjectProperty, ListProperty, StringProperty
 from kivy.core.window import Window
 from functools import partial
 from typing import Optional, List
+import datetime # <-- Import datetime for save game popup
 
 # --- Monolith Imports ---
 # ... (imports unchanged, make sure char_crud, char_services, etc. are imported) ...
@@ -32,6 +34,8 @@ try:
     from monolith.modules.character_pkg.schemas import CharacterContextResponse
 except ImportError as e:
     logging.error(f"MAIN_INTERFACE: Failed to import monolith modules: {e}")
+    # ... (all set to None)
+    CharacterContextResponse = None # Add this
     char_crud, char_services, CharSession = None, None, None
     world_crud, WorldSession = None, None
     character_api, story_api, story_schemas = None, None, None
@@ -42,10 +46,13 @@ except ImportError as e:
 try:
     from game_client import asset_loader
     from game_client.views.map_view_widget import MapViewWidget
+    from game_client.config import TILE_SIZE
 except ImportError as e:
     logging.error(f"MAIN_INTERFACE: Failed to import client modules: {e}")
     asset_loader = None
     MapViewWidget = None
+    TILE_SIZE = 64
+
 
 MAIN_INTERFACE_KV = """
 <MainInterfaceScreen>:
@@ -57,6 +64,7 @@ MAIN_INTERFACE_KV = """
     active_char_status: active_char_status
     party_list_container: party_list_container
     map_view_anchor: map_view_anchor
+
     AnchorLayout:
         AnchorLayout:
             anchor_x: 'center'
@@ -183,6 +191,11 @@ MAIN_INTERFACE_KV = """
                 Button:
                     text: 'Menu'
                     on_release: app.root.current = 'main_menu'
+                    # --- MODIFIED THIS ---
+                    on_release:
+                        app.root.get_screen('settings').previous_screen = 'main_interface'
+                        app.root.current = 'settings'
+                    # --- END MODIFIED ---
                 Button:
                     text: 'Save Game'
                     on_release: root.show_save_popup()
@@ -209,11 +222,15 @@ class MainInterfaceScreen(Screen):
     party_list_container = ObjectProperty(None)
     map_view_widget = ObjectProperty(None)
     map_view_anchor = ObjectProperty(None)
-    save_popup = ObjectProperty(None, allownone=True)
 
     # --- MODIFIED: State Properties ---
     active_character_context = ObjectProperty(None, force_dispatch=True)
     location_context = ObjectProperty(None, force_dispatch=True)
+    save_popup = ObjectProperty(None, allownone=True)
+
+    # --- MODIFIED: State Properties ---
+    active_character_context = ObjectProperty(None, force_dispatch=True, allownone=True)
+    location_context = ObjectProperty(None, force_dispatch=True, allownone=True)
 
     # This holds the full context for ALL party members
     party_contexts = ListProperty([])
@@ -283,6 +300,7 @@ class MainInterfaceScreen(Screen):
         char_db = None
         try:
             char_db = CharSession()
+            loaded_contexts = []
             for char_name in char_names:
                 db_char = char_crud.get_character_by_name(char_db, char_name)
                 if not db_char:
@@ -290,6 +308,11 @@ class MainInterfaceScreen(Screen):
 
                 context = char_services.get_character_context(db_char)
                 self.party_contexts.append(context)
+                loaded_contexts.append(context)
+
+            # --- FIX: Ensure party_contexts is updated ---
+            self.party_contexts = loaded_contexts
+            # --- END FIX ---
 
             # Set the first character as active by default
             self.active_character_context = self.party_contexts[0]
@@ -363,6 +386,10 @@ class MainInterfaceScreen(Screen):
             # Highlight the active character
             if char_context.id == self.active_character_context.id:
                 party_member_button.background_color = (0.5, 0.5, 1, 1) # Blueish tint
+            if self.active_character_context and (char_context.id == self.active_character_context.id):
+                party_member_button.background_color = (0.5, 0.5, 1, 1) # Blueish tint
+            else:
+                party_member_button.background_color = (1, 1, 1, 1) # Default color
 
             # Bind the button to switch active character
             party_member_button.bind(on_release=partial(self.set_active_character, char_context))
@@ -420,6 +447,31 @@ class MainInterfaceScreen(Screen):
             # Update the context in our list
             self.active_character_context.position_x = updated_context_dict.get('position_x', tile_x)
             self.active_character_context.position_y = updated_context_dict.get('position_y', tile_y)
+
+            # --- MODIFIED: Call the new move function ---
+            self.map_view_widget.move_active_player_sprite(
+                char_id, tile_x, tile_y, self.get_map_height()
+            )
+            self.update_log(f"{self.active_character_context.name} moved to ({tile_x}, {tile_y})")
+
+        except Exception as e:
+            logging.exception(f"Failed to move player: {e}")
+            self.update_log(f"Error: Could not move player.")
+
+    def on_submit_narration(self, *args):
+        pass
+
+    def show_save_popup(self):
+        pass
+
+            # --- Refresh the specific character in the master list ---
+            for i, ctx in enumerate(self.party_contexts):
+                if ctx.id == self.active_character_context.id:
+                    # Create a new object for Kivy to detect the change
+                    self.party_contexts[i] = CharacterContextResponse(**updated_context_dict)
+                    break
+            self.party_list = list(self.party_contexts) # Trigger UI refresh
+            # --- End Refresh ---
 
             # --- MODIFIED: Call the new move function ---
             self.map_view_widget.move_active_player_sprite(
@@ -509,8 +561,64 @@ class MainInterfaceScreen(Screen):
             self.save_popup.dismiss()
             return
 
-    def on_submit_narration(self, *args):
-        pass
+        try:
+            result = save_api.save_game(slot_name)
+            if result.get("success"):
+                self.update_log(f"Game saved to slot: {slot_name}")
+            else:
+                self.update_log(f"Save failed: {result.get('error', 'Unknown error')}")
+        except Exception as e:
+            logging.exception(f"Error calling save_game: {e}")
+            self.update_log(f"Save failed: {e}")
 
-    def show_save_popup(self):
-        pass
+        self.save_popup.dismiss()
+
+    def on_touch_down(self, touch):
+        """Handle clicks on the map for movement."""
+        # Check if the click is on the map
+        if not self.map_view_widget or not self.map_view_widget.collide_point(*touch.pos):
+            return super().on_touch_down(touch)
+
+        # Check if we're in "move" mode (i.e., no combat action selected)
+        if self.active_character_context and self.location_context:
+            # Convert touch position to map coordinates
+            local_pos = self.map_view_widget.to_local(*touch.pos)
+            tile_x = int(local_pos[0] // TILE_SIZE)
+
+            map_height = self.get_map_height()
+            if map_height == 0: return True
+
+            tile_y = (map_height - 1) - int(local_pos[1] // TILE_SIZE)
+
+            # --- Check for Combat Start ---
+            # We need to get the "context" of what's at that tile
+            # This logic is now handled in MainInterfaceScreen's on_touch_down
+            # Let's add a simplified version here for combat initiation
+
+            target_npc = None
+            for npc in self.location_context.get('npcs', []):
+                coords = npc.get('coordinates')
+                if coords and coords[0] == tile_x and coords[1] == tile_y:
+                    target_npc = npc
+                    break
+
+            if target_npc:
+                # Clicked on an NPC, initiate combat
+                self.update_log(f"You clicked on {target_npc.get('template_id')}! Initiating combat.")
+
+                # Store combat participants in game_settings
+                app = App.get_running_app()
+                app.game_settings['pending_combat_npcs'] = [npc.get('template_id') for npc in self.location_context.get('npcs', []) if npc.get('current_hp', 0) > 0]
+
+                app.root.current = 'combat_screen'
+                return True # Consume the touch
+
+            # --- Check for Movement ---
+            if self.is_tile_passable(tile_x, tile_y):
+                self.move_player_to(tile_x, tile_y)
+                return True # Consume the touch
+            else:
+                self.update_log("You can't move there.")
+                return True # Consume the touch
+
+        return super().on_touch_down(touch)

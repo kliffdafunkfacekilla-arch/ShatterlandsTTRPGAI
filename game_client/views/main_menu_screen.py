@@ -21,20 +21,30 @@ MAIN_MENU_KV = """
         Button:
             text: 'New Game'
             font_size: '24sp'
-            size_hint_y: 0.2
+            size_hint_y: 0.15 # Adjusted height
             on_release: app.root.current = 'game_setup' # Change screen
 
         Button:
             text: 'Load Game'
             font_size: '24sp'
-            size_hint_y: 0.2
-            disabled: False # <-- CHANGED FROM True
-            on_release: app.root.current = 'load_game' # <-- ADDED THIS
+            size_hint_y: 0.15 # Adjusted height
+            disabled: False
+            on_release: app.root.current = 'load_game'
+
+        # --- ADDED THIS BUTTON ---
+        Button:
+            text: 'Settings'
+            font_size: '24sp'
+            size_hint_y: 0.15 # Adjusted height
+            on_release:
+                app.root.get_screen('settings').previous_screen = 'main_menu'
+                app.root.current = 'settings'
+        # --- END ADD ---
 
         Button:
             text: 'Quit'
             font_size: '24sp'
-            size_hint_y: 0.2
+            size_hint_y: 0.15 # Adjusted height
             on_release: app.stop() # Quit the application
 """
 
