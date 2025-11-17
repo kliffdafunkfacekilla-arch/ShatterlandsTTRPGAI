@@ -528,6 +528,21 @@ def _roll_dice_string(dice_str: str) -> int:
         logger.error(f"Failed to roll dice string '{dice_str}': {e}")
         return 0
 
+def _get_actor_coords(actor_context: Dict) -> Optional[List[int]]:
+    """Helper to get coordinates for any actor context."""
+    if "coordinates" in actor_context: # For NPCs
+        return actor_context.get("coordinates")
+    if "position_x" in actor_context: # For Players
+        return [actor_context.get("position_x"), actor_context.get("position_y")]
+    return None
+
+def _calculate_distance(coords1: List[int], coords2: List[int]) -> int:
+    """Calculates simple grid distance (Manhattan distance)."""
+    if not coords1 or not coords2 or len(coords1) != 2 or len(coords2) != 2:
+        return 999
+    return abs(coords1[0] - coords2[0]) + abs(coords1[1] - coords2[1])
+
+
 # --- NEW: Ability Effect Handlers ---
 # These are the small helper functions that execute our data-driven effects.
 
@@ -885,18 +900,80 @@ def _handle_effect_create_trap(
 
 def _handle_effect_aoe_damage(
     actor_id: str,
-    target_id: str,
+    target_id: str, # This is the epicenter of the AoE
     attacker_context: Dict,
-    defender_context: Dict,
+    defender_context: Dict, # Context of the epicenter target
     log: List[str],
-    effect: Dict) -> bool:
+    effect: Dict,
+    combat: models.CombatEncounter # Pass in the combat object
+) -> bool:
     """
-    Handles effects that deal AoE damage. (e.g., Evocation T2: Elemental Cascade)
+    Handles effects that deal AoE damage.
     """
-    damage = effect.get("damage", "1d8")
-    shape = effect.get("shape", "line")
-    log.append(f"{actor_id} unleashes an AoE {shape} for {damage} damage!")
-    # TODO: Implement AoE targeting and apply damage to all targets
+    damage_str = effect.get("damage", "1d8")
+    damage_type = effect.get("damage_type", "elemental")
+    shape = effect.get("shape", "radius")
+    aoe_range = effect.get("range", 2) # e.g., 2m radius
+    target_faction = effect.get("target_faction", "enemy") # "enemy" or "ally"
+
+    log.append(f"{actor_id} unleashes an AoE {shape} for {damage_str} {damage_type} damage around {target_id}!")
+
+    # 1. Get epicenter coordinates
+    epicenter_coords = _get_actor_coords(defender_context)
+    if not epicenter_coords:
+        log.append(f"Could not find epicenter coordinates for target {target_id}. Effect fails.")
+        return False
+
+    # 2. Roll damage ONCE
+    damage_amount = _roll_dice_string(damage_str)
+    if damage_amount <= 0:
+        log.append("The effect fizzles and deals no damage.")
+        return True # The ability was used, it just did no damage
+
+    # 3. Find all targets in combat
+    all_targets = []
+    actor_type_prefix = "player_" if target_faction == "ally" else "npc_"
+    if target_faction == "ally":
+        actor_type_prefix = "player_"
+    else:
+        # Default to targeting enemies of the caster
+        actor_type_prefix = "npc_" if actor_id.startswith("player_") else "player_"
+
+    for p in combat.participants:
+        if p.actor_id.startswith(actor_type_prefix):
+            try:
+                _, p_context = get_actor_context(p.actor_id)
+                if p_context.get("current_hp", 0) > 0:
+                    all_targets.append(p_context)
+            except HTTPException:
+                continue
+
+    # 4. Apply damage to targets in range
+    targets_hit = 0
+    for target_ctx in all_targets:
+        target_coords = _get_actor_coords(target_ctx)
+        distance = _calculate_distance(epicenter_coords, target_coords)
+
+        if distance <= aoe_range:
+            # Target is in range
+            targets_hit += 1
+            target_hit_id = target_ctx.get("id")
+            log.append(f"The blast hits {target_hit_id} for {damage_amount} damage!")
+
+            # Apply damage (simplified, ignores armor for AoE)
+            if target_hit_id.startswith("player_"):
+                services.apply_damage_to_character(target_hit_id, damage_amount)
+            elif target_hit_id.startswith("npc_"):
+                try:
+                    npc_instance_id = int(target_hit_id.split("_")[1])
+                    new_hp = target_ctx.get("current_hp", 0) - damage_amount
+                    services.apply_damage_to_npc(npc_instance_id, new_hp)
+                except Exception as e:
+                    log.append(f"Failed to apply AoE damage to {target_hit_id}: {e}")
+
+    if targets_hit == 0:
+        log.append("...but nothing was in range!")
+
     return True
 
 def _handle_effect_random_status(
@@ -913,6 +990,90 @@ def _handle_effect_random_status(
     services.apply_status_to_target(target_id, status_id)
     log.append(f"{target_id} is afflicted with a random status: {status_id}!")
     return True
+
+def _handle_effect_summon_creature(
+    actor_id: str,
+    target_id: str, # The target acts as the spawn point
+    attacker_context: Dict,
+    defender_context: Dict,
+    log: List[str],
+    effect: Dict,
+    combat: models.CombatEncounter,
+    db: Session # We need the session to modify the turn order tables
+) -> bool:
+    """
+    Handles abilities that spawn a new NPC into the combat encounter.
+    The summoned creature is immediately added to the turn order.
+    """
+    npc_template_id = effect.get("npc_template_id")
+    if not npc_template_id:
+        log.append("Summon failed: No NPC template specified.")
+        return False
+
+    # 1. Determine spawn coordinates and location ID
+    spawn_coords = _get_actor_coords(defender_context)
+    if not spawn_coords:
+        log.append(f"Summon failed: Could not determine spawn point for {target_id}.")
+        return False
+
+    location_id = combat.location_id
+
+    try:
+        # 2. Get generation parameters and generate full NPC template
+        template_lookup = services.get_npc_generation_params(npc_template_id)
+        generation_params = template_lookup.get("generation_params")
+
+        if not generation_params:
+            raise ValueError(f"No generation parameters found for {npc_template_id}")
+
+        full_npc_template = services.generate_npc_template(generation_params)
+
+        npc_max_hp = full_npc_template.get("max_hp", 10)
+
+        # 3. Spawn NPC into World Module
+        spawn_data = schemas.OrchestrationSpawnNpc(
+            template_id=npc_template_id,
+            location_id=location_id,
+            coordinates=spawn_coords,
+            current_hp=npc_max_hp,
+            max_hp=npc_max_hp,
+            behavior_tags=full_npc_template.get("behavior_tags", ["aggressive"]),
+        )
+        npc_instance_data = services.spawn_npc_in_world(spawn_data)
+
+        # 4. Roll Initiative
+        actor_id_str = f"npc_{npc_instance_data.get('id')}"
+        stats_for_init = _extract_initiative_stats(full_npc_template.get("stats", {}))
+        init_result = services.roll_initiative(**stats_for_init)
+        initiative_total = init_result.get("total_initiative", 0)
+
+        # 5. Add to Combat State (Database)
+        crud.create_combat_participant(
+            db,
+            combat_id=combat.id,
+            actor_id=actor_id_str,
+            actor_type="npc",
+            initiative=initiative_total
+        )
+
+        # 6. Update Turn Order (in-memory list)
+        combat.turn_order.append(actor_id_str)
+
+        # NOTE: It's technically more correct to insert the new actor into the
+        # turn order based on initiative, but for simplicity, appending
+        # ensures they get a turn in the next full round.
+
+        # Save the updated turn order back to the database
+        crud.update_combat_encounter(db, combat.id, {"turn_order": combat.turn_order})
+
+
+        log.append(f"A {full_npc_template.get('name')} is summoned at {spawn_coords}!")
+        return True
+
+    except Exception as e:
+        logger.exception(f"Failed to handle summon effect: {e}")
+        log.append(f"Summon failed due to an engine error: {e}")
+        return False
 
 def _handle_effect_special_move(
     actor_id: str,
@@ -952,6 +1113,8 @@ ABILITY_EFFECT_HANDLERS: Dict[str, Callable] = {
     "move_target_roll": _handle_effect_move_target_roll, # T1 Force (Minor Shove) uses this
     "random_status": _handle_effect_random_status,
     "special_move": _handle_effect_special_move,
+    # "composure_damage": _handle_effect_composure_damage,
+    "summon": _handle_effect_summon_creature,
     # --- END ADD ---
 }
 
@@ -1198,15 +1361,17 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
 
                     if handler:
                         try:
-                            if effect_type == "modify_attack":
-                                handler(actor_id, target_id, attacker_context, defender_context, log, effect)
-                            else:
                             # --- Pass correct context to handlers ---
-                            if effect_type in ("modify_attack", "special_move", "create_trap", "move_self", "reaction_damage", "reaction_move_ally", "aoe_damage", "move_target_roll"):
-                                # Handlers that need the actor's context
+                            if effect_type in ("modify_attack", "special_move", "create_trap", "move_self", "reaction_damage", "reaction_move_ally", "move_target_roll"):
                                 handler(actor_id, target_id, attacker_context, defender_context, log, effect)
+                            elif effect_type == "aoe_damage":
+                                # Pass the full combat object
+                                handler(actor_id, target_id, attacker_context, defender_context, log, effect, combat)
+                            elif effect_type == "summon":
+                                # Pass both combat and db session for intrusive state changes
+                                handler(actor_id, target_id, attacker_context, defender_context, log, effect, combat, db)
                             else:
-                                # Handlers that only need the target's context
+                                # Handlers that only need the target's context (e.g., heal, status)
                                 handler(target_id, log, effect)
                         except Exception as e:
                             log.append(f"Effect {effect_type} failed: {e}")
