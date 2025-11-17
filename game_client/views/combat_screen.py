@@ -22,11 +22,15 @@ try:
     from monolith.modules.character_pkg.schemas import CharacterContextResponse
 except ImportError as e:
     logging.error(f"COMBAT_SCREEN: Failed to import monolith modules: {e}")
+    # ... (all set to None)
+    CharacterContextResponse = None
     story_api, story_schemas = None, None
+    char_crud, char_services, CharSession = None, None, None
     rules_api = None # <-- ADDED
     char_crud, char_services, CharSession = None, None, None # <-- FIXED: char_crud was missing
     world_crud, WorldSession = None, None
     CharacterContextResponse = None
+
 
 
 # --- Client Imports ---
@@ -170,6 +174,12 @@ class CombatScreen(Screen):
         try:
             loc_id = self.combat_state.get('location_id')
 
+            # --- MODIFIED: Get party from main screen ---
+            main_screen = app.root.get_screen('main_interface')
+            self.party_contexts_list = main_screen.party_contexts
+            if not self.party_contexts_list:
+                raise Exception("No party contexts found in main interface.")
+            # --- END MODIFIED ---
             # We must load fresh contexts in case HP/positions changed
             with CharSession() as char_db:
                 # Use the party list from the main screen as the source of truth
@@ -218,7 +228,7 @@ class CombatScreen(Screen):
         turn_order = self.combat_state.get('turn_order', [])
         current_index = self.combat_state.get('current_turn_index', 0)
 
-        # Update UI
+        # ... (UI Turn List update is unchanged) ...
         ui_turn_list = []
         for i, actor_id in enumerate(turn_order):
             actor_name = actor_id
@@ -245,6 +255,7 @@ class CombatScreen(Screen):
         if current_actor_id.startswith("player_"):
             self.is_player_turn = True
 
+            # --- MODIFIED: Find the correct active player ---
             # Find the correct active player
             for char_context in self.party_contexts_list:
                 if char_context.id == current_actor_id:
@@ -262,6 +273,7 @@ class CombatScreen(Screen):
                     current_actor_id,
                     story_schemas.PlayerActionRequest(action="wait")
                 ), 0.1)
+            # --- END MODIFIED ---
 
         elif current_actor_id.startswith("npc_"):
             self.is_player_turn = False
@@ -301,7 +313,6 @@ class CombatScreen(Screen):
         self.add_to_log(f"Action: {action_name}. Select a target on the map.")
 
     def take_npc_turn(self, *args):
-        """Calls the monolith to process an NPC's turn."""
         if not story_api: return
         try:
             combat_id = self.combat_state.get('id')
@@ -326,6 +337,7 @@ class CombatScreen(Screen):
 
     def process_action_response(self, response: dict):
         """Handles the response from the monolith and advances the turn or ends combat."""
+        # ... (log display is unchanged) ...
         for log_entry in response.get('log', []):
             self.add_to_log(log_entry)
 
@@ -338,6 +350,8 @@ class CombatScreen(Screen):
             return
 
         self.combat_state['current_turn_index'] = response.get('new_turn_index')
+
+        # --- MODIFIED: Must refresh *all* contexts ---
         self.refresh_combat_context()
         self.check_turn() # Advance to next turn
 
@@ -350,6 +364,7 @@ class CombatScreen(Screen):
 
     def end_combat(self, instance):
         """Called to leave the combat screen."""
+        # --- MODIFIED: Must refresh main interface contexts on exit ---
         app = App.get_running_app()
         if 'combat_state' in app.game_settings:
             del app.game_settings['combat_state']
@@ -357,6 +372,8 @@ class CombatScreen(Screen):
         # Manually refresh the main interface screen's data
         main_screen = app.root.get_screen('main_interface')
         main_screen.party_contexts = self.party_contexts_list
+        main_screen.active_character_context = self.party_contexts_list[0]
+        main_screen.party_list = self.party_contexts_list
         if self.party_contexts_list:
             main_screen.active_character_context = self.party_contexts_list[0]
         main_screen.party_list = self.party_contexts_list # This triggers UI update
@@ -375,9 +392,11 @@ class CombatScreen(Screen):
                     world_db, self.location_context.get('id')
                 )
 
+            # --- MODIFIED: Loop and reload all party members ---
             with CharSession() as char_db:
                 new_contexts: List[CharacterContextResponse] = []
                 for char_context in self.party_contexts_list:
+                    db_char = char_crud.get_character(char_db, char_context.id)
                     # Get ID by splitting "player_UUID"
                     char_uuid = char_context.id.split('_')[-1]
                     db_char = char_crud.get_character(char_db, char_uuid)
@@ -385,6 +404,10 @@ class CombatScreen(Screen):
                         new_contexts.append(char_services.get_character_context(db_char))
 
                 self.party_contexts_list = new_contexts
+                # Also update the main interface screen's list
+                main_screen = App.get_running_app().root.get_screen('main_interface')
+                main_screen.party_contexts = new_contexts
+            # --- END MODIFIED ---
 
             # Re-draw the scene with new data
             self.map_view_widget.build_scene(self.location_context, self.party_contexts_list)
@@ -402,6 +425,11 @@ class CombatScreen(Screen):
                     return "npc", npc
 
         # Check Players (self or allies)
+        for char_context in self.party_contexts_list:
+            if (char_context.position_x == tile_x and
+                char_context.position_y == tile_y and
+                char_context.current_hp > 0):
+                return "player", char_context.model_dump()
         if CharacterContextResponse:
             for char_context in self.party_contexts_list:
                 # Use position_x/y for players
@@ -428,15 +456,19 @@ class CombatScreen(Screen):
 
         abilities = self.active_combat_character.abilities
         if not abilities:
-            self.add_to_log("You have no abilities to use.")
+            self.add_to_log("You have no abilities.")
             return
 
-        # Create the pop-up menu
         self.ability_menu = BoxLayout(
             orientation='vertical',
             size_hint=(None, None),
             width='200dp',
             height=f"{len(abilities) * 44}dp",
+            pos_hint={'center_x': 0.5, 'top': 2.5}
+        )
+
+        for ability_name in abilities:
+            button_text = ability_name.split(':')[0]
             pos_hint={'center_x': 0.5, 'top': 2.5} # Adjust as needed
         )
 
@@ -457,11 +489,8 @@ class CombatScreen(Screen):
         self.add_widget(self.ability_menu)
 
     def select_ability(self, ability_id: str, *args):
-        """
-        Called when an ability is chosen from the menu.
-        Sets targeting mode.
-        """
         self.close_ability_menu()
+        self.selected_ability_id = ability_id
         self.selected_ability_id = ability_id # Store the chosen ability name
         self.set_action_mode("use_ability")
 
@@ -489,6 +518,8 @@ class CombatScreen(Screen):
             orientation='vertical',
             size_hint=(None, None),
             width='200dp',
+            height=f"{len(inventory) * 44}dp",
+            pos_hint={'center_x': 0.5, 'top': 2.5}
             # Calculate height based on number of items
             height=f"{min(len(inventory) * 44, 220)}dp", # Max height of 5 items
             pos_hint={'center_x': 0.5, 'top': 2.5} # Adjust as needed
@@ -501,7 +532,6 @@ class CombatScreen(Screen):
 
         for item_id, quantity in inventory.items():
             button_text = f"{item_id.replace('_', ' ').title()} (x{quantity})"
-
             btn = Button(
                 text=button_text,
                 size_hint_y=None,
@@ -515,16 +545,21 @@ class CombatScreen(Screen):
         self.add_widget(self.item_menu)
 
     def select_item(self, item_id: str, *args):
-        """
-        Called when an item is chosen from the menu.
-        Sets targeting mode.
-        """
         self.close_item_menu()
         self.selected_item_id = item_id
         self.set_action_mode("use_item")
 
     def on_touch_down(self, touch):
         """Handle mouse clicks for targeting."""
+        # ... (menu closing logic is unchanged) ...
+        if self.ability_menu:
+            if not self.ability_menu.collide_point(*touch.pos):
+                self.close_ability_menu()
+            return True
+        if self.item_menu:
+            if not self.item_menu.collide_point(*touch.pos):
+                self.close_item_menu()
+            return True
 
         if self.ability_menu:
             if not self.ability_menu.collide_point(*touch.pos):
@@ -555,6 +590,14 @@ class CombatScreen(Screen):
 
         target = self.get_target_at_coord(tile_x, tile_y)
 
+        # --- MODIFIED: Target Validation Logic ---
+        if target:
+            target_type, target_data = target
+
+            is_friendly_action = (
+                self.selected_item_id == "item_health_potion_small" or
+                self.selected_ability_id == "Minor Heal"
+            )
         # --- NEW: Smart Targeting Logic ---
         if target:
             target_type, target_data = target
@@ -583,6 +626,25 @@ class CombatScreen(Screen):
 
             # Case 2: Friendly action on an ally (OK)
             elif target_type == "player" and is_friendly_action:
+                target_id = target_data.get('id') # Already in "player_UUID" format
+
+            # Case 3: Hostile action on an ally (BAD)
+            elif target_type == "player" and not is_friendly_action:
+                self.add_to_log("You can't attack an ally!")
+                self.current_action = None
+                return True # Consume touch
+
+            # Case 4: Friendly action on an enemy (BAD)
+            elif target_type == "npc" and is_friendly_action:
+                self.add_to_log("You can't use that on an enemy!")
+                self.current_action = None
+                return True # Consume touch
+
+            else:
+                self.add_to_log("Invalid target.")
+                self.current_action = None
+                return True
+
                 target_id = target_data.get('id')
 
             # Case 2b: Friendly action on self (OK)
@@ -620,6 +682,7 @@ class CombatScreen(Screen):
                 item_id=item_id
             )
 
+            # --- MODIFIED: Use the correct active player ID ---
             self.handle_player_action(self.active_combat_character.id, action)
 
             # Clear targeting mode
