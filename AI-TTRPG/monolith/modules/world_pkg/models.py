@@ -109,6 +109,11 @@ class NpcInstance(Base):
     name_override = Column(String, nullable=True) # e.g., "Grak the Goblin"
     current_hp = Column(Integer)
     max_hp = Column(Integer)
+    temp_hp = Column(Integer, default=0)
+    max_composure = Column(Integer, default=10)
+    current_composure = Column(Integer, default=10)
+    resource_pools = Column(JSON, default={})
+    abilities = Column(JSON, default=[])
     status_effects = Column(JSON, default=[])
 
     # This links the NPC to the Location it is currently in

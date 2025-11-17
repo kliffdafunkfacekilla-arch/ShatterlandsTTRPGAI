@@ -63,6 +63,8 @@ class CharacterContextResponse(CharacterBase):
     skills: Dict[str, Any]
     max_hp: int
     current_hp: int
+    max_composure: int
+    current_composure: int
     resource_pools: Dict[str, Any]  # e.g., {"Stamina": {"current": 10, "max": 10}, ...}
     talents: List[str]
     abilities: List[str]

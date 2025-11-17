@@ -557,7 +557,6 @@ def find_eligible_talents(
     return unlocked_talents
 
 
-# ADD THIS FUNCTION
 def calculate_base_vitals(stats: Dict[str, int]) -> models.BaseVitalsResponse:
     """
     Calculates Max HP and Base Resource Pools based on final stat scores.

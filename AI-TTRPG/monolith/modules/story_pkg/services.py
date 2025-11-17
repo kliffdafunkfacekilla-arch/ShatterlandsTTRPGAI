@@ -99,6 +99,22 @@ def spawn_trap_in_world(trap_request: schemas.TrapInstanceCreate) -> Dict:
     logger.debug(f"Calling internal world_api.spawn_trap_in_world for {trap_request.template_id}")
     return world_api.spawn_trap_in_world(trap_request)
 
+def apply_composure_damage_to_npc(npc_id: int, damage_amount: int) -> Dict:
+    logger.debug(f"Calling internal world_api.apply_composure_damage_to_npc for {npc_id}")
+    return world_api.apply_composure_damage_to_npc(npc_id, damage_amount)
+
+def apply_composure_healing_to_npc(npc_id: int, amount: int) -> Dict:
+    logger.debug(f"Calling internal world_api.apply_composure_healing_to_npc for {npc_id}")
+    return world_api.apply_composure_healing_to_npc(npc_id, amount)
+
+def apply_temp_hp_to_npc(npc_id: int, amount: int) -> Dict:
+    logger.debug(f"Calling internal world_api.apply_temp_hp_to_npc for {npc_id}")
+    return world_api.apply_temp_hp_to_npc(npc_id, amount)
+
+def update_npc_resource_pool(npc_id: int, pool_name: str, new_value: int) -> Dict:
+    logger.debug(f"Calling internal world_api.update_npc_resource_pool for {npc_id}")
+    return world_api.update_npc_resource_pool(npc_id, pool_name, new_value)
+
 # --- Character Engine Functions ---
 def get_character_context(char_id: str) -> Dict:
     logger.debug(f"Calling internal character_api.get_character_context for {char_id}")
@@ -107,6 +123,10 @@ def get_character_context(char_id: str) -> Dict:
 def apply_damage_to_character(char_id: str, damage_amount: int) -> Dict:
     logger.debug(f"Calling internal character_api.apply_damage_to_character for {char_id}")
     return char_api.apply_damage_to_character(char_id, damage_amount)
+
+def apply_composure_damage_to_character(char_id: str, damage_amount: int) -> Dict:
+    logger.debug(f"Calling internal character_api.apply_composure_damage_to_character for {char_id}")
+    return character_api.apply_composure_damage_to_character(char_id, damage_amount)
 
 def apply_healing_to_character(char_id: str, amount: int):
     """Applies healing to a character. Fire and forget."""
@@ -125,6 +145,14 @@ def add_item_to_character(char_id: str, item_id: str, quantity: int) -> Dict:
 def remove_item_from_character(char_id: str, item_id: str, quantity: int) -> Dict:
     logger.debug(f"Calling internal character_api.remove_item_from_character for {char_id}")
     return char_api.remove_item_from_character(char_id, item_id, quantity)
+
+def apply_temp_hp_to_character(char_id: str, amount: int) -> Dict:
+    logger.debug(f"Calling internal character_api.apply_temp_hp_to_character for {char_id}")
+    return character_api.apply_temp_hp_to_character(char_id, amount)
+
+def update_character_resource_pool(char_id: str, pool_name: str, new_value: int) -> Dict:
+    logger.debug(f"Calling internal character_api.update_character_resource_pool for {char_id}")
+    return character_api.update_character_resource_pool(char_id, pool_name, new_value)
 
 def get_ability_data(ability_name: str) -> Dict:
     """Gets the data for a single ability from the rules engine."""

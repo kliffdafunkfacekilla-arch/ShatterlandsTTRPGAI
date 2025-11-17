@@ -220,3 +220,90 @@ def register(orchestrator) -> None:
     # It's imported and called directly by other modules (like story.py)
     # for synchronous data queries.
     logger.info("[world] module registered (direct-call adapter)")
+
+def apply_composure_damage_to_npc(npc_id: int, damage_amount: int) -> Dict[str, Any]:
+    """Applies composure damage to an NPC and returns new context."""
+    db = we_db.SessionLocal()
+    try:
+        db_npc = we_crud.get_npc(db, npc_id)
+        if not db_npc:
+            raise Exception(f"NPC {npc_id} not found")
+
+        new_composure = max(0, db_npc.current_composure - damage_amount)
+        update_schema = we_schemas.NpcUpdate(current_composure=new_composure)
+
+        updated_npc = we_crud.update_npc(db, npc_id, update_schema)
+        schema_npc = we_schemas.NpcInstance.from_orm(updated_npc)
+        return schema_npc.model_dump()
+    except Exception as e:
+        logger.exception(f"[world.apply_composure_damage_to_npc] Error: {e}")
+        raise
+    finally:
+        db.close()
+
+def apply_composure_healing_to_npc(npc_id: int, amount: int) -> Dict[str, Any]:
+    """Applies composure healing to an NPC and returns new context."""
+    db = we_db.SessionLocal()
+    try:
+        db_npc = we_crud.get_npc(db, npc_id)
+        if not db_npc:
+            raise Exception(f"NPC {npc_id} not found")
+
+        new_composure = min(db_npc.max_composure, db_npc.current_composure + amount)
+        update_schema = we_schemas.NpcUpdate(current_composure=new_composure)
+
+        updated_npc = we_crud.update_npc(db, npc_id, update_schema)
+        schema_npc = we_schemas.NpcInstance.from_orm(updated_npc)
+        return schema_npc.model_dump()
+    except Exception as e:
+        logger.exception(f"[world.apply_composure_healing_to_npc] Error: {e}")
+        raise
+    finally:
+        db.close()
+
+def apply_temp_hp_to_npc(npc_id: int, amount: int) -> Dict[str, Any]:
+    """Adds temporary HP to an NPC (does not stack, takes highest) and returns new context."""
+    db = we_db.SessionLocal()
+    try:
+        db_npc = we_crud.get_npc(db, npc_id)
+        if not db_npc:
+            raise Exception(f"NPC {npc_id} not found")
+
+        # Temp HP generally doesn't stack; it replaces
+        new_temp_hp = max(db_npc.temp_hp, amount)
+        update_schema = we_schemas.NpcUpdate(temp_hp=new_temp_hp)
+
+        updated_npc = we_crud.update_npc(db, npc_id, update_schema)
+        schema_npc = we_schemas.NpcInstance.from_orm(updated_npc)
+        return schema_npc.model_dump()
+    except Exception as e:
+        logger.exception(f"[world.apply_temp_hp_to_npc] Error: {e}")
+        raise
+    finally:
+        db.close()
+
+def update_npc_resource_pool(npc_id: int, pool_name: str, new_value: int) -> Dict[str, Any]:
+    """Updates a specific resource pool for an NPC and returns new context."""
+    db = we_db.SessionLocal()
+    try:
+        db_npc = we_crud.get_npc(db, npc_id)
+        if not db_npc:
+            raise Exception(f"NPC {npc_id} not found")
+
+        current_pools = db_npc.resource_pools or {}
+
+        if pool_name not in current_pools:
+            # Initialize pool if it doesn't exist (e.g., from base stats)
+            current_pools[pool_name] = {"max": 10, "current": 0}
+
+        current_pools[pool_name]["current"] = max(0, new_value)
+        update_schema = we_schemas.NpcUpdate(resource_pools=current_pools)
+
+        updated_npc = we_crud.update_npc(db, npc_id, update_schema)
+        schema_npc = we_schemas.NpcInstance.from_orm(updated_npc)
+        return schema_npc.model_dump()
+    except Exception as e:
+        logger.exception(f"[world.update_npc_resource_pool] Error: {e}")
+        raise
+    finally:
+        db.close()
