@@ -96,716 +96,6 @@ def _get_actor_coords(actor_context: Dict) -> Optional[List[int]]:
         return [actor_context.get("position_x"), actor_context.get("position_y")]
     return None
 
-def _calculate_distance(coords1: List[int], coords2: List[int]) -> int:
-    """Calculates simple grid distance (Manhattan distance)."""
-    if not coords1 or not coords2 or len(coords1) != 2 or len(coords2) != 2:
-        return 999
-    return abs(coords1[0] - coords2[0]) + abs(coords1[1] - coords2[1])
-
-def _get_map_dimensions_and_data(location_id: int) -> Tuple[int, int, List[List[int]], List[str]]:
-    """Retrieves map dimensions and tile data, raising error if map is invalid."""
-    location_context = services.get_world_location_context(location_id)
-    map_data = location_context.get("generated_map_data", [])
-
-    if not map_data or not isinstance(map_data, list) or not map_data[0]:
-        raise RuntimeError("Map data is unavailable for boundary checks.")
-
-    height = len(map_data)
-    width = len(map_data[0])
-
-    # Impassable tile IDs based on tile_definitions.json (1=Tree, 2=Water, 4=Stone Wall, 5=Door Closed)
-    impassable_ids = [1, 2, 4, 5]
-
-    return width, height, map_data, impassable_ids
-
-# --- ADD THIS NEW PATHFINDING FUNCTION ---
-def _find_next_step(start_coords: List[int], end_coords: List[int], location_id: int, log: List[str]) -> Optional[List[int]]:
-    """
-    Finds the next single step towards a target using A* pathfinding.
-    Returns the coordinates of the next step, or None if no path is found.
-    """
-    try:
-        width, height, map_data, impassable_ids = _get_map_dimensions_and_data(location_id)
-    except RuntimeError as e:
-        log.append(f"Pathfinding failed: {e}")
-        return None
-
-    start_node = (start_coords[1], start_coords[0]) # (y, x)
-    end_node = (end_coords[1], end_coords[0]) # (y, x)
-
-    # A* algorithm components
-    open_list = []
-    heapq.heappush(open_list, (0, start_node)) # (f_cost, (y, x))
-
-    # Dictionaries to store A* data
-    g_costs = {start_node: 0}
-    parents = {start_node: None}
-
-    while open_list:
-        current_f_cost, current_node = heapq.heappop(open_list)
-
-        # Stop if we are *adjacent* to the end node
-        if _calculate_distance([current_node[1], current_node[0]], [end_node[1], end_node[0]]) <= 1:
-            # Reconstruct path to find the *first step*
-            path = []
-            temp = current_node
-            while temp and temp != start_node:
-                path.append(temp)
-                temp = parents.get(temp)
-
-            if not path:
-                return None # Already adjacent
-
-            next_step_node = path.pop() # This is the first step from start
-            return [next_step_node[1], next_step_node[0]] # Return as [x, y]
-
-        # Explore neighbors
-        (y, x) = current_node
-        for dy, dx in [(0, 1), (0, -1), (1, 0), (-1, 0)]: # 4-directional movement
-            neighbor_node = (y + dy, x + dx)
-            (ny, nx) = neighbor_node
-
-            # Check bounds
-            if not (0 <= ny < height and 0 <= nx < width):
-                continue
-
-            # Check passability
-            if map_data[ny][nx] in impassable_ids:
-                continue
-
-            # Calculate new G cost
-            new_g_cost = g_costs[current_node] + 1
-
-            if neighbor_node not in g_costs or new_g_cost < g_costs[neighbor_node]:
-                g_costs[neighbor_node] = new_g_cost
-                # Heuristic: Manhattan distance
-                h_cost = abs(ny - end_node[0]) + abs(nx - end_node[1])
-                f_cost = new_g_cost + h_cost
-
-                heapq.heappush(open_list, (f_cost, neighbor_node))
-                parents[neighbor_node] = current_node
-
-    log.append(f"Pathfinding: No path found from {start_coords} to {end_coords}.")
-    return None # No path found
-# --- END ADD ---
-
-def _is_passable_and_in_bounds(loc_id: int, x: int, y: int, log: List[str]) -> bool:
-    """Checks if new coordinates are within map boundaries and on a passable tile."""
-    try:
-        width, height, map_data, impassable_ids = _get_map_dimensions_and_data(loc_id)
-    except RuntimeError as e:
-        log.append(f"Error: Map check failed ({e})")
-        return False
-
-    if not (0 <= x < width and 0 <= y < height):
-        log.append(f"Movement failed: Coordinates ({x}, {y}) are out of bounds.")
-        return False
-
-    # Note: Map data is indexed [row][col], which is [y][x]
-    tile_id = map_data[y][x]
-    if tile_id in impassable_ids:
-        log.append(f"Movement failed: Tile ({x}, {y}) is impassable (Tile ID: {tile_id}).")
-        return False
-
-    return True
-
-def _get_targets_in_aoe(combat: models.CombatEncounter, caster_id: str, epicenter_coords: List[int], range_m: int, target_faction: str) -> List[Tuple[str, Dict]]:
-    """
-    Finds all targets within an AoE radius based on faction and range.
-    """
-    targets = []
-    caster_is_player = caster_id.startswith("player_")
-
-    # Determine the required actor type prefix based on the CASTER_ID and TARGET_FACTION
-    if target_faction == "enemy":
-        required_prefix = "npc_" if caster_is_player else "player_"
-    elif target_faction in ("ally", "ally_or_self"):
-        required_prefix = "player_" if caster_is_player else "npc_"
-    else: # Default to enemy if an invalid faction is passed
-        required_prefix = "npc_" if caster_is_player else "player_"
-
-    for p in combat.participants:
-        p_actor_id = p.actor_id
-
-        if not p_actor_id.startswith(required_prefix):
-            continue # Skip wrong faction
-
-        if p_actor_id == caster_id and target_faction == "ally":
-            continue # 'ally' does not include self (use 'ally_or_self' for that)
-
-        # ... (check HP, calculate distance, and append targets if in range) ...
-        try:
-            _, p_context = get_actor_context(p_actor_id)
-            if p_context.get("current_hp", 0) <= 0: continue
-
-            p_coords = _get_actor_coords(p_context)
-            distance = _calculate_distance(epicenter_coords, p_coords)
-
-            if distance <= range_m:
-                targets.append((p_actor_id, p_context))
-        except:
-            continue
-
-    return targets
-
-
-# ----------------------------------------------------
-# --- COMBAT REWARD & LOGIC HELPERS (Original/Core) ---
-# ----------------------------------------------------
-
-def _grant_combat_rewards(db: Session, combat: models.CombatEncounter, log: List[str]):
-    """Calculates and grants rewards (items, XP, etc.) upon combat victory."""
-    logger.info(f"Granting rewards for combat {combat.id}")
-
-    player_ids = [p.actor_id for p in combat.participants if p.actor_type == "player" and p.actor_id]
-    if not player_ids:
-        log.append("No surviving players to grant rewards to.")
-        return
-
-    primary_player_id = player_ids[0]
-
-    for p in combat.participants:
-        if p.actor_type == "npc":
-            try:
-                _, npc_context = get_actor_context(p.actor_id)
-                if npc_context.get("current_hp", 0) > 0:
-                    continue
-
-                template_id = npc_context.get("template_id")
-                if not template_id:
-                    continue
-
-                template_data = services.get_npc_generation_params(template_id)
-                loot_table_ref = template_data.get("loot_table_ref")
-
-                if not loot_table_ref:
-                    continue
-
-                loot_table = services.get_loot_table(loot_table_ref)
-                for item_id, loot_info in loot_table.items():
-                    if random.random() < loot_info.get("chance", 0):
-                        quantity = loot_info.get("quantity", 1)
-                        services.add_item_to_character(primary_player_id, item_id, quantity)
-                        log.append(f"The {template_id} dropped {item_id} (x{quantity})!")
-            except Exception as e:
-                logger.exception(f"Failed to grant loot for {p.actor_id}: {e}")
-
-def _find_spawn_points(map_data: List[List[int]], num_points: int) -> List[List[int]]:
-    if not map_data:
-        logger.warning("Map data is empty, cannot find spawn points.")
-        return [[5, 5]] * num_points
-    valid_spawns = []
-    height = len(map_data)
-    width = len(map_data[0]) if height > 0 else 0
-    for y in range(height):
-        for x in range(width):
-            if map_data[y][x] in [0, 3]:
-                valid_spawns.append([x, y])
-    if not valid_spawns:
-        logger.warning("No valid spawn tiles found on map. Falling back to default.")
-        return [[5, 5]] * num_points
-    random.shuffle(valid_spawns)
-    return [valid_spawns[i % len(valid_spawns)] for i in range(num_points)]
-
-def _extract_initiative_stats(stats_dict: Dict) -> Dict:
-    return {
-        "endurance": stats_dict.get("Endurance", 10),
-        "reflexes": stats_dict.get("Reflexes", 10),
-        "fortitude": stats_dict.get("Fortitude", 10),
-        "logic": stats_dict.get("Logic", 10),
-        "intuition": stats_dict.get("Intuition", 10),
-        "willpower": stats_dict.get("Willpower", 10),
-    }
-
-def start_combat(db: Session, start_request: schemas.CombatStartRequest) -> models.CombatEncounter:
-    logger.info(f"Starting combat at location {start_request.location_id}")
-    participants_data: List[Tuple[str, str, int]] = []
-    spawned_npc_details: List[Dict] = []
-
-    # --- ADD THIS DICT ---
-    # Store the full generated template data to avoid re-generation
-    npc_template_cache: Dict[str, Dict] = {}
-    # --- END ADD ---
-
-    spawn_points = []
-    try:
-        location_context = services.get_world_location_context(start_request.location_id)
-        map_data = location_context.get("generated_map_data")
-        num_npcs = len(start_request.npc_template_ids)
-
-        map_spawn_points = location_context.get("spawn_points", {}).get("enemy")
-        if map_spawn_points and len(map_spawn_points) >= num_npcs:
-            random.shuffle(map_spawn_points)
-            spawn_points = map_spawn_points[:num_npcs]
-        else:
-            spawn_points = _find_spawn_points(map_data, num_npcs)
-
-    except Exception as e:
-        logger.exception(f"Error finding spawn points: {e}.")
-        spawn_points = [[5, 5]] * len(start_request.npc_template_ids)
-
-    for i, template_id in enumerate(start_request.npc_template_ids):
-        try:
-            coords = spawn_points[i]
-            template_lookup = services.get_npc_generation_params(template_id)
-            generation_params = template_lookup.get("generation_params")
-            if not generation_params:
-                logger.error(f"No generation_params found for template_id: {template_id}")
-                continue
-
-            full_npc_template = services.generate_npc_template(generation_params)
-
-            # --- STORE IN CACHE ---
-            npc_template_cache[template_id] = full_npc_template
-            # --- END STORE ---
-
-            npc_max_hp = full_npc_template.get("max_hp", 10)
-            npc_abilities = full_npc_template.get("abilities", [])
-            npc_resource_pools = full_npc_template.get("resource_pools", {}) # Get generated pools
-
-            spawn_data = schemas.OrchestrationSpawnNpc(
-                template_id=template_id,
-                location_id=start_request.location_id,
-                coordinates=coords,
-                current_hp=npc_max_hp,
-                max_hp=npc_max_hp,
-                behavior_tags=full_npc_template.get("behavior_tags", ["aggressive"]),
-
-                # --- ADD THESE FIELDS ---
-                abilities=npc_abilities,
-                resource_pools=npc_resource_pools
-                # (Composure will use defaults)
-                # --- END ADD ---
-            )
-            npc_instance_data = services.spawn_npc_in_world(spawn_data)
-
-            # This manual update is no longer needed
-            # try:
-            #     services.world_api.update_npc_state(npc_instance_data['id'], {"abilities": npc_abilities})
-            # except Exception as e_abil:
-            #     logger.error(f"Failed to manually add abilities to NPC: {e_abil}")
-
-            spawned_npc_details.append(npc_instance_data)
-        except Exception as e:
-            logger.exception(f"Unexpected error spawning NPC template '{template_id}': {e}")
-            continue
-
-    for player_id_str in start_request.player_ids:
-        try:
-            if not isinstance(player_id_str, str) or not player_id_str.startswith("player_"):
-                continue
-            char_context = services.get_character_context(player_id_str)
-            player_stats = char_context.get("stats", {})
-            stats_for_init = _extract_initiative_stats(player_stats)
-            init_result = services.roll_initiative(**stats_for_init)
-            initiative_total = init_result.get("total_initiative", 0)
-            participants_data.append((player_id_str, "player", initiative_total))
-        except Exception as e:
-            logger.exception(f"Unexpected error processing Player {player_id_str}: {e}")
-            participants_data.append((player_id_str, "player", 0))
-
-    for npc_data in spawned_npc_details:
-        actor_id_str = f"npc_{npc_data.get('id')}"
-        try:
-            # --- REFACTOR: Use the cache instead of re-generating ---
-            npc_context = services.get_npc_context(npc_data.get('id'))
-            template_id = npc_context.get("template_id", "")
-
-            full_npc_template = npc_template_cache.get(template_id)
-            if not full_npc_template:
-                # Fallback just in case (should not happen)
-                logger.warning(f"NPC template for {template_id} not in cache, re-generating for initiative.")
-                template_lookup = services.get_npc_generation_params(template_id)
-                generation_params = template_lookup.get("generation_params")
-                full_npc_template = services.generate_npc_template(generation_params) if generation_params else {}
-
-            npc_stats = full_npc_template.get("stats", {})
-            # --- END REFACTOR ---
-
-            stats_for_init = _extract_initiative_stats(npc_stats)
-            init_result = services.roll_initiative(**stats_for_init)
-            initiative_total = init_result.get("total_initiative", 0)
-            participants_data.append((actor_id_str, "npc", initiative_total))
-        except Exception as e:
-            logger.exception(f"Unexpected error processing NPC {npc_data.get('id')}: {e}")
-            participants_data.append((actor_id_str, "npc", 0))
-
-    if not participants_data:
-        raise HTTPException(status_code=400, detail="Cannot start combat: No valid participants found.")
-
-    participants_data.sort(key=lambda x: x[2], reverse=True)
-    turn_order = [p[0] for p in participants_data]
-
-    db_combat = crud.create_combat_encounter(db, location_id=start_request.location_id, turn_order=turn_order)
-    for actor_id, actor_type, initiative in participants_data:
-        crud.create_combat_participant(db, combat_id=db_combat.id, actor_id=actor_id, actor_type=actor_type, initiative=initiative)
-
-    db.refresh(db_combat)
-    return db_combat
-
-def get_actor_context(actor_id: str) -> Tuple[str, Dict]:
-    logger.debug(f"Getting context for actor: {actor_id}")
-    if actor_id.startswith("player_"):
-        try:
-            context_data = services.get_character_context(actor_id)
-            return "player", context_data
-        except HTTPException as e:
-            raise e
-    elif actor_id.startswith("npc_"):
-        try:
-            npc_instance_id = int(actor_id.split("_")[1])
-            context_data = services.get_npc_context(npc_instance_id)
-            return "npc", context_data
-        except (IndexError, ValueError):
-            raise HTTPException(status_code=400, detail=f"Invalid NPC actor ID format: {actor_id}")
-        except HTTPException as e:
-            raise e
-    else:
-        raise HTTPException(status_code=400, detail=f"Unknown actor ID format: {actor_id}")
-
-def get_stat_score(actor_context: Dict, stat_name: str) -> int:
-    stats = actor_context.get("stats", {})
-    return stats.get(stat_name, 10)
-
-def get_skill_rank(actor_context: Dict, skill_name: str) -> int:
-    skills = actor_context.get("skills", {})
-    skill_data = skills.get(skill_name)
-    if isinstance(skill_data, dict):
-        return skill_data.get("rank", 0)
-    elif isinstance(skill_data, int):
-        return skill_data
-    return 0
-
-def get_equipped_weapon(actor_context: Dict) -> Tuple[Optional[str], Optional[str]]:
-    actor_name = actor_context.get('name', actor_context.get('template_id', 'Unknown Actor'))
-    equipment = actor_context.get("equipment")
-    if equipment is not None:
-        weapon_item_id = equipment.get("weapon")
-        if weapon_item_id:
-            try:
-                item_template = services.get_item_template_params(weapon_item_id)
-                category = item_template.get("category")
-                item_type = item_template.get("type")
-                if category and item_type in ("melee", "ranged"):
-                    return category, item_type
-                else:
-                    return "Unarmed/Fist Weapons", "melee"
-            except Exception as e:
-                logger.error(f"Failed to get item template for {weapon_item_id}. Error: {e}.")
-                return "Unarmed/Fist Weapons", "melee"
-        else:
-            return "Unarmed/Fist Weapons", "melee"
-    else:
-        npc_skills = actor_context.get("skills", {})
-        if npc_skills.get("Great Weapons", 0) > 0: return "Great Weapons", "melee"
-        if npc_skills.get("Bows and Firearms", 0) > 0: return "Bows and Firearms", "ranged"
-        return "Unarmed/Fist Weapons", "melee"
-
-def get_equipped_armor(actor_context: Dict) -> Optional[str]:
-    actor_name = actor_context.get('name', actor_context.get('template_id', 'Unknown Actor'))
-    equipment = actor_context.get("equipment")
-    if equipment is not None:
-        armor_item_id = equipment.get("armor")
-        if armor_item_id:
-            try:
-                item_template = services.get_item_template_params(armor_item_id)
-                category = item_template.get("category")
-                item_type = item_template.get("type")
-                if category and item_type == "armor":
-                    return category
-                else:
-                    return "Natural/Unarmored"
-            except Exception as e:
-                logger.error(f"Failed to get item template for {armor_item_id}. Error: {e}.")
-                return "Natural/Unarmored"
-        else:
-            return "Natural/Unarmored"
-    else:
-        npc_skills = actor_context.get("skills", {})
-        if npc_skills.get("Plate Armor", 0) > 0: return "Plate Armor"
-        elif npc_skills.get("Clothing/Utility", 0) > 0: return "Clothing/Utility"
-        return "Natural/Unarmored"
-
-def check_combat_end_condition(db: Session, combat: models.CombatEncounter, log: List[str]) -> bool:
-    """Checks if all NPCs or all Players are defeated."""
-    players_alive, npcs_alive = False, False
-
-    for p in combat.participants:
-        try:
-            actor_type, context = get_actor_context(p.actor_id)
-            hp = context.get("current_hp", 0)
-            if hp > 0:
-                if actor_type == "player": players_alive = True
-                elif actor_type == "npc": npcs_alive = True
-        except HTTPException as e:
-            logger.warning(f"Could not get context for {p.actor_id} during end check: {e.detail}.")
-
-    if not players_alive or not npcs_alive:
-        if not players_alive:
-            end_status = "npcs_win"
-            log.append("The party has been defeated!")
-        else:
-            end_status = "players_win"
-            log.append("All enemies have been defeated!")
-            _grant_combat_rewards(db, combat, log)
-
-        combat.status = end_status
-        db.commit()
-        logger.info(f"Combat {combat.id} ended: {end_status}")
-        return True
-    return False
-
-def _check_and_trigger_reactions(
-    db: Session,
-    combat: models.CombatEncounter,
-    trigger_event: str,
-    trigger_actor_id: str,
-    log: List[str],
-    event_data: Optional[Dict[str, Any]] = None) -> bool:
-    """
-    Checks all participants for readied or innate reactions to an event.
-
-    event_data holds extra context:
-    - For 'attack_hit'/'attack_miss': None
-    - For 'actor_move': {"old_coords": [x, y]}
-    - For 'ability_effect_applied': {"effect_type": "..."}
-    """
-    logger.info(f"Checking reactions for event: {trigger_event} (Actor: {trigger_actor_id})")
-    event_data = event_data or {}
-    reaction_triggered = False
-
-    # Get the context for the actor who caused the event (the "trigger_actor")
-    try:
-        _, trigger_actor_context = get_actor_context(trigger_actor_id)
-        if trigger_actor_context.get("current_hp", 0) <= 0:
-            return False
-        trigger_actor_coords = _get_actor_coords(trigger_actor_context)
-    except HTTPException:
-        return False
-
-    # Iterate over ALL participants to see if any of them can react
-    for participant in combat.participants:
-        # Actors can't usually react to their own actions
-        if participant.actor_id == trigger_actor_id:
-            continue
-
-        try:
-            _, reactor_context = get_actor_context(participant.actor_id)
-            if reactor_context.get("current_hp", 0) <= 0:
-                continue
-            reactor_coords = _get_actor_coords(reactor_context)
-        except HTTPException:
-            continue
-
-        # --- 1. Check for Innate Reactions (e.g., Threat Zone) ---
-        reactor_statuses = reactor_context.get("status_effects", [])
-        if "Threat Zone" in reactor_statuses and trigger_event == "actor_move":
-            # Threat Zone logic: Check if the trigger_actor exited the reactor's zone
-
-            old_coords = event_data.get("old_coords")
-            new_coords = trigger_actor_coords
-
-            if old_coords and new_coords and reactor_coords:
-                # Threat Zone range is 3m (derived from the effect definition)
-                threat_range = 3
-
-                old_dist = _calculate_distance(old_coords, reactor_coords)
-                new_dist = _calculate_distance(new_coords, reactor_coords)
-
-                if old_dist <= threat_range and new_dist > threat_range:
-                    log.append(f"REACTION: {participant.actor_id}'s 'Threat Zone' triggers against {trigger_actor_id}!")
-
-                    # Execute the AoO (Basic Attack)
-                    _handle_basic_attack(db, combat, participant.actor_id, trigger_actor_id, reactor_context, trigger_actor_context, log)
-                    reaction_triggered = True
-
-
-        # --- 2. Check for Player-Readied Actions ---
-        if participant.readied_action:
-            readied = participant.readied_action
-            readied_trigger = readied.get("trigger")
-            readied_action = readied.get("action")
-
-            # Check for direct trigger match
-            is_direct_trigger = (readied_trigger == trigger_event)
-
-            # Check for movement trigger (simple V1 logic)
-            is_move_trigger = (readied_trigger == "enemy_moves_in_range" and trigger_event == "actor_move")
-
-            if is_move_trigger or is_direct_trigger:
-
-                log.append(f"REACTION: {participant.actor_id}'s readied action ({readied_action}) triggers!")
-
-                # We clear the readied action *before* executing it
-                crud.set_readied_action(db, combat.id, participant.actor_id, None)
-
-                # Fetch contexts (already done above: reactor_context, trigger_actor_context)
-
-                # Execute the readied action
-                if readied_action == "basic_attack":
-                    _handle_basic_attack(db, combat, participant.actor_id, trigger_actor_id, reactor_context, trigger_actor_context, log)
-                elif readied_action:
-                    # Treat any other chosen action as an ability
-                    ability_action = schemas.PlayerActionRequest(
-                        action="use_ability",
-                        ability_id=readied_action,
-                        target_id=trigger_actor_id
-                    )
-                    # Use the helper to execute the ability effects immediately
-                    _execute_readied_ability(db, combat, participant.actor_id, ability_action, log)
-
-                reaction_triggered = True
-
-    return reaction_triggered
-
-def _execute_readied_ability(db: Session, combat: models.CombatEncounter, actor_id: str, action: schemas.PlayerActionRequest, log: List[str]):
-    """
-    Wrapper to execute an ability's effects during a reaction/readied action.
-    This bypasses the full turn execution logic.
-    """
-    try:
-        _, attacker_context = get_actor_context(actor_id)
-        target_id = action.target_id
-        defender_context = attacker_context
-        if target_id:
-            _, defender_context = get_actor_context(target_id)
-
-        ability_data = services.get_ability_data(action.ability_id)
-
-        # NOTE: Cost is ignored for readied actions for simplicity in V1
-
-        for effect in ability_data.get("effects", []):
-            effect_type = effect.get("type")
-            handler = ABILITY_EFFECT_HANDLERS.get(effect_type)
-
-            if handler:
-                # We assume all handlers now accept the (db, combat, ...) signature
-                handler(db, combat, actor_id, target_id, attacker_context, defender_context, log, effect)
-    except Exception as e:
-        log.append(f"REACTION ABILITY FAILED: {e}")
-
-def determine_npc_action(db: Session, combat: models.CombatEncounter, npc_actor_id: str) -> Optional[schemas.PlayerActionRequest]:
-    """
-    Determines an NPC's action based on health, behavior tags, and abilities.
-    """
-    try:
-        _, npc_context = get_actor_context(npc_actor_id)
-    except HTTPException:
-        logger.error(f"Could not get context for NPC {npc_actor_id} to determine action.")
-        return None
-
-    status_effects = npc_context.get("status_effects", [])
-    if "Staggered" in status_effects:
-        logger.info(f"NPC {npc_actor_id} is Staggered and skips its turn.")
-        services.remove_status_from_npc(int(npc_actor_id.split('_')[1]), "Staggered")
-        return None # Return a "wait" action (None)
-
-    behavior_tags = npc_context.get("behavior_tags", [])
-    npc_current_hp = npc_context.get("current_hp", 1)
-    npc_max_hp = npc_context.get("max_hp", 1)
-    npc_abilities = npc_context.get("abilities", [])
-    npc_coords = _get_actor_coords(npc_context)
-
-    living_players = []
-    for p in combat.participants:
-        if p.actor_id.startswith("player_"):
-            try:
-                _, p_context = get_actor_context(p.actor_id)
-                if p_context.get("current_hp", 0) > 0:
-                    living_players.append(p_context)
-            except HTTPException:
-                continue
-
-    if not living_players:
-        return None # No targets, wait
-
-    # --- AI Decision Tree ---
-    # 1. Use high-priority abilities (like healing)
-    if "Minor Heal" in npc_abilities and npc_current_hp < (npc_max_hp * 0.5):
-        return schemas.PlayerActionRequest(action="use_ability", ability_id="Minor Heal", target_id=npc_actor_id)
-
-    # 2. Flee if cowardly
-    if "cowardly" in behavior_tags and npc_current_hp < (npc_max_hp * 0.3):
-        return None # Wait
-
-    # 3. Find a target
-    target_player = None
-    if "targets_weakest" in behavior_tags:
-        living_players.sort(key=lambda p: p.get("current_hp", 999))
-        target_player = living_players[0]
-    else:
-        target_player = random.choice(living_players)
-
-    if not target_player:
-        return None # No target found
-
-    target_id = target_player['id']
-    target_coords = _get_actor_coords(target_player)
-    distance = _calculate_distance(npc_coords, target_coords)
-
-    # 4. Check if we need to move (for melee)
-    try:
-        template_id = npc_context.get("template_id")
-        gen_params = services.get_npc_generation_params(template_id)
-        offense_style = gen_params.get("generation_params", {}).get("offense_style")
-    except Exception:
-        offense_style = "ranged_support" # Default to ranged if lookup fails
-
-    if offense_style == "melee_heavy" and distance > 1:
-        log_stub = [] # Create a temporary log for the pathfinder
-        next_step_coords = _find_next_step(npc_coords, target_coords, combat.location_id, log_stub)
-
-        if next_step_coords:
-            logger.info(f"NPC {npc_actor_id} moving to {next_step_coords} to attack {target_id}.")
-            return schemas.PlayerActionRequest(action="move", coordinates=next_step_coords)
-        else:
-            logger.warning(f"NPC {npc_actor_id} wants to move but no path was found.")
-            # No path, so wait
-            return None
-
-    # 5. Use abilities
-    if "Nausea" in npc_abilities and random.random() < 0.5:
-        return schemas.PlayerActionRequest(action="use_ability", ability_id="Nausea", target_id=target_id)
-
-    if "Repel Step" in npc_abilities and random.random() < 0.3:
-        return schemas.PlayerActionRequest(action="use_ability", ability_id="Repel Step", target_id=npc_actor_id)
-
-    # 6. Default to attack
-    return schemas.PlayerActionRequest(action="attack", target_id=target_id)
-
-def handle_no_action(db: Session, combat: models.CombatEncounter, actor_id: str, reason: str = "waits") -> schemas.PlayerActionResponse:
-    """Handles a 'wait' action or a skipped turn."""
-    log = [f"{actor_id} {reason}."]
-    combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
-    combat_over = check_combat_end_condition(db, combat, log)
-    db.commit()
-    db.refresh(combat)
-
-    return schemas.PlayerActionResponse(
-        success=True,
-        message=f"{actor_id} waited.",
-        log=log,
-        new_turn_index=combat.current_turn_index,
-        combat_over=combat_over
-    )
-
-# --- NEW: Dice Rolling Helper ---
-def _roll_dice_string(dice_str: str) -> int:
-    """Rolls dice based on a string like '1d8' or '2d6'."""
-    try:
-        if "d" in dice_str:
-            num, die = map(int, dice_str.split('d'))
-            # Roll details is a list of individual roll results
-            return sum(random.randint(1, die) for _ in range(num))
-        else:
-            return int(dice_str)
-    except Exception as e:
-        logger.error(f"Failed to roll dice string '{dice_str}': {e}")
-        return 0
-
-# ----------------------------------------------------
-# --- ABILITY EFFECT HANDLERS (COMPLETED/UPDATED) ---
-# ----------------------------------------------------
 
 # --- Resource Management ---
 
@@ -1124,6 +414,139 @@ def _handle_effect_move_self(
 
 # --- AoE Handlers ---
 
+def _get_targets_in_aoe(
+    combat: models.CombatEncounter,
+    center_target_id: str,
+    shape: str,
+    radius: int,
+    target_type: str = "all" # "all", "enemy", "ally", "ally_or_self"
+) -> List[Tuple[str, Dict]]:
+    """
+    Helper to find all actors within a certain radius of a target actor.
+    Returns a list of (actor_id, actor_context).
+    """
+    targets = []
+    try:
+        _, center_context = get_actor_context(center_target_id)
+        center_coords = _get_actor_coords(center_context)
+        if not center_coords:
+            return []
+
+        center_faction = "player" if center_target_id.startswith("player_") else "npc"
+
+        for participant in combat.participants:
+            p_id = participant.actor_id
+            try:
+                _, p_context = get_actor_context(p_id)
+                p_coords = _get_actor_coords(p_context)
+                if not p_coords: continue
+
+                distance = _calculate_distance(center_coords, p_coords)
+
+                if distance <= radius:
+                    # Filter by faction
+                    p_faction = "player" if p_id.startswith("player_") else "npc"
+                    is_enemy = (center_faction != p_faction)
+
+                    if target_type == "enemy" and not is_enemy:
+                        continue
+                    if target_type == "ally" and is_enemy:
+                        continue
+                    if target_type == "ally_or_self" and is_enemy:
+                        continue # (Self is included in ally check usually, or explicitly handled)
+
+                    targets.append((p_id, p_context))
+
+            except HTTPException:
+                continue
+    except Exception as e:
+        logger.error(f"Error calculating AoE targets: {e}")
+        return []
+
+    return targets
+
+def _calculate_distance(coords1: List[int], coords2: List[int]) -> float:
+    """Chebyshev distance (chessboard distance) for grid movement."""
+    return max(abs(coords1[0] - coords2[0]), abs(coords1[1] - coords2[1]))
+
+def check_combat_end_condition(db: Session, combat: models.CombatEncounter, log: List[str]) -> bool:
+    """Checks if all NPCs or all Players are defeated."""
+    players_alive, npcs_alive = False, False
+
+    for p in combat.participants:
+        try:
+            actor_type, context = get_actor_context(p.actor_id)
+            hp = context.get("current_hp", 0)
+            # --- CHANGED: Check for Downed status ---
+            is_downed = "Downed" in context.get("status_effects", [])
+            
+            if hp > 0 and not is_downed:
+                if actor_type == "player": players_alive = True
+                elif actor_type == "npc": npcs_alive = True
+        except HTTPException as e:
+            logger.warning(f"Could not get context for {p.actor_id} during end check: {e.detail}.")
+
+    if not players_alive or not npcs_alive:
+        if not players_alive:
+            end_status = "npcs_win"
+            log.append("The party has been defeated!")
+        else:
+            end_status = "players_win"
+            log.append("All enemies have been defeated!")
+            _grant_combat_rewards(db, combat, log)
+
+        combat.status = end_status
+        db.commit()
+        logger.info(f"Combat {combat.id} ended: {end_status}")
+        return True
+    return False
+
+def _grant_combat_rewards(db: Session, combat: models.CombatEncounter, log: List[str]):
+    """Calculates and grants rewards (items, XP, etc.) upon combat victory."""
+    logger.info(f"Granting rewards for combat {combat.id}")
+
+    player_ids = [p.actor_id for p in combat.participants if p.actor_type == "player" and p.actor_id]
+    if not player_ids:
+        log.append("No surviving players to grant rewards to.")
+        return
+
+    primary_player_id = player_ids[0]
+
+    for p in combat.participants:
+        if p.actor_type == "npc":
+            try:
+                _, npc_context = get_actor_context(p.actor_id)
+                if npc_context.get("current_hp", 0) > 0:
+                    continue
+
+                template_id = npc_context.get("template_id")
+                if not template_id:
+                    continue
+
+                template_data = services.get_npc_generation_params(template_id)
+                loot_table_ref = template_data.get("loot_table_ref")
+
+                if not loot_table_ref:
+                    continue
+
+                loot_table = services.get_loot_table(loot_table_ref)
+                for item_id, loot_info in loot_table.items():
+                    if random.random() < loot_info.get("chance", 0):
+                        quantity = loot_info.get("quantity", 1)
+                        services.add_item_to_character(db, primary_player_id, item_id, quantity)
+                        log.append(f"The {template_id} dropped {item_id} (x{quantity})!")
+            except Exception as e:
+                logger.exception(f"Failed to grant loot for {p.actor_id}: {e}")
+
+    # --- NEW: Grant XP ---
+    xp_reward = 50 # Placeholder fixed amount per combat
+    for pid in player_ids:
+        try:
+            services.award_xp(db, pid, xp_reward)
+            log.append(f"Player {pid} gained {xp_reward} XP.")
+        except Exception as e:
+            logger.error(f"Failed to award XP to {pid}: {e}")
+
 def _handle_effect_aoe_status_apply(
     db: Session,
     combat: models.CombatEncounter,
@@ -1143,39 +566,6 @@ def _handle_effect_aoe_status_apply(
         log.append(f"  -> {p_actor_id} gains {status_id}.")
 
     log.append(f"AoE status '{status_id}' applied to {len(aoe_targets)} targets in the {shape}.")
-    return True
-
-def _handle_effect_aoe_status_roll(
-    db: Session,
-    combat: models.CombatEncounter,
-    actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Handles AoE application of a status with an individual save roll (e.g., Evocation T2)."""
-    status_id = effect.get("status_id")
-    shape = effect.get("shape", "radius")
-    range_m = effect.get("range", 5)
-    save_stat = effect.get("save_stat")
-    dc = effect.get("dc", 14)
-
-    if not status_id or not save_stat: return False
-
-    aoe_targets = _get_targets_in_aoe(combat, target_id, shape, range_m, target_type="enemy")
-    targets_hit = 0
-
-    for p_actor_id, p_context in aoe_targets:
-        if not p_context: continue
-        stat_score = get_stat_score(p_context, save_stat)
-        stat_mod = rules_core.calculate_modifier(stat_score)
-        roll = random.randint(1, 20)
-        total = roll + stat_mod
-
-        if total < dc:
-            services.apply_status_to_target(p_actor_id, status_id)
-            targets_hit += 1
-            log.append(f"  -> {p_actor_id} FAILED save ({total}) and is {status_id}!")
-        else:
-             log.append(f"  -> {p_actor_id} SAVED ({total}) against {status_id}.")
-
-    log.append(f"AoE status '{status_id}' attempted on {len(aoe_targets)} targets. {targets_hit} hit.")
     return True
 
 def _handle_effect_aoe_composure_damage_roll(
@@ -1236,7 +626,15 @@ def _handle_effect_aoe_heal(
         if p_actor_id.startswith("player_"):
             services.apply_healing_to_character(p_actor_id, heal_amount)
         elif p_actor_id.startswith("npc_"):
-            log.append(f"[STUB] NPC healing applied to {p_actor_id}.")
+            try:
+                npc_instance_id = int(p_actor_id.split("_")[1])
+                new_hp = min(
+                    p_context.get("current_hp", 0) + heal_amount,
+                    p_context.get("max_hp", 99)
+                )
+                services.world_api.update_npc_state(npc_instance_id, {"current_hp": new_hp})
+            except Exception as e:
+                log.append(f"Failed to apply AoE heal to {p_actor_id}: {e}")
 
         log.append(f"  -> {p_actor_id} healed for {heal_amount} HP.")
 
@@ -1725,7 +1123,6 @@ def _check_and_trigger_reactions(
     event_data = event_data or {}
     reaction_triggered = False
 
-    # Get the context for the actor who caused the event (the "trigger_actor")
     try:
         _, trigger_actor_context = get_actor_context(trigger_actor_id)
     except HTTPException:
@@ -1788,7 +1185,6 @@ def _check_and_trigger_reactions(
                     log.append(f"  -> Readied action failed: {e}")
 
     return reaction_triggered
-# --- END ADD ---
 
 # --- UPDATE FUNCTION SIGNATURE ---
 def _check_for_interrupt_reactions(db: Session, combat: models.CombatEncounter, attacker_id: str, target_id: str, attack_result: Dict, log: List[str]) -> bool:
@@ -2186,3 +1582,115 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
     except Exception as e:
         logger.exception(f"Unexpected error in handle_player_action for {actor_id}: {e}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred")
+
+def determine_npc_action(
+    db: Session,
+    combat: models.CombatEncounter,
+    npc_id: str,
+    npc_context: Dict
+) -> Dict:
+    """
+    Determines the best action for an NPC based on its AI tag and current state.
+    Returns a dictionary representing the action (similar to PlayerActionRequest).
+    """
+    ai_tag = npc_context.get("ai_tag", "basic_melee")
+    # Default fallback
+    action = {"action": "pass_turn", "target_id": None}
+
+    # Identify potential targets (players)
+    enemies = []
+    for p in combat.participants:
+        if p.actor_id.startswith("player_"):
+            try:
+                _, p_context = get_actor_context(p.actor_id)
+                if p_context.get("current_hp", 0) > 0:
+                    enemies.append(p.actor_id)
+            except:
+                continue
+
+    if not enemies:
+        return action
+
+    # Simple targeting logic: closest or random
+    target_id = random.choice(enemies)
+    
+    # AI Logic
+    if ai_tag == "aggressive":
+        # Try to attack
+        # Check if has melee attack
+        action = {"action": "attack", "target_id": target_id, "ability_id": "Basic Melee"}
+    elif ai_tag == "caster":
+        # Try to cast a spell if available, else attack
+        action = {"action": "attack", "target_id": target_id, "ability_id": "Basic Ranged"}
+    else:
+        # Basic behavior
+        action = {"action": "attack", "target_id": target_id, "ability_id": "Basic Melee"}
+
+    return action
+
+def handle_npc_turn(
+    db: Session,
+    combat: models.CombatEncounter,
+    npc_id: str
+) -> List[str]:
+    """
+    Executes the turn for an NPC.
+    1. Process start-of-turn status effects.
+    2. Determine action.
+    3. Execute action.
+    4. Check end of combat.
+    5. Advance turn.
+    """
+    log = []
+    log.append(f"--- {npc_id}'s Turn ---")
+
+    try:
+        _, npc_context = get_actor_context(npc_id)
+        
+        # 1. Status Effects
+        _process_status_effects_on_turn_start(db, combat, npc_id, log)
+        
+        # Check if dead after status effects
+        if npc_context.get("current_hp", 0) <= 0:
+             log.append(f"{npc_id} succumbed to status effects.")
+             combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
+             return log
+
+        # 2. Determine Action
+        action_data = determine_npc_action(db, combat, npc_id, npc_context)
+        action_type = action_data.get("action")
+        target_id = action_data.get("target_id")
+        ability_id = action_data.get("ability_id")
+
+        # 3. Execute Action
+        if action_type == "pass_turn":
+            log.append(f"{npc_id} passes their turn.")
+        elif action_type == "attack":
+            # Reuse logic from handle_player_action or call specific helpers
+            if target_id:
+                _, target_context = get_actor_context(target_id)
+                # Assuming basic attack for now
+                _handle_basic_attack(db, combat, npc_id, target_id, npc_context, target_context, log)
+            else:
+                log.append(f"{npc_id} could not find a target.")
+        
+        elif action_type == "move":
+             # NPC movement logic (simplified)
+             log.append(f"{npc_id} moves.")
+             # Implement movement logic here using _handle_effect_move_self or similar
+             pass
+
+        # 4. End Turn
+        combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
+        check_combat_end_condition(db, combat, log)
+        db.commit()
+        db.refresh(combat)
+
+    except Exception as e:
+        log.append(f"Error during {npc_id}'s turn: {e}")
+        logger.exception(f"NPC Turn Error: {e}")
+        # Ensure turn advances even on error to prevent infinite loops
+        combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
+        db.commit()
+
+    return log

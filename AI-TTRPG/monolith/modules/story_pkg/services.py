@@ -237,3 +237,7 @@ def apply_temp_hp_to_character(char_id: str, amount: int) -> Dict:
 def update_character_resource_pool(char_id: str, pool_name: str, new_value: int) -> Dict:
     logger.debug(f"Calling internal character_api.update_character_resource_pool for {char_id}")
     return character_api.update_character_resource_pool(char_id, pool_name, new_value)
+
+def award_xp(char_id: str, amount: int) -> Dict:
+    logger.debug(f"Calling internal character_api.award_xp for {char_id}")
+    return character_api.award_xp(char_id, amount)

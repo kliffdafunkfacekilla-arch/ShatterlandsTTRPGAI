@@ -66,6 +66,8 @@ class CharacterContextResponse(CharacterBase):
 
     # --- ADD THIS LINE ---
     temp_hp: int = Field(default=0, description="Current Temporary HP")
+    xp: int = Field(default=0, description="Current Experience Points")
+    is_dead: bool = Field(default=False, description="Is the character dead?")
     # --- END ADD ---
     max_composure: int
     current_composure: int

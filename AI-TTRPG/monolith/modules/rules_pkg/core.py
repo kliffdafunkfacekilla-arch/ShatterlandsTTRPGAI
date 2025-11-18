@@ -106,6 +106,16 @@ def calculate_skill_mt_bonus(rank: int) -> int:
     return math.floor(rank / 3)
 
 
+# ADD THIS FUNCTION
+def calculate_xp_for_level(level: int) -> int:
+    """
+    Calculates the total XP required to reach the NEXT level.
+    Formula: Current Level * 1000.
+    """
+    if level < 1: return 1000
+    return level * 1000
+
+
 # --- Dice Rolling ---
 
 

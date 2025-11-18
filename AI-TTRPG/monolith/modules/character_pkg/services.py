@@ -73,6 +73,8 @@ def get_character_context(
 
         # --- ADD THIS LINE ---
         temp_hp=getattr(db_character, "temp_hp", 0),
+        xp=getattr(db_character, "xp", 0),
+        is_dead=bool(getattr(db_character, "is_dead", 0)),
         # --- END ADD ---
         max_composure=getattr(db_character, "max_composure", 10),
         current_composure=getattr(db_character, "current_composure", 10),
@@ -466,6 +468,8 @@ def create_character(
 
         # --- ADD THIS LINE ---
         temp_hp=0,
+        xp=0,
+        is_dead=0,
         # --- END ADD ---
         max_composure=10,
         current_composure=10,
@@ -501,6 +505,134 @@ def create_character(
         db.rollback()
         logger.error(f"Database error on character save: {e}", exc_info=True)
         raise Exception(f"Database error: {e}")
+
+def add_item_to_character(db: Session, character_id: str, item_id: str, quantity: int = 1) -> Optional[models.Character]:
+    """Adds an item to the character's inventory."""
+    character = get_character(db, character_id)
+    if not character:
+        return None
+
+    inventory = dict(character.inventory) if character.inventory else {}
+    if item_id in inventory:
+        inventory[item_id] += quantity
+    else:
+        inventory[item_id] = quantity
+
+    character.inventory = inventory
+    try:
+        db.commit()
+        db.refresh(character)
+        logger.info(f"Added {quantity}x {item_id} to {character_id}")
+        return character
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to add item: {e}")
+        raise
+
+def remove_item_from_character(db: Session, character_id: str, item_id: str, quantity: int = 1) -> Optional[models.Character]:
+    """Removes an item from the character's inventory."""
+    character = get_character(db, character_id)
+    if not character:
+        return None
+
+    inventory = dict(character.inventory) if character.inventory else {}
+    if item_id not in inventory:
+        logger.warning(f"Item {item_id} not in inventory for {character_id}")
+        return character
+
+    if inventory[item_id] <= quantity:
+        del inventory[item_id]
+    else:
+        inventory[item_id] -= quantity
+
+    character.inventory = inventory
+    try:
+        db.commit()
+        db.refresh(character)
+        logger.info(f"Removed {quantity}x {item_id} from {character_id}")
+        return character
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to remove item: {e}")
+        raise
+
+def equip_item(db: Session, character_id: str, slot: str, item_id: str) -> Optional[models.Character]:
+    """Equips an item to a specific slot."""
+    character = get_character(db, character_id)
+    if not character:
+        return None
+
+    inventory = character.inventory or {}
+    if item_id not in inventory:
+        logger.warning(f"Cannot equip {item_id}, not in inventory.")
+        return None
+
+    equipment = dict(character.equipment) if character.equipment else {}
+    equipment[slot] = item_id
+    character.equipment = equipment
+
+    try:
+        db.commit()
+        db.refresh(character)
+        logger.info(f"Equipped {item_id} to {slot} for {character_id}")
+        return character
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to equip item: {e}")
+        raise
+
+def award_xp(db: Session, character_id: str, amount: int) -> Optional[models.Character]:
+    """Awards XP and handles leveling up."""
+    character = get_character(db, character_id)
+    if not character:
+        return None
+
+    character.xp = (character.xp or 0) + amount
+    logger.info(f"Awarded {amount} XP to {character.name}. Total: {character.xp}")
+
+    # Simple Level Up Logic: Level * 1000
+    # e.g. Lv 1 -> 2 needs 1000 XP total. Lv 2 -> 3 needs 2000 XP total.
+    # This is a placeholder for the real curve.
+    next_level_threshold = character.level * 1000
+    if character.xp >= next_level_threshold:
+        character.level += 1
+        logger.info(f"{character.name} leveled up to {character.level}!")
+        # TODO: Trigger level up event/bonuses
+
+    try:
+        db.commit()
+        db.refresh(character)
+        return character
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to award XP: {e}")
+        raise
+
+def handle_death(db: Session, character_id: str) -> Optional[models.Character]:
+    """Sets the character status to dead/downed."""
+    character = get_character(db, character_id)
+    if not character:
+        return None
+
+    character.is_dead = 1 # True
+    character.current_hp = 0
+    
+    # Add "Downed" status effect if not present
+    status_effects = list(character.status_effects) if character.status_effects else []
+    if "Downed" not in status_effects:
+        status_effects.append("Downed")
+        character.status_effects = status_effects
+
+    logger.info(f"Character {character.name} ({character_id}) has fallen!")
+
+    try:
+        db.commit()
+        db.refresh(character)
+        return character
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to handle death: {e}")
+        raise
 
 def update_character_context(
     db: Session, character_id: str, updates: schemas.CharacterContextResponse

@@ -20,6 +20,8 @@ class Character(Base):
 
     # --- ADD THIS COLUMN ---
     temp_hp = Column(Integer, default=0)
+    xp = Column(Integer, default=0)
+    is_dead = Column(Integer, default=0) # 0=False, 1=True (SQLite doesn't have native Bool)
     # --- END ADD ---
 
     max_composure = Column(Integer)
