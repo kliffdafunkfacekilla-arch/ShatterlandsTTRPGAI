@@ -154,6 +154,30 @@ def update_character_resource_pool(char_id: str, pool_name: str, new_value: int)
     logger.debug(f"Calling internal character_api.update_character_resource_pool for {char_id}")
     return character_api.update_character_resource_pool(char_id, pool_name, new_value)
 
+
+def apply_injury_to_target(target_id: str, injury: Dict[str, Any]) -> Dict:
+    """Applies an injury to a player or NPC."""
+    logger.debug(f"Applying injury to {target_id}")
+    if target_id.startswith("player_"):
+        return character_api.apply_injury_to_character(target_id, injury)
+    elif target_id.startswith("npc_"):
+        npc_instance_id = int(target_id.split("_")[1])
+        return world_api.apply_injury_to_npc(npc_instance_id, injury)
+    else:
+        raise ValueError(f"Unknown target type for ID {target_id}")
+
+
+def remove_injury_from_target(target_id: str, severity: str) -> Dict:
+    """Removes an injury from a player or NPC by severity."""
+    logger.debug(f"Removing '{severity}' injury from {target_id}")
+    if target_id.startswith("player_"):
+        return character_api.remove_injury_from_character(target_id, severity)
+    elif target_id.startswith("npc_"):
+        npc_instance_id = int(target_id.split("_")[1])
+        return world_api.remove_injury_from_npc(npc_instance_id, severity)
+    else:
+        raise ValueError(f"Unknown target type for ID {target_id}")
+
 def get_ability_data(ability_name: str) -> Dict:
     """Gets the data for a single ability from the rules engine."""
     logger.debug(f"Calling internal rules_api.get_ability_data for {ability_name}")

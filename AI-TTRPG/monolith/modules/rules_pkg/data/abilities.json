@@ -1,589 +1,107 @@
 {
-  "Force": {
-    "resource": "Presence",
-    "associated_stat": "Might",
-    "branches": [
-      {
-        "branch": "Control (External Movement)",
-        "tiers": [
-          {
-            "tier": "T1",
-            "name": "Minor Shove",
-            "description": "Push 1 target 1m. (Contested Might check).",
-            "cost": { "resource": "Presence", "amount": 1 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "move_target_roll", "distance": 1, "direction": "away", "save_stat": "Might", "contest": "user" }
-            ]
-          },
-          {
-            "tier": "T2",
-            "name": "Repel Step",
-            "description": "Push self 2m in any direction.",
-            "cost": { "resource": "Presence", "amount": 1 },
-            "target_type": "self",
-            "effects": [
-              { "type": "move_self", "distance": 2 }
-            ]
-          },
-          {
-            "tier": "T3",
-            "name": "Precision Trip",
-            "description": "Force target to pass an Agility save or be Prone.",
-            "cost": { "resource": "Presence", "amount": 2 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "apply_status_roll", "status_id": "Prone", "save_stat": "Agility", "dc": 14 }
-            ]
-          },
-          {
-            "tier": "T4",
-            "name": "Blast Wave",
-            "description": "Push all targets in a 2m radius 2m back. (Agility save for half distance).",
-            "cost": { "resource": "Presence", "amount": 4 },
-            "target_type": "area",
-            "effects": [
-              { "type": "aoe_move", "shape": "radius", "range": 2, "distance": 2, "direction": "away", "save_stat": "Agility", "dc": 14 }
-            ]
-          },
-          {
-            "tier": "T5",
-            "name": "Weapon Disarm",
-            "description": "Force target to drop weapon (Contested Might vs. Might check).",
-            "cost": { "resource": "Presence", "amount": 3 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "apply_status_roll", "status_id": "Disarmed", "save_stat": "Might", "contest": "user" }
-            ]
-          },
-          {
-            "tier": "T6",
-            "name": "Anchor",
-            "description": "Hold one target stationary for 1 round (Willpower save to break free).",
-            "cost": { "resource": "Presence", "amount": 4 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "apply_status_roll", "status_id": "Immobilized", "duration": 1, "save_stat": "Willpower", "dc": 15 }
-            ]
-          },
-          {
-            "tier": "T7",
-            "name": "Group Containment",
-            "description": "Push all targets in a 5m cone 4m back. (Agility save for half distance).",
-            "cost": { "resource": "Presence", "amount": 6 },
-            "target_type": "area",
-            "effects": [
-              { "type": "aoe_move", "shape": "cone", "range": 5, "distance": 4, "direction": "away", "save_stat": "Agility", "dc": 16 }
-            ]
-          },
-          {
-            "tier": "T8",
-            "name": "Crush Limb",
-            "description": "Apply kinetic pressure to one limb, inflicting the Hinder status for 2 rounds (Vitality save to resist).",
-            "cost": { "resource": "Presence", "amount": 7 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "apply_status_roll", "status_id": "Hindered", "duration": 2, "save_stat": "Vitality", "dc": 17 }
-            ]
-          },
-          {
-            "tier": "T9",
-            "name": "Crushing Grasp",
-            "description": "Immobilize 1 target completely for 2 rounds (Willpower save to resist). (Cost 1 Presence per round to maintain).",
-            "cost": { "resource": "Presence", "amount": 8, "maintenance": 1 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "apply_status_roll", "status_id": "Immobilized", "duration": 2, "save_stat": "Willpower", "dc": 18 }
-            ]
-          }
-        ]
-      },
-      {
-        "branch": "Offense (Impact Rupture)",
-        "tiers": [
-          {
-            "tier": "T1",
-            "name": "Concussive Strike",
-            "description": "Standard attack deals 1d4 extra non-lethal damage.",
-            "cost": { "resource": "Presence", "amount": 1 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "modify_attack", "damage_boost": "1d4" }
-            ]
-          },
-          {
-            "tier": "T2",
-            "name": "Armor Shock",
-            "description": "Attack treats target's armor as -1 tier weaker.",
-            "cost": { "resource": "Presence", "amount": 1 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "modify_attack", "armor_pierce": 1 }
-            ]
-          },
-          {
-            "tier": "T3",
-            "name": "Shockwave Cone",
-            "description": "Deal 1d6 AoE damage to all targets in a 3m cone.",
-            "cost": { "resource": "Presence", "amount": 2 },
-            "target_type": "area",
-            "effects": [
-              { "type": "aoe_damage", "shape": "cone", "range": 3, "damage": "1d6", "damage_type": "physical" }
-            ]
-          },
-          {
-            "tier": "T4",
-            "name": "Solid Impact",
-            "description": "Guaranteed Solid Hit (Stagger) if the attack succeeds.",
-            "cost": { "resource": "Presence", "amount": 3 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "modify_attack", "guaranteed_status": "Staggered" }
-            ]
-          },
-          {
-            "tier": "T5",
-            "name": "Internal Echo",
-            "description": "Deal 2d6 damage directly to the target's HP (ignoring outer armor).",
-            "cost": { "resource": "Presence", "amount": 4 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "direct_damage", "amount": "2d6", "damage_type": "physical" }
-            ]
-          },
-          {
-            "tier": "T6",
-            "name": "Precision Burst",
-            "description": "Target suffers a Minor Injury on a successful strike (once per encounter).",
-            "cost": { "resource": "Presence", "amount": 5 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "modify_attack", "add_effect": { "type": "apply_injury", "severity": "Minor" }, "limit": "once_per_encounter" }
-            ]
-          },
-          {
-            "tier": "T7",
-            "name": "Concussive Focus",
-            "description": "Attack ignores T2 armor completely and inflicts 3d6 damage.",
-            "cost": { "resource": "Presence", "amount": 6 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "modify_attack", "damage_boost": "3d6", "armor_pierce": 2 }
-            ]
-          },
-          {
-            "tier": "T8",
-            "name": "Terrain Rupture",
-            "description": "Destroy a piece of terrain/cover (T3 material resistance or lower).",
-            "cost": { "resource": "Presence", "amount": 5 },
-            "target_type": "area",
-            "effects": [
-              { "type": "destroy_terrain", "max_resistance": 3 }
-            ]
-          },
-          {
-            "tier": "T9",
-            "name": "Full Force Cataclysm",
-            "description": "Strike deals massive 5d6 damage and forces target to pass a Vitality save or be instantly Prone.",
-            "cost": { "resource": "Presence", "amount": 8 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "modify_attack", "damage_boost": "5d6" },
-              { "type": "apply_status_roll", "status_id": "Prone", "save_stat": "Vitality", "dc": 18 }
-            ]
-          }
-        ]
-      },
-      {
-        "branch": "Support (Kinetic Support)",
-        "tiers": [
-          {
-            "tier": "T1",
-            "name": "Quick Leap",
-            "description": "Increase jump distance/height by 100% for one turn.",
-            "cost": { "resource": "Presence", "amount": 1 },
-            "target_type": "self",
-            "effects": [
-              { "type": "apply_status", "status_id": "Quick Leap", "duration": 1 }
-            ]
-          },
-          {
-            "tier": "T2",
-            "name": "Light Step",
-            "description": "Ignore T1 movement penalties (e.g., shallow water, rough ground).",
-            "cost": { "resource": "Presence", "amount": 1 },
-            "target_type": "self",
-            "effects": [
-              { "type": "apply_status", "status_id": "Light Step", "duration": "scene" }
-            ]
-          },
-          {
-            "tier": "T3",
-            "name": "Velocity Boost",
-            "description": "Target an ally; grant a bonus to their next Movement roll.",
-            "cost": { "resource": "Presence", "amount": 2 },
-            "target_type": "ally",
-            "effects": [
-              { "type": "apply_status", "status_id": "Velocity Boost", "duration": 1 }
-            ]
-          },
-          {
-            "tier": "T4",
-            "name": "Kinetic Shield",
-            "description": "Absorb damage equal to (Might Score + Character Level).",
-            "cost": { "resource": "Presence", "amount": 3 },
-            "target_type": "self_or_ally",
-            "effects": [
-              { "type": "temp_hp", "amount_formula": "Might + Level" }
-            ]
-          },
-          {
-            "tier": "T5",
-            "name": "Barrier Dash",
-            "description": "Move up to 10m through hostile terrain or crowds without penalty.",
-            "cost": { "resource": "Presence", "amount": 3 },
-            "target_type": "self",
-            "effects": [
-              { "type": "bonus_move", "distance": 10, "ignore_penalties": true }
-            ]
-          },
-          {
-            "tier": "T6",
-            "name": "Group Mobility",
-            "description": "Target 2 allies; grant them +3m movement for 2 rounds.",
-            "cost": { "resource": "Presence", "amount": 4 },
-            "target_type": "ally_multi",
-            "num_targets": 2,
-            "effects": [
-              { "type": "apply_status", "status_id": "Group Mobility (+3m)", "duration": 2 }
-            ]
-          },
-          {
-            "tier": "T7",
-            "name": "Kinetic Intercept",
-            "description": "(Reaction) When an ally within 10m is hit by a Ranged Attack, use a concussive blast to 'shout' it from the sky. Make a contested Might check vs. the attack roll. If you win, nullify the attack.",
-            "cost": { "resource": "Presence", "amount": 5 },
-            "target_type": "reaction_ally",
-            "effects": [
-              { "type": "reaction_contest", "trigger": "ally_hit_ranged", "range": 10, "user_stat": "Might", "contest": "attack_roll", "effect_on_win": "nullify_attack" }
-            ]
-          },
-          {
-            "tier": "T8",
-            "name": "Juggernaut Advance",
-            "description": "Grants immunity to Prone and Staggered status effects for 3 rounds.",
-            "cost": { "resource": "Presence", "amount": 6 },
-            "target_type": "self",
-            "effects": [
-              { "type": "apply_status", "status_id": "Immunity (Prone/Staggered)", "duration": 3 }
-            ]
-          },
-          {
-            "tier": "T9",
-            "name": "Unstoppable Momentum",
-            "description": "Target one ally (or self) for 2 rounds. Target is immune to Prone, Staggered, Immobilized, and all forced movement. They treat difficult terrain as normal terrain and can move through enemy spaces.",
-            "cost": { "resource": "Presence", "amount": 8 },
-            "target_type": "ally_or_self",
-            "effects": [
-              { "type": "apply_status", "status_id": "Unstoppable Momentum", "duration": 2 }
-            ]
-          }
-        ]
-      }
-    ]
-  },
-  "Bastion": {
-    "resource": "Stamina",
-    "associated_stat": "Endurance",
-    "branches": [
-      {
-        "branch": "Control (Challenging Presence)",
-        "tiers": [
-          {
-            "tier": "T1",
-            "name": "Taunt",
-            "description": "Force 1 enemy to target you (Willpower save DC 10).",
-            "cost": { "resource": "Stamina", "amount": 1 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "apply_status_roll", "status_id": "Taunted", "duration": 1, "save_stat": "Willpower", "dc": 10 }
-            ]
-          },
-          {
-            "tier": "T2",
-            "name": "Threat Zone",
-            "description": "All enemies leaving a 2m radius around you provoke an attack of opportunity for 3 rounds.",
-            "cost": { "resource": "Stamina", "amount": 2 },
-            "target_type": "self",
-            "effects": [
-              { "type": "apply_status", "status_id": "Threat Zone", "duration": 3 }
-            ]
-          },
-          {
-            "tier": "T3",
-            "name": "Anchor Ally",
-            "description": "(Reaction) Redirect the next single attack aimed at an adjacent ally to yourself.",
-            "cost": { "resource": "Stamina", "amount": 2 },
-            "target_type": "reaction_ally",
-            "effects": [
-              { "type": "redirect_attack", "trigger": "ally_attacked", "range": 2 }
-            ]
-          },
-          {
-            "tier": "T4",
-            "name": "Mass Taunt",
-            "description": "Force all enemies in a 5m radius to target you (Willpower save DC 12).",
-            "cost": { "resource": "Stamina", "amount": 4 },
-            "target_type": "area",
-            "effects": [
-              { "type": "aoe_status_roll", "shape": "radius", "range": 5, "target": "enemy", "status_id": "Taunted", "duration": 1, "save_stat": "Willpower", "dc": 12 }
-            ]
-          },
-          {
-            "tier": "T5",
-            "name": "Defensive Bind",
-            "description": "Hold one enemy in place for 1 round (Endurance save DC 15).",
-            "cost": { "resource": "Stamina", "amount": 4 },
-            "target_type": "enemy",
-            "effects": [
-              { "type": "apply_status_roll", "status_id": "Immobilized", "duration": 1, "save_stat": "Endurance", "dc": 15 }
-            ]
-          },
-          {
-            "tier": "T6",
-            "name": "Area Denial",
-            "description": "Create a 3m radius field; enemies attempting to enter suffer the Hindered (Movement) status.",
-            "cost": { "resource": "Stamina", "amount": 5 },
-            "target_type": "area",
-            "effects": [
-              { "type": "create_area", "shape": "radius", "range": 3, "duration": 3, "effect_id": "Area Denial" }
-            ]
-          },
-          {
-            "tier": "T7",
-            "name": "Immovable Object",
-            "description": "Become immune to all forced movement and Prone status for 3 rounds.",
-            "cost": { "resource": "Stamina", "amount": 6 },
-            "target_type": "self",
-            "effects": [
-              { "type": "apply_status", "status_id": "Immunity (Forced Movement/Prone)", "duration": 3 }
-            ]
-          },
-          {
-            "tier": "T8",
-            "name": "Ally Anchor",
-            "description": "Redirect all attacks aimed at one designated ally to yourself for 2 rounds.",
-            "cost": { "resource": "Stamina", "amount": 7 },
-            "target_type": "ally",
-            "effects": [
-              { "type": "apply_status_target", "status_id": "Ally Anchor", "duration": 2 }
-            ]
-          },
-          {
-            "tier": "T9",
-            "name": "Absolute Rebuke",
-            "description": "Create an AoE 5m field for 3 rounds. Any enemy attempting to leave the field suffers 4d6 direct HP damage.",
-            "cost": { "resource": "Stamina", "amount": 8 },
-            "target_type": "area",
-            "effects": [
-              { "type": "create_area", "shape": "radius", "range": 5, "duration": 3, "effect_id": "Absolute Rebuke" }
-            ]
-          }
-        ]
-      },
-      {
-        "branch": "Offense (Retaliatory Block)",
-        "tiers": [
-          {
-            "tier": "T1",
-            "name": "Minor Reflect",
-            "description": "For 3 rounds, when hit by a Melee attack, inflict 1d4 damage back to the attacker.",
-            "cost": { "resource": "Stamina", "amount": 1 },
-            "target_type": "self",
-            "effects": [
-              { "type": "apply_status", "status_id": "Minor Reflect (1d4)", "duration": 3 }
-            ]
-          },
-          {
-            "tier": "T2",
-            "name": "Spiked Deflection",
-            "description": "(Reaction) When you successfully block a melee attack, inflict 25% of the intended damage back to the attacker.",
-            "cost": { "resource": "Stamina", "amount": 2 },
-            "target_type": "reaction_self",
-            "effects": [
-              { "type": "reaction_damage", "trigger": "block_melee", "damage_type": "reflect", "multiplier": 0.25 }
-            ]
-          },
-          {
-            "tier": "T3",
-            "name": "Retaliatory Stun",
-            "description": "(Reaction) Successfully block a Melee attack; attacker must pass a Vitality save (DC 14) or be Staggered.",
-            "cost": { "resource": "Stamina", "amount": 3 },
-            "target_type": "reaction_self",
-            "effects": [
-              { "type": "reaction_status_roll", "trigger": "block_melee", "status_id": "Staggered", "duration": 1, "save_stat": "Vitality", "dc": 14 }
-            ]
-          },
-          {
-            "tier": "T4",
-            "name": "Reactive Guard",
-            "description": "After taking damage, add that damage (up to your Endurance score) to your next single attack.",
-            "cost": { "resource": "Stamina", "amount": 4 },
-            "target_type": "self",
-            "effects": [
-              { "type": "apply_status", "status_id": "Reactive Guard", "duration": 1 }
-            ]
-          },
-          {
-            "tier": "T5",
-            "name": "Shield Crash",
-            "description": "(Reaction) Successfully block a Melee attack; attacker must pass a Vitality save (DC 15) or be knocked Prone.",
-            "cost": { "resource": "Stamina", "amount": 4 },
-            "target_type": "reaction_self",
-            "effects": [
-              { "type": "reaction_status_roll", "trigger": "block_melee", "status_id": "Prone", "duration": 1, "save_stat": "Vitality", "dc": 15 }
-            ]
-          },
-          {
-            "tier": "T6",
-            "name": "Full Feedback",
-            "description": "(Reaction) When you successfully block a melee attack, inflict 50% of the intended damage back to the attacker.",
-            "cost": { "resource": "Stamina", "amount": 5 },
-            "target_type": "reaction_self",
-            "effects": [
-              { "type": "reaction_damage", "trigger": "block_melee", "damage_type": "reflect", "multiplier": 0.50 }
-            ]
-          },
-          {
-            "tier": "T7",
-            "name": "Absolute Deflect",
-            "description": "(Reaction) Successfully block a Ranged attack; redirect the attack at another target within 10m.",
-            "cost": { "resource": "Stamina", "amount": 6 },
-            "target_type": "reaction_self",
-            "effects": [
-              { "type": "reaction_redirect_attack", "trigger": "block_ranged", "range": 10 }
-            ]
-          },
-          {
-            "tier": "T8",
-            "name": "Vengeful Aura",
-            "description": "For 3 rounds, any enemy that successfully deals damage to you suffers 2d6 direct damage immediately.",
-            "cost": { "resource": "Stamina", "amount": 7 },
-            "target_type": "self",
-            "effects": [
-              { "type": "apply_status", "status_id": "Vengeful Aura (2d6)", "duration": 3 }
-            ]
-          },
-          {
-            "tier": "T9",
-            "name": "Damage Absorption",
-            "description": "Completely absorb the damage from the next 2 incoming attacks and add that damage (max 2x Endurance score) to your next attack's damage roll.",
-            "cost": { "resource": "Stamina", "amount": 9 },
-            "target_type": "self",
-            "effects": [
-              { "type": "apply_status", "status_id": "Damage Absorption", "duration": 2 }
-            ]
-          }
-        ]
-      },
-      {
-        "branch": "Support (Shielding Aegis)",
-        "tiers": [
-          {
-            "tier": "T1",
-            "name": "Stalwart Mend",
-            "description": "Restore 1d6 HP to yourself.",
-            "cost": { "resource": "Stamina", "amount": 1 },
-            "target_type": "self",
-            "effects": [
-              { "type": "heal", "amount": "1d6" }
-            ]
-          },
-          {
-            "tier": "T2",
-            "name": "Aegis Reinforcement",
-            "description": "Increase the defense rating of your Shield or Plate armor by +1 for 3 rounds.",
-            "cost": { "resource": "Stamina", "amount": 2 },
-            "target_type": "self",
-            "effects": [
-              { "type": "apply_status", "status_id": "Reinforce Armor (+1)", "duration": 3 }
-            ]
-          },
-          {
-            "tier": "T3",
-            "name": "Guardian's Ward",
-            "description": "Grant an adjacent ally +2 Defense for 1 round.",
-            "cost": { "resource": "Stamina", "amount": 2 },
-            "target_type": "ally",
-            "effects": [
-              { "type": "apply_status", "status_id": "Shield Ally (+2)", "duration": 1 }
-            ]
-          },
-          {
-            "tier": "T4",
-            "name": "Guardian's Aegis",
-            "description": "All allies in a 5m radius gain +1 Defense for 3 rounds.",
-            "cost": { "resource": "Stamina", "amount": 4 },
-            "target_type": "area",
-            "effects": [
-              { "type": "aoe_status_apply", "shape": "radius", "range": 5, "target": "ally", "status_id": "Aegis (+1)", "duration": 3 }
-            ]
-          },
-          {
-            "tier": "T5",
-            "name": "Purifying Resilience",
-            "description": "Grant an adjacent ally immunity to T1 status effects (e.g., Minor Poison) for 3 rounds.",
-            "cost": { "resource": "Stamina", "amount": 3 },
-            "target_type": "ally",
-            "effects": [
-              { "type": "apply_status", "status_id": "Resist Status (T1)", "duration": 3 }
-            ]
-          },
-          {
-            "tier": "T6",
-            "name": "Elemental Bulwark",
-            "description": "Grant yourself +5 resistance against 1 chosen elemental damage type for 3 rounds.",
-            "cost": { "resource": "Stamina", "amount": 4 },
-            "target_type": "self",
-            "effects": [
-              { "type": "apply_status", "status_id": "Energy Dampener (Elemental)", "duration": 3 }
-            ]
-          },
-          {
-            "tier": "T7",
-            "name": "Wall of Stalwartness",
-            "description": "Create a 5m long wall of force that grants +3 defense (cover) to all allies behind it.",
-            "cost": { "resource": "Stamina", "amount": 6 },
-            "target_type": "area",
-            "effects": [
-              { "type": "create_area", "shape": "wall", "range": 5, "duration": 3, "effect_id": "Aegis Wall (+3 Cover)" }
-            ]
-          },
-          {
-            "tier": "T8",
-            "name": "Shared Stalwartness",
-            "description": "Create a magical link between yourself and all allies within 5m for 3 rounds. All damage taken by any linked ally is reduced by 25%, and you take that damage instead (this damage cannot be reduced by your own armor).",
-            "cost": { "resource": "Stamina", "amount": 7 },
-            "target_type": "area",
-            "effects": [
-              { "type": "apply_status", "status_id": "Shared Stalwartness (25%)", "duration": 3 }
-            ]
-          },
-          {
-            "tier": "T9",
-            "name": "Unyielding Fortress",
-            "description": "As a Full Action, you and all allies within 3m become Invulnerable for 1 round (until the start of your next turn). You cannot be damaged, moved, or affected by any negative status effects. While this is active, you cannot move or take any other actions.",
-            "cost": { "resource": "Stamina", "amount": 9 },
-            "target_type": "area",
-            "effects": [
-              { "type": "apply_status", "status_id": "Invulnerable", "duration": 1 },
-              { "type": "apply_status", "status_id": "Rooted (Self)", "duration": 1 }
-            ]
-          }
-        ]
-      }
-    ]
-  },
+"Force": {
+"resource": "Presence",
+"branches": [
+{
+"branch": "Control (External Movement)",
+"tiers": [
+{
+"tier": "T1",
+"name": "Minor Shove",
+"description": "Push 1 target 1m. (Contested Might check).",
+"target_type": "enemy",
+"effects": [
+{ "type": "move_target", "distance": 1, "direction": "away" }
+]
+},
+{
+"tier": "T2",
+"description": "Repel Step: Push self 2m in any direction."
+},
+{
+"tier": "T3",
+"description": "Precision Trip: Force target to pass Agility check or be Prone."
+}
+]
+},
+{
+"branch": "Offense (Impact Rupture)",
+"tiers": [
+{
+"tier": "T1",
+"name": "Concussive Strike",
+"description": "Standard attack deals 1d4 extra non-lethal damage.",
+"target_type": "enemy",
+"effects": [
+{ "type": "modify_attack", "damage_boost": "1d4" }
+]
+},
+{
+"tier": "T2",
+"description": "Armor Shock: Attack treats target's armor as -1 tier weaker."
+},
+{
+"tier": "T3",
+"description": "Shockwave Cone: Deal 1d6 AoE damage to all targets in a 3m cone."
+}
+]
+},
+{
+"branch": "Support (Kinetic Support)",
+"tiers": [
+{
+"tier": "T1",
+"name": "Quick Leap",
+"description": "Increase jump distance/height by 100% for one turn.",
+"target_type": "self",
+"effects": [
+{ "type": "apply_status", "status_id": "Quick Leap", "duration": 1 }
+]
+},
+{
+"tier": "T2",
+"description": "Light Step: Ignore T1 movement penalties (e.g., shallow water, rough ground)."
+},
+{
+"tier": "T3",
+"description": "Velocity Boost: Target an ally; grant a bonus to their next Movement roll."
+}
+]
+}
+],
+"associated_stat": "Might"
+},
+"Bastion": {
+"resource": "Stamina",
+"branches": [
+{
+"branch": "Control (Challenging Presence)",
+"tiers": [
+{
+"tier": "T1",
+"name": "Taunt",
+"description": "Force 1 enemy to target you (Willpower save DC 12).",
+"target_type": "enemy",
+"cost": {"resource": "Stamina", "amount": 1},
+"effects": [
+{ "type": "apply_status_roll", "status_id": "Taunted", "duration": 1, "save_stat": "Willpower", "dc": 12 }
+]
+},
+{
+"tier": "T2",
+"name": "Threat Zone",
+"description": "Enemies leaving 3m radius provoke AoO for 3 turns.",
+"target_type": "self",
+"cost": {"resource": "Stamina", "amount": 2},
+"effects": [
+{ "type": "apply_status", "status_id": "Threat Zone", "duration": 3 }
+]
+}
+]
+}
+],
+"associated_stat": "Endurance"
+},
 "Ki": {
     "resource": "Chi",
     "associated_stat": "Fortitude",

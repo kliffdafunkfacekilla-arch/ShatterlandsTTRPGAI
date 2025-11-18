@@ -141,6 +141,8 @@ def update_npc(db: Session, npc_id: int, updates: schemas.NpcUpdate) -> Optional
             flag_modified(db_npc, "resource_pools")
         if "abilities" in update_data:
             flag_modified(db_npc, "abilities")
+        if "injuries" in update_data:
+            flag_modified(db_npc, "injuries")
         # --- END MODIFICATION ---
 
         db.commit()
@@ -174,6 +176,42 @@ def remove_status_from_npc(db: Session, npc_id: int, status_id: str) -> Optional
         db.commit()
         db.refresh(db_npc)
     return db_npc
+
+
+def apply_injury_to_npc(db: Session, npc_id: int, injury: dict) -> Optional[models.NpcInstance]:
+    """Applies an injury to an NPC."""
+    db_npc = get_npc(db, npc_id)
+    if db_npc:
+        injuries = db_npc.injuries or []
+        injuries.append(injury)
+        db_npc.injuries = injuries
+        flag_modified(db_npc, "injuries")
+        db.commit()
+        db.refresh(db_npc)
+        logger.info(f"Applied injury to NPC {npc_id}")
+    return db_npc
+
+
+def remove_injury_from_npc(db: Session, npc_id: int, severity: str) -> Optional[models.NpcInstance]:
+    """Removes the first injury of a given severity from an NPC."""
+    db_npc = get_npc(db, npc_id)
+    if db_npc:
+        injuries = db_npc.injuries or []
+        injury_to_remove = None
+        for inj in injuries:
+            if inj.get("severity") == severity:
+                injury_to_remove = inj
+                break
+
+        if injury_to_remove:
+            injuries.remove(injury_to_remove)
+            db_npc.injuries = injuries
+            flag_modified(db_npc, "injuries")
+            db.commit()
+            db.refresh(db_npc)
+            logger.info(f"Removed '{severity}' injury from NPC {npc_id}")
+    return db_npc
+
 
 def delete_npc(db: Session, npc_id: int) -> bool:
     """This is how we remove a dead NPC from the world."""

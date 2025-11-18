@@ -1,4 +1,5 @@
-# game_client/settings_manager.py"""
+# game_client/settings_manager.py
+"""
 Handles loading and saving user settings from a JSON file.
 """
 import json
