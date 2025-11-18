@@ -209,52 +209,40 @@ def _is_passable_and_in_bounds(loc_id: int, x: int, y: int, log: List[str]) -> b
 
     return True
 
-def _get_targets_in_aoe(combat: models.CombatEncounter, center_id: str, shape: str, range_m: int, target_type: str = "enemy") -> List[Tuple[str, Dict]]:
+def _get_targets_in_aoe(combat: models.CombatEncounter, caster_id: str, epicenter_coords: List[int], range_m: int, target_faction: str) -> List[Tuple[str, Dict]]:
     """
-    Finds all targets within an AoE radius or line.
-    Returns a list of (actor_id, context) tuples.
+    Finds all targets within an AoE radius based on faction and range.
     """
     targets = []
+    caster_is_player = caster_id.startswith("player_")
 
-    try:
-        _, center_context = get_actor_context(center_id)
-        if center_id.startswith("player_"):
-            center_x, center_y = center_context.get("position_x", 0), center_context.get("position_y", 0)
-        else:
-            center_x, center_y = center_context.get("coordinates", [0, 0])
-    except:
-        logger.error(f"Could not get center context for AoE: {center_id}")
-        return []
+    # Determine the required actor type prefix based on the CASTER_ID and TARGET_FACTION
+    if target_faction == "enemy":
+        required_prefix = "npc_" if caster_is_player else "player_"
+    elif target_faction in ("ally", "ally_or_self"):
+        required_prefix = "player_" if caster_is_player else "npc_"
+    else: # Default to enemy if an invalid faction is passed
+        required_prefix = "npc_" if caster_is_player else "player_"
 
     for p in combat.participants:
+        p_actor_id = p.actor_id
+
+        if not p_actor_id.startswith(required_prefix):
+            continue # Skip wrong faction
+
+        if p_actor_id == caster_id and target_faction == "ally":
+            continue # 'ally' does not include self (use 'ally_or_self' for that)
+
+        # ... (check HP, calculate distance, and append targets if in range) ...
         try:
-            p_actor_type, p_context = get_actor_context(p.actor_id)
-
-            # --- Targeting Filter Logic ---
-            is_player = p.actor_id.startswith("player_")
-            is_npc = p.actor_id.startswith("npc_")
-
-            # Check if this target should be included based on the requested target_type
-            if target_type == "enemy" and is_player: continue
-            if target_type == "ally" and (is_npc or p.actor_id == center_id): continue
-            if target_type in ("ally_or_self", "area_ally") and is_npc: continue
-            if target_type in ("area_enemy", "area") and is_player: continue
-            if target_type == "enemy_and_ally" and p.actor_id == center_id: continue # Exclude self for generalized area/enemy_and_ally checks
-
-            # Filter out defeated characters/npcs
+            _, p_context = get_actor_context(p_actor_id)
             if p_context.get("current_hp", 0) <= 0: continue
 
-            # --- Range Check (Manhattan Distance) ---
-            if is_player:
-                p_x, p_y = p_context.get("position_x", 999), p_context.get("position_y", 999)
-            else:
-                p_x, p_y = p_context.get("coordinates", [999, 999])
-
-            # Calculate distance (Manhattan distance for grid-based check)
-            distance = abs(p_x - center_x) + abs(p_y - center_y)
+            p_coords = _get_actor_coords(p_context)
+            distance = _calculate_distance(epicenter_coords, p_coords)
 
             if distance <= range_m:
-                targets.append((p.actor_id, p_context))
+                targets.append((p_actor_id, p_context))
         except:
             continue
 
@@ -913,7 +901,9 @@ def _handle_effect_resource_damage(target_id: str, log: List[str], effect: Dict)
     new_value = max(0, pool_data.get("current", 0) - damage_amount)
 
     if target_id.startswith("player_"):
-        log.append(f"[STUB] {target_id} loses {damage_amount} {resource_id}. Player resource update not yet implemented.")
+        # This updates the pool using the dedicated character service function.
+        services.update_character_resource_pool(target_id, resource_id, new_value)
+        log.append(f"{target_id} loses {damage_amount} {resource_id}, dropping to {new_value}.")
     elif target_id.startswith("npc_"):
         services.update_npc_resource_pool(int(target_id.split("_")[1]), resource_id, new_value)
         log.append(f"{target_id} loses {damage_amount} {resource_id}, dropping to {new_value}.")
@@ -1429,8 +1419,9 @@ def _handle_effect_temp_hp(actor_id: str, target_id: str, attacker_context: Dict
 
     # --- THIS IS NO LONGER A STUB ---
     if target_id.startswith("player_"):
-        # TODO: Add apply_temp_hp_to_character to character.py and services.py
-        log.append(f"[STUB] {target_id} gains {amount} Temporary HP. Player temp HP not yet implemented.")
+        # This calls the service layer to update the character's temp_hp via CRUD.
+        services.apply_temp_hp_to_character(target_id, amount)
+        log.append(f"{target_id} gains {amount} Temporary HP.")
     elif target_id.startswith("npc_"):
         services.apply_temp_hp_to_npc(int(target_id.split("_")[1]), amount)
         log.append(f"{target_id} gains {amount} Temporary HP.")
@@ -1472,20 +1463,24 @@ def _handle_effect_reaction_contest(
     return True
 
 def _handle_effect_create_trap(
-    actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Creates a trap in the world."""
-    trap_template_id = effect.get("trap_template_id", "generic_trap")
+    actor_id: str,
+    target_id: str,
+    attacker_context: Dict,
+    defender_context: Dict, # This is the context of the targeted position
+    log: List[str],
+    effect: Dict) -> bool:
 
-    # Get coordinates near the target (or caster if target_id is self/area)
-    _, target_context = get_actor_context(target_id)
-    location_id = target_context.get("current_location_id") or target_context.get("location_id")
-    if target_id.startswith("player_"):
-        coords = [target_context.get("position_x", 0) + 1, target_context.get("position_y", 0)]
-    else:
-        coords = [target_context.get("coordinates", [0, 0])[0] + 1, target_context.get("coordinates", [0, 0])[1]]
+    trap_template_id = effect.get("trap_template_id")
+    if not trap_template_id:
+        log.append(f"Cannot create trap: missing trap_template_id.")
+        return False
 
-    if not location_id:
-        log.append(f"Could not determine location to place trap. Effect fails.")
+    # 1. Determine spawn coordinates and location ID
+    location_id = defender_context.get("current_location_id") or defender_context.get("location_id")
+    coords = _get_actor_coords(defender_context) # Get position from the targeted context
+
+    if not location_id or not coords:
+        log.append(f"Could not determine location or coordinates to place trap. Effect fails.")
         return False
 
     try:
@@ -1494,8 +1489,9 @@ def _handle_effect_create_trap(
             location_id=location_id,
             coordinates=coords,
         )
+        # Call the world service to instantiate the trap
         services.spawn_trap_in_world(trap_request)
-        log.append(f"{actor_id} successfully places a trap: {trap_template_id} at {coords}.")
+        log.append(f"{actor_id} successfully places a trap: {trap_template_id} at {coords[0]},{coords[1]}.")
         return True
     except Exception as e:
         log.append(f"Failed to create trap: {e}")

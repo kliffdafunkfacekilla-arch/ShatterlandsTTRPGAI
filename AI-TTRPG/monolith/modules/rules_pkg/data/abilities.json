@@ -16,7 +16,16 @@
 },
 {
 "tier": "T2",
-"description": "Repel Step: Push self 2m in any direction."
+"name": "Repel Step",
+"description": "Repel Step: Push self 2m in any direction.",
+"target_type": "self",
+"cost": {
+"resource": "Presence",
+"amount": 2
+},
+"effects": [
+{ "type": "move_self", "distance": 2 }
+]
 },
 {
 "tier": "T3",
