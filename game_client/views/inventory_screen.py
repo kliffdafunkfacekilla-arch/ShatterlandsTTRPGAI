@@ -113,7 +113,7 @@ class InventoryScreen(Screen):
             box = BoxLayout(orientation='horizontal', size_hint_y=None, height='44dp')
             box.add_widget(Label(text=f"{slot.title()}: {item_id}"))
             unequip_btn = Button(text="Unequip", size_hint_x=0.3)
-            # unequip_btn.bind(on_release=partial(self.on_unequip_item, context.id, slot))
+            unequip_btn.bind(on_release=partial(self.on_unequip_item, context.id, slot))
             box.add_widget(unequip_btn)
             self.ids.equipment_list.add_widget(box)
 
@@ -150,3 +150,27 @@ class InventoryScreen(Screen):
         main_screen.active_character_context = context_schema(**new_context_dict)
 
         self.on_enter()
+
+    def on_unequip_item(self, char_id: str, slot: str, *args):
+        logging.info(f"Unequipping item from {slot} for {char_id}")
+        if not character_api:
+            logging.error("Character API not available.")
+            return
+
+        try:
+            # 1. Call the monolithic adapter to perform the database operation
+            new_context_dict = character_api.unequip_item(char_id, slot)
+
+            # 2. Get the active character context object from the main screen
+            app = App.get_running_app()
+            main_screen = app.root.get_screen('main_interface')
+
+            # 3. Update the context object using the refreshed schema data
+            context_schema = main_screen.active_character_context.__class__
+            main_screen.active_character_context = context_schema(**new_context_dict)
+
+            # 4. Refresh the current screen's display to show the updated inventory
+            self.on_enter()
+        except Exception as e:
+            logging.exception(f"Failed to unequip item: {e}")
+            # A production version would display a small popup here.
