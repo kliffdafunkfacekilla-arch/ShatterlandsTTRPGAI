@@ -56,8 +56,18 @@ class OrchestrationSpawnNpc(BaseModel):
     template_id: str
     location_id: int
     name_override: Optional[str] = None
-    # --- ADD THIS LINE ---
     coordinates: Optional[Any] = None # e.g., [x, y]
+
+    # --- ADD THESE FIELDS ---
+    current_hp: Optional[int] = None
+    max_hp: Optional[int] = None
+    temp_hp: Optional[int] = 0
+    max_composure: Optional[int] = 10
+    current_composure: Optional[int] = 10
+    resource_pools: Optional[Dict[str, Any]] = {}
+    abilities: Optional[List[str]] = []
+    behavior_tags: Optional[List[str]] = []
+    # --- END ADD ---
 
 class TrapInstanceCreate(BaseModel):
     template_id: str
