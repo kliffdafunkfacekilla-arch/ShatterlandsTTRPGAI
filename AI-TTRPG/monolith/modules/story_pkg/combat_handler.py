@@ -11,12 +11,82 @@ from ..story_pkg import database as story_db
 import random
 import re
 import logging
+import heapq
 
 logger = logging.getLogger("monolith.story.combat")
 
 # ----------------------------------------------------
 # --- NEW CORE MOVEMENT AND AOE HELPERS (REQUIRED) ---
 # ----------------------------------------------------
+
+def _find_next_step(start_coords: List[int], end_coords: List[int], location_id: int, log: List[str]) -> Optional[List[int]]:
+    """
+    Finds the next single step towards a target using A* pathfinding.
+    Returns the coordinates of the next step, or None if no path is found.
+    """
+    try:
+        width, height, map_data, impassable_ids = _get_map_dimensions_and_data(location_id)
+    except RuntimeError as e:
+        log.append(f"Pathfinding failed: {e}")
+        return None
+
+    start_node = (start_coords[1], start_coords[0]) # (y, x)
+    end_node = (end_coords[1], end_coords[0]) # (y, x)
+
+    # A* algorithm components
+    open_list = []
+    heapq.heappush(open_list, (0, start_node)) # (f_cost, (y, x))
+
+    # Dictionaries to store A* data
+    g_costs = {start_node: 0}
+    parents = {start_node: None}
+
+    while open_list:
+        current_f_cost, current_node = heapq.heappop(open_list)
+
+        # Stop if we are *adjacent* to the end node
+        if _calculate_distance([current_node[1], current_node[0]], [end_node[1], end_node[0]]) <= 1:
+            # Reconstruct path to find the *first step*
+            path = []
+            temp = current_node
+            while temp and temp != start_node:
+                path.append(temp)
+                temp = parents.get(temp)
+
+            if not path:
+                return None # Already adjacent
+
+            next_step_node = path.pop() # This is the first step from start
+            return [next_step_node[1], next_step_node[0]] # Return as [x, y]
+
+        # Explore neighbors
+        (y, x) = current_node
+        for dy, dx in [(0, 1), (0, -1), (1, 0), (-1, 0)]: # 4-directional movement
+            neighbor_node = (y + dy, x + dx)
+            (ny, nx) = neighbor_node
+
+            # Check bounds
+            if not (0 <= ny < height and 0 <= nx < width):
+                continue
+
+            # Check passability
+            if map_data[ny][nx] in impassable_ids:
+                continue
+
+            # Calculate new G cost
+            new_g_cost = g_costs[current_node] + 1
+
+            if neighbor_node not in g_costs or new_g_cost < g_costs[neighbor_node]:
+                g_costs[neighbor_node] = new_g_cost
+                # Heuristic: Manhattan distance
+                h_cost = abs(ny - end_node[0]) + abs(nx - end_node[1])
+                f_cost = new_g_cost + h_cost
+
+                heapq.heappush(open_list, (f_cost, neighbor_node))
+                parents[neighbor_node] = current_node
+
+    log.append(f"Pathfinding: No path found from {start_coords} to {end_coords}.")
+    return None # No path found
 
 def _get_actor_coords(actor_context: Dict) -> Optional[List[int]]:
     """Helper to get coordinates for any actor context."""
@@ -407,6 +477,135 @@ def check_combat_end_condition(db: Session, combat: models.CombatEncounter, log:
         return True
     return False
 
+def _check_and_trigger_reactions(
+    db: Session,
+    combat: models.CombatEncounter,
+    trigger_event: str,
+    trigger_actor_id: str,
+    log: List[str],
+    event_data: Optional[Dict[str, Any]] = None) -> bool:
+    """
+    Checks all participants for readied or innate reactions to an event.
+
+    event_data holds extra context:
+    - For 'attack_hit'/'attack_miss': None
+    - For 'actor_move': {"old_coords": [x, y]}
+    - For 'ability_effect_applied': {"effect_type": "..."}
+    """
+    logger.info(f"Checking reactions for event: {trigger_event} (Actor: {trigger_actor_id})")
+    event_data = event_data or {}
+    reaction_triggered = False
+
+    # Get the context for the actor who caused the event (the "trigger_actor")
+    try:
+        _, trigger_actor_context = get_actor_context(trigger_actor_id)
+        if trigger_actor_context.get("current_hp", 0) <= 0:
+            return False
+        trigger_actor_coords = _get_actor_coords(trigger_actor_context)
+    except HTTPException:
+        return False
+
+    # Iterate over ALL participants to see if any of them can react
+    for participant in combat.participants:
+        # Actors can't usually react to their own actions
+        if participant.actor_id == trigger_actor_id:
+            continue
+
+        try:
+            _, reactor_context = get_actor_context(participant.actor_id)
+            if reactor_context.get("current_hp", 0) <= 0:
+                continue
+            reactor_coords = _get_actor_coords(reactor_context)
+        except HTTPException:
+            continue
+
+        # --- 1. Check for Innate Reactions (e.g., Threat Zone) ---
+        reactor_statuses = reactor_context.get("status_effects", [])
+        if "Threat Zone" in reactor_statuses and trigger_event == "actor_move":
+            # Threat Zone logic: Check if the trigger_actor exited the reactor's zone
+
+            old_coords = event_data.get("old_coords")
+            new_coords = trigger_actor_coords
+
+            if old_coords and new_coords and reactor_coords:
+                # Threat Zone range is 3m (derived from the effect definition)
+                threat_range = 3
+
+                old_dist = _calculate_distance(old_coords, reactor_coords)
+                new_dist = _calculate_distance(new_coords, reactor_coords)
+
+                if old_dist <= threat_range and new_dist > threat_range:
+                    log.append(f"REACTION: {participant.actor_id}'s 'Threat Zone' triggers against {trigger_actor_id}!")
+
+                    # Execute the AoO (Basic Attack)
+                    _handle_basic_attack(db, combat, participant.actor_id, trigger_actor_id, reactor_context, trigger_actor_context, log)
+                    reaction_triggered = True
+
+
+        # --- 2. Check for Player-Readied Actions ---
+        if participant.readied_action:
+            readied = participant.readied_action
+            readied_trigger = readied.get("trigger")
+            readied_action = readied.get("action")
+
+            # Check for direct trigger match
+            is_direct_trigger = (readied_trigger == trigger_event)
+
+            # Check for movement trigger (simple V1 logic)
+            is_move_trigger = (readied_trigger == "enemy_moves_in_range" and trigger_event == "actor_move")
+
+            if is_move_trigger or is_direct_trigger:
+
+                log.append(f"REACTION: {participant.actor_id}'s readied action ({readied_action}) triggers!")
+
+                # We clear the readied action *before* executing it
+                crud.set_readied_action(db, combat.id, participant.actor_id, None)
+
+                # Fetch contexts (already done above: reactor_context, trigger_actor_context)
+
+                # Execute the readied action
+                if readied_action == "basic_attack":
+                    _handle_basic_attack(db, combat, participant.actor_id, trigger_actor_id, reactor_context, trigger_actor_context, log)
+                elif readied_action:
+                    # Treat any other chosen action as an ability
+                    ability_action = schemas.PlayerActionRequest(
+                        action="use_ability",
+                        ability_id=readied_action,
+                        target_id=trigger_actor_id
+                    )
+                    # Use the helper to execute the ability effects immediately
+                    _execute_readied_ability(db, combat, participant.actor_id, ability_action, log)
+
+                reaction_triggered = True
+
+    return reaction_triggered
+
+def _execute_readied_ability(db: Session, combat: models.CombatEncounter, actor_id: str, action: schemas.PlayerActionRequest, log: List[str]):
+    """
+    Wrapper to execute an ability's effects during a reaction/readied action.
+    This bypasses the full turn execution logic.
+    """
+    try:
+        _, attacker_context = get_actor_context(actor_id)
+        target_id = action.target_id
+        defender_context = attacker_context
+        if target_id:
+            _, defender_context = get_actor_context(target_id)
+
+        ability_data = services.get_ability_data(action.ability_id)
+
+        # NOTE: Cost is ignored for readied actions for simplicity in V1
+
+        for effect in ability_data.get("effects", []):
+            effect_type = effect.get("type")
+            handler = ABILITY_EFFECT_HANDLERS.get(effect_type)
+
+            if handler:
+                # We assume all handlers now accept the (db, combat, ...) signature
+                handler(db, combat, actor_id, target_id, attacker_context, defender_context, log, effect)
+    except Exception as e:
+        log.append(f"REACTION ABILITY FAILED: {e}")
+
 def determine_npc_action(db: Session, combat: models.CombatEncounter, npc_actor_id: str) -> Optional[schemas.PlayerActionRequest]:
     """
     Determines an NPC's action based on health, behavior tags, and abilities.
@@ -421,12 +620,13 @@ def determine_npc_action(db: Session, combat: models.CombatEncounter, npc_actor_
     if "Staggered" in status_effects:
         logger.info(f"NPC {npc_actor_id} is Staggered and skips its turn.")
         services.remove_status_from_npc(int(npc_actor_id.split('_')[1]), "Staggered")
-        return None
+        return None # Return a "wait" action (None)
 
     behavior_tags = npc_context.get("behavior_tags", [])
     npc_current_hp = npc_context.get("current_hp", 1)
     npc_max_hp = npc_context.get("max_hp", 1)
     npc_abilities = npc_context.get("abilities", [])
+    npc_coords = _get_actor_coords(npc_context)
 
     living_players = []
     for p in combat.participants:
@@ -439,15 +639,18 @@ def determine_npc_action(db: Session, combat: models.CombatEncounter, npc_actor_
                 continue
 
     if not living_players:
-        return None
+        return None # No targets, wait
 
     # --- AI Decision Tree ---
+    # 1. Use high-priority abilities (like healing)
     if "Minor Heal" in npc_abilities and npc_current_hp < (npc_max_hp * 0.5):
         return schemas.PlayerActionRequest(action="use_ability", ability_id="Minor Heal", target_id=npc_actor_id)
 
+    # 2. Flee if cowardly
     if "cowardly" in behavior_tags and npc_current_hp < (npc_max_hp * 0.3):
-        return None
+        return None # Wait
 
+    # 3. Find a target
     target_player = None
     if "targets_weakest" in behavior_tags:
         living_players.sort(key=lambda p: p.get("current_hp", 999))
@@ -455,14 +658,41 @@ def determine_npc_action(db: Session, combat: models.CombatEncounter, npc_actor_
     else:
         target_player = random.choice(living_players)
 
-    target_id = target_player['id']
+    if not target_player:
+        return None # No target found
 
+    target_id = target_player['id']
+    target_coords = _get_actor_coords(target_player)
+    distance = _calculate_distance(npc_coords, target_coords)
+
+    # 4. Check if we need to move (for melee)
+    try:
+        template_id = npc_context.get("template_id")
+        gen_params = services.get_npc_generation_params(template_id)
+        offense_style = gen_params.get("generation_params", {}).get("offense_style")
+    except Exception:
+        offense_style = "ranged_support" # Default to ranged if lookup fails
+
+    if offense_style == "melee_heavy" and distance > 1:
+        log_stub = [] # Create a temporary log for the pathfinder
+        next_step_coords = _find_next_step(npc_coords, target_coords, combat.location_id, log_stub)
+
+        if next_step_coords:
+            logger.info(f"NPC {npc_actor_id} moving to {next_step_coords} to attack {target_id}.")
+            return schemas.PlayerActionRequest(action="move", coordinates=next_step_coords)
+        else:
+            logger.warning(f"NPC {npc_actor_id} wants to move but no path was found.")
+            # No path, so wait
+            return None
+
+    # 5. Use abilities
     if "Nausea" in npc_abilities and random.random() < 0.5:
         return schemas.PlayerActionRequest(action="use_ability", ability_id="Nausea", target_id=target_id)
 
     if "Repel Step" in npc_abilities and random.random() < 0.3:
         return schemas.PlayerActionRequest(action="use_ability", ability_id="Repel Step", target_id=npc_actor_id)
 
+    # 6. Default to attack
     return schemas.PlayerActionRequest(action="attack", target_id=target_id)
 
 def handle_no_action(db: Session, combat: models.CombatEncounter, actor_id: str, reason: str = "waits") -> schemas.PlayerActionResponse:
@@ -1198,6 +1428,81 @@ def _handle_effect_special_move(
     return True
 
 
+def _handle_effect_apply_injury(
+    db: Session,
+    combat: models.CombatEncounter,
+    actor_id: str,
+    target_id: str,
+    attacker_context: Dict,
+    defender_context: Dict,
+    log: List[str],
+    effect: Dict,
+) -> bool:
+    """
+    Handles effects that directly apply an injury.
+    e.g., Chaos T9 "Full Entropy"
+    """
+    injury_location = effect.get("location", "Torso")
+    injury_severity = effect.get("severity", "Minor")
+
+    log.append(f"{target_id} suffers a {injury_severity} Injury to their {injury_location}!")
+
+    try:
+        # 1. Get injury details from the rules engine
+        injury_data = rules_api.get_injury_effects(injury_location, injury_severity)
+        if not injury_data:
+            log.append(f" -> No injury data found for {injury_severity} {injury_location}.")
+            return False
+
+        # 2. Apply the status effects associated with the injury
+        for status in injury_data.get("apply_status", []):
+            services.apply_status_to_target(target_id, status)
+            log.append(f" -> {target_id} is now {status}!")
+
+        # 3. Save the injury to the character's record
+        injury_to_save = {
+            "location": injury_location,
+            "severity": injury_severity,
+            "effects": injury_data, # Save the full data for reference
+        }
+        services.apply_injury_to_target(target_id, injury_to_save)
+        return True
+
+    except Exception as e:
+        log.append(f" -> Error applying injury: {e}")
+        return False
+
+def _handle_effect_repair_injury(
+    db: Session,
+    combat: models.CombatEncounter,
+    actor_id: str,
+    target_id: str,
+    attacker_context: Dict,
+    defender_context: Dict,
+    log: List[str],
+    effect: Dict,
+) -> bool:
+    """
+    Handles effects that repair or downgrade an injury.
+    e.g., Biomancy T5 "Repair Minor Injury"
+    """
+    severity_to_remove = effect.get("severity", "Minor")
+    log.append(f"{actor_id} attempts to repair a {severity_to_remove} injury on {target_id}.")
+
+    try:
+        # The service function handles finding and removing the injury
+        services.remove_injury_from_target(target_id, severity_to_remove)
+        log.append(f" -> A {severity_to_remove} Injury on {target_id} is repaired!")
+
+        # Note: This simple version doesn't remove the status effects.
+        # A full implementation would require tracking which status came from where.
+
+        return True
+    except Exception as e:
+        log.append(f" -> Error repairing injury: {e}")
+        return False
+
+
 # This is the "router" that maps `effect["type"]` to the functions above
 ABILITY_EFFECT_HANDLERS: Dict[str, Callable] = {
     # Core Attack/Damage/Heal
@@ -1241,6 +1546,10 @@ ABILITY_EFFECT_HANDLERS: Dict[str, Callable] = {
     "special_move": _handle_effect_special_move,
     "special_action": _handle_effect_special_move,
     "special_action_roll": _handle_effect_special_move,
+
+    # --- ADD THESE NEW KEYS ---
+    "apply_injury": _handle_effect_apply_injury,
+    "repair_injury": _handle_effect_repair_injury,
 }
 
 # --- Main Attack Handler (Original/Core) ---
@@ -1362,10 +1671,77 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
     if action.action == "wait":
         return handle_no_action(db, combat, actor_id)
 
+    # --- ADD THIS NEW ACTION HANDLER ---
+    if action.action == "ready":
+        # This is a simple version. We'll expand it to let the user
+        # choose the trigger and the specific action.
+        ready_action_data = {
+            "trigger": "enemy_moves_in_range",
+            "action": "attack"
+        }
+        # Use details from client if provided
+        if action.ready_action_details:
+            ready_action_data = action.ready_action_details
+
+        crud.set_readied_action(db, combat.id, actor_id, ready_action_data)
+        log.append(f"{actor_id} readies an action ({ready_action_data['trigger']}).")
+
+        # Advancing the turn is the same as 'wait'
+        return handle_no_action(db, combat, actor_id, reason="readies an action")
+    # --- END ADD ---
+
     target_id = action.target_id
     if (action.action in ["attack", "use_ability", "use_item"]) and (not target_id):
         log.append(f"Action '{action.action}' requires a target, but none provided. Waiting instead.")
         return handle_no_action(db, combat, actor_id)
+
+    # --- ADD MOVE ACTION ---
+    if action.action == "move":
+        coords = action.coordinates
+        if not coords or len(coords) != 2:
+            log.append("Invalid move coordinates. Waiting instead.")
+            return handle_no_action(db, combat, actor_id)
+
+        if not _is_passable_and_in_bounds(combat.location_id, coords[0], coords[1], log):
+            log.append(f"Move failed. Waiting instead.")
+            return handle_no_action(db, combat, actor_id)
+
+        try:
+            # --- REACTION CALL (3) ---
+            # Get old coordinates *before* updating the actor's position
+            old_coords = _get_actor_coords(attacker_context)
+
+            # Update the actor's position in the DB
+            if actor_id.startswith("player_"):
+                services.character_api.update_character_location(actor_id, combat.location_id, coords)
+            elif actor_id.startswith("npc_"):
+                services.world_api.update_npc_state(int(actor_id.split('_')[1]), {"coordinates": coords})
+
+            log.append(f"{actor_id} moves to ({coords[0]}, {coords[1]}).")
+
+            # Check if this move triggered anyone's reaction
+            _check_and_trigger_reactions(
+                db, combat, "actor_move", actor_id, log,
+                event_data={"old_coords": old_coords}
+            )
+
+        except Exception as e:
+            log.append(f"Error during move: {e}")
+
+        # Move action completes the turn
+        combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
+        combat_over = check_combat_end_condition(db, combat, log)
+        db.commit()
+        db.refresh(combat)
+
+        return schemas.PlayerActionResponse(
+            success=True,
+            message=f"{actor_id} moved.",
+            log=log,
+            new_turn_index=combat.current_turn_index,
+            combat_over=combat_over
+        )
+    # --- END ADD ---
 
     try:
         defender_context = attacker_context # Default for self/area spells
@@ -1397,22 +1773,24 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
 
                     if handler:
                         try:
-                            # --- Pass correct context to handlers ---
-                            if effect_type in ("modify_attack", "special_move", "create_trap", "move_self", "reaction_damage", "reaction_move_ally", "move_target_roll"):
-                                # Handlers that need the actor's context
-                                handler(actor_id, target_id, attacker_context, defender_context, log, effect)
-
-                            # --- THIS IS THE MODIFIED LINE ---
-                            elif effect_type == "aoe_damage":
-                                # Pass the full combat object
-                                handler(actor_id, target_id, attacker_context, defender_context, log, effect, combat)
-                            elif effect_type == "summon":
-                                # Pass both combat and db session for intrusive state changes
-                                handler(actor_id, target_id, attacker_context, defender_context, log, effect, combat, db)
-                            # --- END MODIFICATION ---
-
+                            # --- REFACTORED: Pass db and combat to all handlers that need it ---
+                            if effect_type in (
+                                "modify_attack",
+                                "aoe_damage",
+                                "summon",
+                                "special_move",
+                                "create_trap",
+                                "move_self",
+                                "reaction_damage",
+                                "reaction_move_ally",
+                                "move_target_roll",
+                                "reaction_contest",
+                                "apply_injury",
+                                "repair_injury"
+                            ):
+                                handler(db, combat, actor_id, target_id, attacker_context, defender_context, log, effect)
                             else:
-                                # Handlers that only need the target's context
+                                # Handlers that only need the target's ID and the effect
                                 handler(target_id, log, effect)
                         except Exception as e:
                             log.append(f"Effect {effect_type} failed: {e}")

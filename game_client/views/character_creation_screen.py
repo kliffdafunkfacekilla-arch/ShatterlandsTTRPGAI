@@ -4,24 +4,24 @@
     # ...
 
     # --- (build_step_talent is unchanged) ---
-    def build_step_talent(self):
-        self.title_label.text = "Step 5: Choose Ability Talent"
-        self.step_ui_container.add_widget(Label(text="Select your starting Talent:"))
+def build_step_talent(self):
+    self.title_label.text = "Step 5: Choose Ability Talent"
+    self.step_ui_container.add_widget(Label(text="Select your starting Talent:"))
 
-        current_choice = self.choices.get('ability_talent')
+    current_choice = self.choices.get('ability_talent')
 
-        self.talent_spinner = Spinner(
-            text=current_choice if current_choice else '- Select a Talent -',
-            values=self.eligible_talents,
-            size_hint_y=None,
-            height='44dp'
-        )
-        self.talent_spinner.option_cls.height = '44dp'
-        self.talent_spinner.bind(text=partial(self.select_choice, 'ability_talent'))
-        self.step_ui_container.add_widget(self.talent_spinner)
+    self.talent_spinner = Spinner(
+        text=current_choice if current_choice else '- Select a Talent -',
+        values=self.eligible_talents,
+        size_hint_y=None,
+        height='44dp'
+    )
+    self.talent_spinner.option_cls.height = '44dp'
+    self.talent_spinner.bind(text=partial(self.select_choice, 'ability_talent'))
+    self.step_ui_container.add_widget(self.talent_spinner)
 
-        # This step still calls the fetch function
-        self.fetch_eligible_talents() # This call is now synchronous
+    # This step still calls the fetch function
+    self.fetch_eligible_talents() # This call is now synchronous
 
     # (All other build_step_* functions are unchanged)
     # ...

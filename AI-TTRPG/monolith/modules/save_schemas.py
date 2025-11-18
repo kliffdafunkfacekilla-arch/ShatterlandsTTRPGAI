@@ -85,6 +85,9 @@ class NpcInstanceSave(BaseModel):
     resource_pools: Optional[Dict[str, Any]] = {}
     abilities: Optional[List[str]] = []
     status_effects: List[str]
+    # --- ADD THIS LINE ---
+    injuries: Optional[List[Dict[str, Any]]] = []
+    # --- END ADD ---
     location_id: int
     behavior_tags: List[str] = []
     coordinates: Optional[Any] = None

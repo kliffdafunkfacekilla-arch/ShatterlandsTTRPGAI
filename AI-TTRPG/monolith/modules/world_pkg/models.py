@@ -116,6 +116,10 @@ class NpcInstance(Base):
     abilities = Column(JSON, default=[])
     status_effects = Column(JSON, default=[])
 
+    # --- ADD THIS LINE ---
+    injuries = Column(JSON, default=[]) # e.g., [{"location": "Torso", "severity": "Minor"}]
+    # --- END ADD ---
+
     # This links the NPC to the Location it is currently in
     location_id = Column(Integer, ForeignKey("locations.id"))
     behavior_tags = Column(JSON, default=[]) # Store tags like ["aggressive"]

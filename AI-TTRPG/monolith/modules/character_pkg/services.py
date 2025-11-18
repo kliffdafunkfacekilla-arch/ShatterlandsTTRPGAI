@@ -160,6 +160,73 @@ def _get_rules_engine_data() -> Dict[str, Any]:
         logger.exception(f"FATAL: Error in _get_rules_engine_data (sync): {e}")
         raise e
 
+
+def apply_injury_to_character(
+    db: Session, character_id: str, injury: Dict[str, Any]
+) -> Optional[models.Character]:
+    """Applies an injury to a character and saves it."""
+    character = get_character(db, character_id)
+    if not character:
+        logger.warning(f"Apply injury failed: Character {character_id} not found.")
+        return None
+
+    # Make sure injuries is a list
+    if not isinstance(character.injuries, list):
+        character.injuries = []
+
+    # SQLAlchemy's change detection for mutable types like JSON can be tricky.
+    # Re-assigning the list ensures the change is tracked.
+    new_injuries = character.injuries + [injury]
+    character.injuries = new_injuries
+
+    try:
+        db.commit()
+        db.refresh(character)
+        logger.info(f"Successfully applied injury to {character_id}.")
+        return character
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Database error applying injury to {character_id}: {e}")
+        raise Exception(f"Database error: {e}")
+
+
+def remove_injury_from_character(
+    db: Session, character_id: str, severity: str
+) -> Optional[models.Character]:
+    """Removes the first injury of a given severity from a character."""
+    character = get_character(db, character_id)
+    if not character:
+        logger.warning(f"Remove injury failed: Character {character_id} not found.")
+        return None
+
+    if not isinstance(character.injuries, list) or not character.injuries:
+        logger.info(f"Character {character_id} has no injuries to remove.")
+        return character
+
+    found_injury = None
+    new_injuries_list = character.injuries[:]  # Create a copy
+    for inj in new_injuries_list:
+        if inj.get("severity") == severity:
+            found_injury = inj
+            break
+
+    if found_injury:
+        new_injuries_list.remove(found_injury)
+        character.injuries = new_injuries_list
+        logger.info(f"Removed '{severity}' injury from {character_id}.")
+        try:
+            db.commit()
+            db.refresh(character)
+            logger.info(f"Successfully removed injury from {character_id}.")
+            return character
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Database error removing injury from {character_id}: {e}")
+            raise Exception(f"Database error: {e}")
+    else:
+        logger.info(f"No '{severity}' injury found on {character_id}.")
+        return character
+
 def _apply_mods(stats: Dict[str, int], mods: Dict[str, List[str]]):
     """
     Helper to apply a standard 'mods' block to a stats dictionary.
