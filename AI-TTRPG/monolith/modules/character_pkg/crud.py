@@ -220,8 +220,55 @@ def apply_healing(db: Session, character: models.Character, amount: int) -> mode
     db.refresh(character)
     return character
 
+def unequip_item(db: Session, character: models.Character, slot: str) -> models.Character:
+    """Unequips an item from a slot and moves it back to inventory."""
+    inventory = character.inventory or {}
+    equipment = character.equipment or {}
+
+    item_id = equipment.get(slot)
+
+    if not item_id:
+        return character # Nothing to unequip
+
+    # Move item from equipment back to inventory
+    inventory[item_id] = inventory.get(item_id, 0) + 1
+    del equipment[slot]
+
+    character.inventory = inventory
+    character.equipment = equipment
+    flag_modified(character, "inventory")
+    flag_modified(character, "equipment")
+
+    db.commit()
+    db.refresh(character)
+    return character
+
 def equip_item(db: Session, character: models.Character, item_id: str, slot: str) -> models.Character:
-    """Equips an item to a character."""
+    """Equips an item to a character, handling movement from inventory to equipment."""
+    inventory = character.inventory or {}
+    equipment = character.equipment or {}
+
+    if inventory.get(item_id, 0) <= 0:
+        logging.warning(f"Equip failed: Item {item_id} not in inventory or quantity is zero.")
+        return character
+
+    currently_equipped_item_id = equipment.get(slot)
+    if currently_equipped_item_id:
+        inventory[currently_equipped_item_id] = inventory.get(currently_equipped_item_id, 0) + 1
+
+    inventory[item_id] -= 1
+    if inventory[item_id] <= 0:
+        del inventory[item_id]
+    equipment[slot] = item_id
+
+    character.inventory = inventory
+    character.equipment = equipment
+    flag_modified(character, "inventory")
+    flag_modified(character, "equipment")
+
+    db.commit()
+    db.refresh(character)
+    return character
 
 def apply_temp_hp(db: Session, character: models.Character, amount: int) -> models.Character:
     """

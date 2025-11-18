@@ -1207,7 +1207,12 @@ def _handle_effect_aoe_composure_damage_roll(
 
         total_damage += final_damage
         if final_damage > 0:
-            log.append(f"[STUB] Applied {final_damage} Composure damage to {p_actor_id}.")
+            if p_actor_id.startswith("player_"):
+                services.apply_composure_damage_to_character(p_actor_id, final_damage)
+            elif p_actor_id.startswith("npc_"):
+                services.apply_composure_damage_to_npc(int(p_actor_id.split("_")[1]), final_damage)
+
+            log.append(f" -> Applied {final_damage} Composure damage to {p_actor_id}.")
 
     log.append(f"AoE Composure damage applied to {len(aoe_targets)} targets, total damage: {total_damage}.")
     return True
@@ -1442,25 +1447,19 @@ def _handle_effect_random_stat_debuff(target_id: str, log: List[str], effect: Di
 
 def _handle_effect_reaction_damage(
     actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Stub for Reaction Damage (e.g., Bastion T2)."""
-    log.append(f"[STUB] Reaction '{effect.get('trigger')}' triggered. Needs full implementation.")
-    return True
-
+    """Replaced Stub: Logs reaction damage without full implementation."""
+    log.append(f"REACTION: Triggered '{effect.get('trigger', 'Damage Reaction')}', but full implementation is pending. (Action proceeds)")
+    return False
 def _handle_effect_reaction_move_ally(
     actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Stub for Reaction Move Ally (e.g., Grace T2)."""
-    log.append(f"[STUB] Reaction '{effect.get('trigger')}' triggered. Needs full implementation.")
-    return True
-
+    """Replaced Stub: Logs reaction move without full implementation."""
+    log.append(f"REACTION: Triggered '{effect.get('trigger', 'Move Ally Reaction')}', but full implementation is pending. (Action proceeds)")
+    return False
 def _handle_effect_reaction_contest(
     actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Stub for Complex Reaction Contest (e.g., Force T7)."""
-    trigger = effect.get("trigger")
-    user_stat = effect.get("user_stat")
-    effect_on_win = effect.get("effect_on_win")
-
-    log.append(f"[STUB] Reaction '{trigger}' triggered. Needs implementation of contested {user_stat} check.")
-    return True
+    """Replaced Stub: Logs reaction contest without full implementation."""
+    log.append(f"REACTION: Triggered '{effect.get('trigger', 'Contest Reaction')}', but full implementation is pending. (Action proceeds)")
+    return False
 
 def _handle_effect_create_trap(
     actor_id: str,
@@ -1499,9 +1498,9 @@ def _handle_effect_create_trap(
 
 def _handle_effect_special_move(
     actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Stub for Special Move/Action (e.g., Psionics T2)."""
+    """Replaced Stub: Logs special move without full implementation."""
     effect_id = effect.get("effect_id", "unknown_move")
-    log.append(f"Performing special action: {effect_id}! [STUB: Custom logic required].")
+    log.append(f"SPECIAL ACTION: {effect_id} executed. Custom logic handling is needed for narrative effects.")
     return True
 
 # --- ADD THESE NEW HANDLERS ---
@@ -1602,6 +1601,61 @@ def _handle_effect_repair_injury(
         return False
 
 
+def _handle_effect_resource_heal(target_id: str, log: List[str], effect: Dict) -> bool:
+    """Handles effects that restore a character's resource pool (e.g., Stamina, Chi)."""
+    resource_id = effect.get("resource")
+    amount_str = effect.get("amount", "1d4")
+    heal_amount = _roll_dice_string(amount_str)
+
+    if not resource_id:
+        log.append(f"Resource heal failed: missing resource ID.")
+        return False
+
+    _, target_context = get_actor_context(target_id)
+    current_pools = target_context.get("resource_pools", {})
+    pool_data = current_pools.get(resource_id, {"current": 0, "max": 10})
+
+    max_value = pool_data.get("max", 10)
+    # Clamp the new value between current + amount and the max
+    new_value = min(max_value, pool_data.get("current", 0) + heal_amount)
+
+    if target_id.startswith("player_"):
+        services.update_character_resource_pool(target_id, resource_id, new_value)
+    elif target_id.startswith("npc_"):
+        # NPCs are handled by world_api via their ID
+        services.update_npc_resource_pool(int(target_id.split("_")[1]), resource_id, new_value)
+
+    log.append(f"{target_id} gains {heal_amount} {resource_id}, reaching {new_value}/{max_value}.")
+    return True
+
+def _handle_effect_apply_status_roll_with_stat(target_id: str, log: List[str], effect: Dict) -> bool:
+    """
+    Applies a status if a target fails a save based on a specified STAT
+    (e.g., Willpower save vs DC 14 to resist Taunt).
+    """
+    status_id = effect.get("status_id")
+    save_stat = effect.get("save_stat")
+    dc = effect.get("dc", 14)
+
+    if not status_id or not save_stat:
+        log.append(f"Status roll failed: missing status_id or save_stat in effect.")
+        return False
+
+    _, target_context = get_actor_context(target_id)
+    stat_score = get_stat_score(target_context, save_stat)
+    stat_mod = rules_core.calculate_modifier(stat_score)
+
+    roll = random.randint(1, 20)
+    total = roll + stat_mod
+
+    if total >= dc:
+        log.append(f"{target_id} SAVED ({total} vs DC {dc} {save_stat} check) against {status_id}.")
+        return False
+    else:
+        log.append(f"{target_id} FAILED to save ({total}) and is now {status_id}!")
+        services.apply_status_to_target(target_id, status_id)
+        return True
+
 # This is the "router" that maps `effect["type"]` to the functions above
 ABILITY_EFFECT_HANDLERS: Dict[str, Callable] = {
     # Core Attack/Damage/Heal
@@ -1651,6 +1705,8 @@ ABILITY_EFFECT_HANDLERS: Dict[str, Callable] = {
     # --- ADD THESE NEW KEYS ---
     "apply_injury": _handle_effect_apply_injury,
     "repair_injury": _handle_effect_repair_injury,
+    "resource_heal": _handle_effect_resource_heal,
+    "apply_status_roll_with_stat": _handle_effect_apply_status_roll_with_stat,
 }
 
 # --- ADD THE NEW REACTION CHECKER FUNCTION ---
@@ -1735,6 +1791,25 @@ def _check_and_trigger_reactions(
 # --- END ADD ---
 
 # --- UPDATE FUNCTION SIGNATURE ---
+def _check_for_interrupt_reactions(db: Session, combat: models.CombatEncounter, attacker_id: str, target_id: str, attack_result: Dict, log: List[str]) -> bool:
+    """
+    Checks if a successful attack triggers any defensive reactions that could interrupt
+    the flow. Placeholder implementation relies on simple ability list check.
+    """
+    target_type, defender_context = get_actor_context(target_id)
+
+    if "Bastion_Reaction_T2" in defender_context.get("abilities", []):
+        if attack_result.get("outcome") in ["hit", "solid_hit", "critical_hit"]:
+            log.append("REACTION TRIGGERED: Bastion T2: Spiked Deflection (Placeholder)")
+
+            # Execute the reaction's generic effect (self-damage to attacker)
+            effect = {"type": "direct_damage", "amount": "1d4", "damage_type": "physical"}
+            _handle_effect_direct_damage(attacker_id, log, effect)
+
+            return False # Does NOT interrupt the original attack damage flow (Structural decision)
+
+    return False # No interruption
+
 def _handle_basic_attack(
     db: Session,
     combat: models.CombatEncounter,
@@ -1781,10 +1856,12 @@ def _handle_basic_attack(
     if outcome in ["hit", "solid_hit", "critical_hit"]:
         log.append(f"Result: {actor_id} hits {target_id}!")
 
-        # --- REACTION CALL (1) ---
-        # Check for reactions to the *hit* (target_id is the one hit)
-        _check_and_trigger_reactions(db, combat, "attack_hit", actor_id, log, event_data={"target_id": target_id})
-        # --- END REACTION CALL ---
+        # --- NEW: INTERRUPT REACTION CHECK (Mid-action) ---
+        is_interrupted = _check_for_interrupt_reactions(db, combat, actor_id, target_id, attack_result, log)
+
+        if is_interrupted:
+            return True # Action was interrupted, stop damage calculation
+        # --- END INTERRUPT CHECK ---
 
         # Apply status effects from hit
         if outcome == "solid_hit":
@@ -1837,6 +1914,61 @@ def _handle_basic_attack(
 
         return False
 
+def _process_status_effects_on_turn_start(db: Session, combat: models.CombatEncounter, actor_id: str, log: List[str]) -> bool:
+    """Applies continuous effects (like DOT) and handles turn-based duration."""
+    actor_type, actor_context = get_actor_context(actor_id)
+    current_statuses = actor_context.get("status_effects", [])
+    statuses_to_remove = []
+
+    all_status_defs = services.get_all_status_effects()
+
+    for status_name in current_statuses:
+        status_data = all_status_defs.get(status_name)
+        if not status_data: continue
+
+        # 1. Apply Damage Over Time (DOT)
+        for effect_str in status_data.get("effects", []):
+            if effect_str.startswith("damage_over_time:start_turn"):
+                try:
+                    amount = int(effect_str.split(":")[2])
+
+                    if actor_type == "player":
+                        services.apply_damage_to_character(actor_id, amount)
+                    elif actor_type == "npc":
+                        npc_id = int(actor_id.split("_")[1])
+                        services.apply_damage_to_npc(npc_id, amount)
+
+                    log.append(f"DOT: {actor_context.get('name')} suffers {amount} damage from {status_name}!")
+                except Exception as e:
+                    logger.error(f"Failed to process DOT effect for {status_name}: {e}")
+
+        # 2. Handle Turn-Based Duration (for TempDebuff statuses)
+        if status_name.startswith("TempDebuff_"):
+            try:
+                # Note: The status name is the tracker (TempDebuff_STATNAME_AMOUNT_DURATION)
+                _, _, _, duration_str = status_name.split("_")
+                remaining_duration = int(duration_str) - 1
+
+                if remaining_duration <= 0:
+                    statuses_to_remove.append(status_name)
+                    log.append(f"Status {status_name} has expired.")
+                else:
+                    # Save a NEW status ID to track the decremented duration
+                    new_status_id = status_name.rsplit('_', 1)[0] + f"_{remaining_duration}"
+                    services.apply_status_to_target(actor_id, new_status_id)
+                    statuses_to_remove.append(status_name)
+            except Exception as e:
+                logger.error(f"Failed to process duration for {status_name}: {e}")
+
+    # Remove all expired statuses atomically
+    for expired_status in statuses_to_remove:
+        if actor_type == "player":
+            services.remove_status_from_character(actor_id, expired_status)
+        else:
+            services.remove_status_from_npc(int(actor_id.split("_")[1]), expired_status)
+
+    return len(statuses_to_remove) > 0
+
 # --- Main Action Handler (Original/Core) ---
 def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: str, action: schemas.PlayerActionRequest) -> schemas.PlayerActionResponse:
     log = []
@@ -1844,6 +1976,20 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
     current_actor_id = combat.turn_order[combat.current_turn_index]
     if actor_id != current_actor_id:
         raise HTTPException(status_code=403, detail=f"It is not {actor_id}'s turn.")
+
+    # --- CRITICAL: PROCESS CONTINUOUS STATUS EFFECTS ---
+    _process_status_effects_on_turn_start(db, combat, actor_id, log)
+    # ---------------------------------------------------
+
+    # Refresh context *after* status processing, before checking Staggered/HP
+    actor_type, attacker_context = get_actor_context(actor_id)
+
+    if attacker_context.get('current_hp', 0) <= 0:
+        log.append(f"{actor_id} was defeated by continuous effects!")
+        combat_over = check_combat_end_condition(db, combat, log)
+        db.commit()
+        return schemas.PlayerActionResponse(success=True, message="Defeated.", log=log, new_turn_index=combat.current_turn_index, combat_over=combat_over)
+
 
     try:
         actor_type, attacker_context = get_actor_context(actor_id)

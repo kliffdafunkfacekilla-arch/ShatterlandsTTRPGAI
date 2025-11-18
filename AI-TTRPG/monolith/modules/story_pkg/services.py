@@ -61,6 +61,14 @@ def get_loot_table(loot_table_ref: str) -> Dict:
     logger.debug(f"Calling internal rules_api.get_loot_table for {loot_table_ref}")
     return rules_api.get_loot_table(loot_table_ref)
 
+def get_status_effect_data(status_name: str) -> Dict:
+    logger.debug(f"Calling internal rules_api.get_status_effect_data for {status_name}")
+    return rules_api.get_status_effect_data(status_name)
+
+def get_all_status_effects() -> Dict:
+    logger.debug(f"Calling internal rules_api.get_all_status_effects")
+    return rules_api.get_all_status_effects()
+
 # --- World Engine Functions ---
 def get_world_location_context(location_id: int) -> Dict:
     logger.debug(f"Calling internal world_api.get_world_location_context for {location_id}")

@@ -1,7 +1,20 @@
 """
 The Load Game screen.
 Lists all available save files and allows loading one.
-"""import loggingfrom kivy.app import Appfrom kivy.uix.screenmanager import Screenfrom kivy.uix.boxlayout import BoxLayoutfrom kivy.uix.label import Labelfrom kivy.uix.button import Buttonfrom kivy.uix.scrollview import ScrollViewfrom kivy.properties import ObjectPropertyfrom functools import partial# --- Direct Monolith Imports ---try:
+"""
+import logging
+from kivy.app import App
+from kivy.uix.screenmanager import Screen
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
+from kivy.uix.button import Button
+from kivy.uix.scrollview import ScrollView
+from kivy.properties import ObjectProperty
+from functools import partial
+from kivy.uix.popup import Popup
+
+# --- Direct Monolith Imports ---
+try:
 from monolith.modules import save_apiexcept ImportError as e:
 logging.error(f"LOAD_GAME: Failed to import save_api: {e}")
 save_api = Noneclass LoadGameScreen(Screen):
@@ -85,9 +98,18 @@ app.game_settings = {
 app.root.current = 'main_interface'
 
 except Exception as e:
-logging.exception(f"Failed to load game: {e}")
-# TODO: Show a popup to the user
-pass
+            logging.exception(f"Failed to load game: {e}")
+
+            # --- IMPLEMENTATION ---
+            content = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
+            content.add_widget(Label(text="Load Failed!", font_size='20sp'))
+            content.add_widget(Label(text=str(e), font_size='14sp', size_hint_y=None))
+            close_btn = Button(text="OK", size_hint_y=None, height='44dp')
+            content.add_widget(close_btn)
+
+            popup = Popup(title='Error', content=content, size_hint=(0.6, 0.4))
+            close_btn.bind(on_release=popup.dismiss)
+            popup.open()
 
 def go_to_main_menu(self):
 App.get_running_app().root.current = 'main_menu'

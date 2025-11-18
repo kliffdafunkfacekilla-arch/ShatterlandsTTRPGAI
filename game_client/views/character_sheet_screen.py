@@ -65,6 +65,20 @@ CHARACTER_SHEET_KV = """
                     height: self.minimum_height
                     spacing: '5dp'
 
+                # --- RESOURCE POOLS ---
+                Label:
+                    text: 'Resource Pools'
+                    font_size: '20sp'
+                    size_hint_y: None
+                    height: '30dp'
+
+                GridLayout:
+                    id: resource_pools_grid
+                    cols: 3
+                    size_hint_y: None
+                    height: self.minimum_height
+                    spacing: '5dp'
+
                 # --- SKILLS ---
                 Label:
                     text: 'Skills'
@@ -119,6 +133,7 @@ class CharacterSheetScreen(Screen):
     char_name_label = ObjectProperty(None)
     stats_grid = ObjectProperty(None)
     skills_grid = ObjectProperty(None)
+    resource_pools_grid = ObjectProperty(None)
     talents_list = ObjectProperty(None)
     abilities_list = ObjectProperty(None)
 
@@ -132,6 +147,7 @@ class CharacterSheetScreen(Screen):
         self.char_name_label = self.ids.char_name_label
         self.stats_grid = self.ids.stats_grid
         self.skills_grid = self.ids.skills_grid
+        self.resource_pools_grid = self.ids.resource_pools_grid
         self.talents_list = self.ids.talents_list
         self.abilities_list = self.ids.abilities_list
 
@@ -194,4 +210,21 @@ class CharacterSheetScreen(Screen):
             for ability_desc in context.abilities:
                 self.abilities_list.add_widget(
                     Label(text=ability_desc, font_size='14sp', text_size=(self.abilities_list.width, None), size_hint_y=None, height='60dp')
+                )
+
+        # --- Populate Resource Pools ---
+        self.resource_pools_grid.clear_widgets()
+        if context.resource_pools:
+            for pool_name, data in context.resource_pools.items():
+                current = data.get('current', 0)
+                max_val = data.get('max', 0)
+
+                self.resource_pools_grid.add_widget(
+                    Label(text=f"{pool_name}:", font_size='16sp', size_hint_x=0.4, height='30dp')
+                )
+                self.resource_pools_grid.add_widget(
+                    Label(text=f"{current}", font_size='16sp', size_hint_x=0.3, height='30dp')
+                )
+                self.resource_pools_grid.add_widget(
+                    Label(text=f"Max {max_val}", font_size='16sp', size_hint_x=0.3, height='30dp')
                 )

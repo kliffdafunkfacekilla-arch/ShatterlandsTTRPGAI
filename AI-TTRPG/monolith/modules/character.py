@@ -48,6 +48,31 @@ def get_character_context(char_id: str) -> Dict[str, Any]:
     finally:
         db.close()
 
+def unequip_item(char_id: str, slot: str) -> Dict[str, Any]:
+    """Unequips an item from a slot and returns new context."""
+    db = char_db.SessionLocal()
+    try:
+        db_char = _get_character_db(db, char_id)
+        updated_char = char_crud.unequip_item(db, db_char, slot)
+        schema_char = char_services.get_character_context(updated_char)
+        return schema_char.model_dump()
+    except Exception as e:
+        logger.exception(f"[character.unequip_item] Error: {e}")
+        raise
+    finally:
+        db.close()
+
+def equip_item(char_id: str, item_id: str, slot: str) -> Dict[str, Any]:
+    """Equips an item to a character and returns new context."""
+    db = char_db.SessionLocal()
+    try:
+        db_char = _get_character_db(db, char_id)
+        updated_char = char_crud.equip_item(db, db_char, item_id, slot)
+        schema_char = char_services.get_character_context(updated_char)
+        return schema_char.model_dump()
+    finally:
+        db.close()
+
 def update_character_resource_pool(char_id: str, pool_name: str, new_value: int) -> Dict[str, Any]:
     """Updates a specific resource pool for a character and returns new context."""
     db = char_db.SessionLocal()

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Optional
 
 
@@ -257,7 +257,7 @@ class ContestedAttackRequest(BaseModel):
 
     # Removed target_hit_location, attacker_steady_aim_active, is_ranged_attack
     # The effects of these are now expected to be included in the bonus/penalty fields by the caller (story_engine)
-    @validator("defender_weapon_penalty")
+    @field_validator("defender_weapon_penalty")
     def validate_weapon_penalty(cls, v):
         if v > 0:
             raise ValueError("defender_weapon_penalty should not be positive.")
@@ -340,7 +340,7 @@ class DamageRequest(BaseModel):
     )
 
     # Future: Add 'defender_resistance_multiplier', 'damage_type'
-    @validator("base_damage_dice")
+    @field_validator("base_damage_dice")
     def validate_dice_string(cls, v):
         try:
             _core_parse_dice_string(v)  # Use local helper
@@ -348,7 +348,7 @@ class DamageRequest(BaseModel):
             raise ValueError(str(e))
         return v
 
-    @validator("defender_base_dr", "attacker_dr_modifier")
+    @field_validator("defender_base_dr", "attacker_dr_modifier")
     def validate_non_negative(cls, v):
         if v < 0:
             raise ValueError("DR values cannot be negative.")
@@ -420,8 +420,7 @@ class StatusEffectResponse(BaseModel):
     # Add any other fields that exist in your JSON structure (e.g., "icon_ref", "severity_scaling")
     # --- End adjustments ---
 
-    class Config:
-        from_attributes = True  # Use this for Pydantic V2+
+    model_config = {"from_attributes": True}
 
 
 # ADD THESE MODELS for Base Vitals Calculation
@@ -435,7 +434,7 @@ class BaseVitalsRequest(BaseModel):
         ..., description="Dictionary of all 12 stats and their scores"
     )
 
-    @validator("stats")
+    @field_validator("stats")
     def validate_stats(cls, v):
         if len(v) < 12:
             raise ValueError("Must provide all 12 stats.")

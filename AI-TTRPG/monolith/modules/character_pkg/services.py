@@ -40,12 +40,31 @@ def get_character_context(
     def_status = []
     def_injuries = []
 
+    raw_stats = db_character.stats if isinstance(db_character.stats, dict) else def_stats
+    final_stats = raw_stats.copy()
+
+    # --- IMPLEMENT: DYNAMIC STAT OVERRIDE LOGIC ---
+    current_statuses = db_character.status_effects or []
+    for status_id in current_statuses:
+        if status_id.startswith("TempDebuff_"):
+            try:
+                # Expected format: TempDebuff_STATNAME_AMOUNT_DURATION (e.g., TempDebuff_Might_-2_1)
+                _, stat_name, amount_str, _ = status_id.split("_")
+                amount = int(amount_str)
+
+                if stat_name in final_stats:
+                    final_stats[stat_name] += amount
+                    logger.info(f"Applying temporary modifier: {stat_name} adjusted by {amount}")
+            except Exception as e:
+                logger.warning(f"Failed to parse dynamic stat status {status_id}: {e}")
+    # --- END IMPLEMENTATION ---
+
     return schemas.CharacterContextResponse(
         id=getattr(db_character, "id", None),
         name=getattr(db_character, "name", "Unknown"),
         kingdom=getattr(db_character, "kingdom", "Unknown"),
         level=getattr(db_character, "level", 1),
-        stats=db_character.stats if isinstance(db_character.stats, dict) else def_stats,
+        stats=final_stats,
         skills=(
             db_character.skills if isinstance(db_character.skills, dict) else def_skills
         ),

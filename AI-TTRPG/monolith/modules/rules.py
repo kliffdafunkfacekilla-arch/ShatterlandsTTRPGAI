@@ -193,6 +193,16 @@ def find_eligible_talents_api(payload: Dict) -> List[Dict]:
     )
     return [t.model_dump() for t in talents]
 
+def get_status_effect_data(status_name: str) -> Dict:
+    data = _get_data("status_effects").get(status_name)
+    if not data:
+        raise Exception(f"Status effect '{status_name}' not found.")
+    return data
+
+def get_all_status_effects() -> Dict:
+    """Returns the full status effects data map."""
+    return _get_data("status_effects")
+
 def calculate_base_vitals_api(payload: Dict) -> Dict:
     """API-compatible wrapper for calculating vitals."""
     req_schema = rules_models.BaseVitalsRequest(**payload)
