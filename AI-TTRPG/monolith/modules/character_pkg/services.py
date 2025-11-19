@@ -5,6 +5,8 @@ from copy import deepcopy
 import uuid
 import logging
 from . import models, schemas
+from ..rules_pkg.data_loader import get_item_template
+from ..rules_pkg.models_inventory import PassiveModifier
 from .. import rules as rules_api
 
 logger = logging.getLogger("monolith.character.services")
@@ -566,104 +568,131 @@ def remove_item_from_character(db: Session, character_id: str, item_id: str, qua
         logger.error(f"Failed to remove item: {e}")
         raise
 
-def equip_item(db: Session, character_id: str, slot: str, item_id: str) -> Optional[models.Character]:
-    """Equips an item to a specific slot, handling swapping and validation."""
+def _get_slot_category(slot_name: str) -> Optional[str]:
+    """Helper to determine if a slot is 'combat' or 'accessories'."""
+    if slot_name in schemas.CombatSlots.model_fields:
+        return "combat"
+    if slot_name in schemas.AccessorySlots.model_fields:
+        return "accessories"
+    if slot_name == "equipped_gear":
+        return "equipped_gear"
+    return None
+
+def equip_item(db: Session, character_id: str, item_id: str, target_slot: str) -> Optional[models.Character]:
+    """
+    Equips an item from a character's inventory to a specified slot.
+    Handles validation, swapping, and database persistence.
+    """
     character = get_character(db, character_id)
     if not character:
+        logger.error(f"Equip failed: Character '{character_id}' not found.")
         return None
 
-    # Fetch item template to check valid slots
-    # Note: In a real app, we might want to cache this or pass it in.
-    # For now, we fetch it from rules_api each time or assume we can get it.
-    try:
-        item_templates = rules_api._get_data("item_templates")
-        item_data = item_templates.get(item_id)
-    except Exception as e:
-        logger.error(f"Failed to fetch item data for {item_id}: {e}")
+    item_template = get_item_template(item_id)
+    if not item_template:
+        logger.error(f"Equip failed: Item template '{item_id}' not found.")
         return None
 
-    if not item_data:
-        logger.warning(f"Item {item_id} not found in templates.")
+    if target_slot not in item_template.slots:
+        logger.error(f"Equip failed: Item '{item_id}' cannot be equipped in slot '{target_slot}'.")
         return None
 
-    # Validate slot
-    valid_slots = item_data.get("slots", [])
-    if slot not in valid_slots:
-        logger.warning(f"Slot {slot} is not valid for item {item_id}. Valid: {valid_slots}")
+    inventory = deepcopy(dict(character.inventory)) if character.inventory else {}
+    if inventory.get(item_id, 0) < 1:
+        logger.error(f"Equip failed: Item '{item_id}' not in character's inventory.")
         return None
 
-    inventory = dict(character.inventory) if character.inventory else {}
-    if item_id not in inventory:
-        logger.warning(f"Cannot equip {item_id}, not in inventory.")
-        return None
-
-    # Initialize equipment structure if needed
     equipment = deepcopy(dict(character.equipment)) if character.equipment else {}
-    if "combat" not in equipment: equipment["combat"] = {}
-    if "accessories" not in equipment: equipment["accessories"] = {}
+    slot_category = _get_slot_category(target_slot)
 
-    # Determine section
-    section = "combat"
-    if slot in ["ring_1", "ring_2", "wrist_1", "wrist_2", "ear_1", "ear_2", "neck", "circlet", "face", "belt", "outfit", "brooch"]:
-        section = "accessories"
-    elif slot == "equipped_gear":
-        section = "equipped_gear"
+    if not slot_category:
+        logger.error(f"Equip failed: Invalid target slot '{target_slot}'.")
+        return None
 
-    # Check if slot is occupied
-    current_item = None
-    if section == "equipped_gear":
-        current_item = equipment.get("equipped_gear")
+    # Ensure equipment structure is initialized
+    if slot_category not in equipment:
+        equipment[slot_category] = {}
+
+    # Unequip any existing item in the target slot
+    if slot_category == "equipped_gear":
+        currently_equipped = equipment.get("equipped_gear")
+        if currently_equipped:
+            # We need to find the item_id of the equipped item. Assume it was stored.
+            equipped_item_id = currently_equipped.get("id", "unknown_item")
+            inventory[equipped_item_id] = inventory.get(equipped_item_id, 0) + 1
+            logger.info(f"Unequipped '{equipped_item_id}' to inventory.")
     else:
-        current_item = equipment.get(section, {}).get(slot)
+        currently_equipped = equipment.get(slot_category, {}).get(target_slot)
+        if currently_equipped:
+            equipped_item_id = currently_equipped.get("id", "unknown_item")
+            inventory[equipped_item_id] = inventory.get(equipped_item_id, 0) + 1
+            logger.info(f"Unequipped '{equipped_item_id}' from '{target_slot}' to inventory.")
 
-    # If occupied, unequip current item (add to inventory)
-    if current_item:
-        # current_item is the full item dict. We need its ID.
-        # Assuming item dict has 'id' or we use the key from template if stored.
-        # If we stored the template directly, it might not have the ID key if it was keyed in JSON.
-        # We should ensure we store the ID in the item data when equipping.
-        current_id = current_item.get("id") or current_item.get("name") # Fallback, ideally ID
-        # Wait, item_templates keys are IDs. The values don't have ID field usually.
-        # We should inject ID when equipping.
-        if current_id:
-             # Find the ID by name if needed, or better, store ID.
-             # Let's assume we store "item_id" in the object.
-             pass
-             # For now, let's just add 1 to inventory if we can identify it.
-             # If we can't identify it, we might lose it.
-             # Let's rely on 'item_id' field being added.
-             c_id = current_item.get("item_id")
-             if c_id:
-                 inventory[c_id] = inventory.get(c_id, 0) + 1
-
-    # Remove 1 of new item from inventory
-    if inventory[item_id] > 1:
-        inventory[item_id] -= 1
-    else:
+    # Decrement inventory and equip the new item
+    inventory[item_id] -= 1
+    if inventory[item_id] == 0:
         del inventory[item_id]
 
-    # Equip new item
-    # Inject item_id into data so we can retrieve it later
-    item_data_to_store = item_data.copy()
-    item_data_to_store["item_id"] = item_id
-    
-    if section == "equipped_gear":
+    item_data_to_store = item_template.model_dump()
+    item_data_to_store['id'] = item_id # Store the id for future reference
+
+    if slot_category == "equipped_gear":
         equipment["equipped_gear"] = item_data_to_store
     else:
-        equipment[section][slot] = item_data_to_store
+        equipment[slot_category][target_slot] = item_data_to_store
 
+    logger.info(f"Equipped '{item_id}' to '{target_slot}'.")
+
+    # Persist changes to the database
     character.inventory = inventory
     character.equipment = equipment
-
     try:
         db.commit()
         db.refresh(character)
-        logger.info(f"Equipped {item_id} to {slot} for {character_id}")
         return character
     except Exception as e:
         db.rollback()
-        logger.error(f"Failed to equip item: {e}")
+        logger.exception(f"Database error while equipping item: {e}")
         raise
+
+def get_passive_modifiers(character: models.Character) -> List[PassiveModifier]:
+    """
+    Aggregates all passive modifiers from a character's equipped items.
+    """
+    modifiers: List[PassiveModifier] = []
+    if not isinstance(character.equipment, dict):
+        return modifiers
+
+    equipment = character.equipment
+
+    # Iterate through combat and accessory slots
+    for category in ["combat", "accessories"]:
+        for slot_name, item in equipment.get(category, {}).items():
+            if not item:
+                continue
+
+            item_id = item.get("id", "unknown_item")
+
+            # Handle direct DR stat
+            if "dr" in item and isinstance(item["dr"], int):
+                modifiers.append(PassiveModifier(
+                    effect_type="DR_MODIFIER",
+                    target=slot_name,
+                    value=item["dr"],
+                    source_id=item_id
+                ))
+
+            # Handle effects list
+            for effect in item.get("effects", []):
+                if effect.get("type") == "buff" and "target_stat" in effect:
+                    modifiers.append(PassiveModifier(
+                        effect_type="STAT_MODIFIER",
+                        target=effect["target_stat"],
+                        value=effect.get("value", 0),
+                        source_id=item_id
+                    ))
+
+    return modifiers
 
 def award_xp(db: Session, character_id: str, amount: int) -> Optional[models.Character]:
     """Awards XP and handles leveling up."""
