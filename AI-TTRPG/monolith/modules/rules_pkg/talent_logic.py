@@ -2,6 +2,7 @@
 from typing import Dict, List, Any, Optional
 import logging
 from . import data_loader
+from .models_inventory import PassiveModifier
 
 logger = logging.getLogger("monolith.rules.talent_logic")
 
@@ -29,29 +30,29 @@ def calculate_talent_bonuses(
         "stat_check_bonus": 0,
         "initiative_bonus": 0
     }
-    
+
     tags = tags or []
     active_talents = character_context.get("talents", [])
-    
-    # If talents are just strings (names), we might need to look them up. 
-    # However, character_context['talents'] usually comes from find_eligible_talents 
+
+    # If talents are just strings (names), we might need to look them up.
+    # However, character_context['talents'] usually comes from find_eligible_talents
     # which returns TalentInfo objects (or dicts if serialized).
     # Let's assume for now we need to match names against the loaded data if the context only has names,
     # OR the context has the full talent data.
     # Given the current architecture, find_eligible_talents returns a list of objects/dicts with 'name', 'source', 'effect'.
     # It DOES NOT currently include the structured 'modifiers' because we haven't added them to the return yet.
-    
+
     # STRATEGY: We need access to the full talent data to check modifiers.
     # Since this function is in rules_pkg, we can't easily circular import data_loader.
-    # We will assume the caller passes the FULL talent data map or we rely on the character_context 
+    # We will assume the caller passes the FULL talent data map or we rely on the character_context
     # having enriched talent data.
-    
+
     # BETTER STRATEGY: The caller (combat_handler) has access to rules_api.
-    # But this logic belongs in rules. 
+    # But this logic belongs in rules.
     # We will rely on `rules_pkg.data_loader` being available or passed in.
-    # For simplicity, let's assume we can get the global data from data_loader if needed, 
+    # For simplicity, let's assume we can get the global data from data_loader if needed,
     # but ideally we want this pure.
-    
+
     all_talents_data = data_loader.TALENT_DATA
     if not all_talents_data:
         # Fallback if not loaded (e.g. in tests without full startup)
@@ -61,7 +62,7 @@ def calculate_talent_bonuses(
     # Helper to flatten the talent structure for lookup
     # This might be slow if done every time. Ideally this map is pre-calculated.
     # For now, we'll do a quick lookup.
-    
+
     # We need to find the 'modifiers' for each talent the character has.
     character_talent_names = set()
     for t in active_talents:
@@ -69,30 +70,32 @@ def calculate_talent_bonuses(
             character_talent_names.add(t.get("name"))
         elif isinstance(t, str):
             character_talent_names.add(t)
-            
+
     # Iterate through all defined talents to find matches (inefficient but robust for now)
     # TODO: Optimize this with a pre-built map in data_loader
-    
+
     found_modifiers = []
-    
+
+
     def check_talent_group(group):
         for t in group:
             if t.get("talent_name") in character_talent_names or t.get("name") in character_talent_names:
                 if "modifiers" in t:
                     found_modifiers.extend(t["modifiers"])
 
+
     # 1. Single Stat
     for t in all_talents_data.get("single_stat_mastery", []):
         if t.get("talent_name") in character_talent_names:
             if "modifiers" in t:
                 found_modifiers.extend(t["modifiers"])
-                
+
     # 2. Dual Stat
     for t in all_talents_data.get("dual_stat_focus", []):
         if t.get("talent_name") in character_talent_names:
             if "modifiers" in t:
                 found_modifiers.extend(t["modifiers"])
-                
+
     # 3. Skill Mastery
     for category in all_talents_data.get("single_skill_mastery", {}).values():
         for skill_group in category:
@@ -102,25 +105,25 @@ def calculate_talent_bonuses(
     for mod in found_modifiers:
         mod_type = mod.get("type")
         mod_bonus = mod.get("bonus", 0)
-        
+
         # Check conditions
         # 1. Action Type Match
         if mod_type != action_type and mod_type != "all":
-             # Allow specific mapping?
-             # e.g. 'skill_check' modifier applies if action is 'contested_check' AND involves that skill?
-             pass
+            # Allow specific mapping?
+            # e.g. 'skill_check' modifier applies if action is 'contested_check' AND involves that skill?
+            pass
 
         # 2. Tag Match (if modifier specifies required tags)
         required_tags = mod.get("required_tags", [])
         if required_tags:
             if not any(tag in tags for tag in required_tags):
                 continue
-                
+
         # 3. Specific Stat/Skill Match
         target_stat = mod.get("stat")
         if target_stat and target_stat not in tags:
             continue
-            
+
         target_skill = mod.get("skill")
         if target_skill and target_skill not in tags:
             continue
@@ -133,20 +136,121 @@ def calculate_talent_bonuses(
             # If it's a defense check, the caller should map 'attack_roll_bonus' to defense?
             # Or we add explicit keys.
             bonuses["defense_roll_bonus"] += mod_bonus
-            
+
         elif mod_type == "attack_roll":
             bonuses["attack_roll_bonus"] += mod_bonus
-            
+
         elif mod_type == "defense_roll":
             bonuses["defense_roll_bonus"] += mod_bonus
-            
+
         elif mod_type == "damage":
             bonuses["damage_bonus"] += mod_bonus
-            
+
         elif mod_type == "skill_check":
             bonuses["skill_check_bonus"] += mod_bonus
-            
+
         elif mod_type == "initiative":
             bonuses["initiative_bonus"] += mod_bonus
 
     return bonuses
+
+
+def find_eligible_talents(stats: Dict[str, int], skills: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Finds all talents a character is eligible for based on their stats and skills.
+    """
+    eligible_talents = []
+    all_talents_data = data_loader.TALENT_DATA
+    if not all_talents_data:
+        logger.warning("Talent data not loaded in talent_logic.")
+        return eligible_talents
+
+    # 1. Single Stat Mastery
+    for talent in all_talents_data.get("single_stat_mastery", []):
+        required_stat = talent.get("stat")
+        required_score = talent.get("score")
+        if required_stat and required_score and stats.get(required_stat, 0) >= required_score:
+            eligible_talents.append(talent)
+
+    # 2. Dual Stat Focus
+    for talent in all_talents_data.get("dual_stat_focus", []):
+        required_stats = talent.get("stats", [])
+        required_score = talent.get("score")
+        if len(required_stats) == 2 and required_score:
+            stat1_score = stats.get(required_stats[0], 0)
+            stat2_score = stats.get(required_stats[1], 0)
+            if stat1_score >= required_score and stat2_score >= required_score:
+                eligible_talents.append(talent)
+
+    # 3. Single Skill Mastery
+    for category_name, skill_groups in all_talents_data.get("single_skill_mastery", {}).items():
+        for skill_group in skill_groups:
+            skill_name = skill_group.get("skill")
+            if skill_name and skill_name in skills:
+                skill_rank = skills[skill_name].get("rank", 0)
+                for talent in skill_group.get("talents", []):
+                    tier = talent.get("tier", "")
+                    # Assuming MT3 requires rank 1, MT5 requires rank 2, MT7 requires rank 3
+                    required_rank = 0
+                    if tier == "MT3":
+                        required_rank = 1
+                    elif tier == "MT5":
+                        required_rank = 2
+                    elif tier == "MT7":
+                        required_rank = 3
+
+                    if skill_rank >= required_rank:
+                        eligible_talents.append(talent)
+
+    return eligible_talents
+
+
+def get_talent_modifiers(character_talents: List[str]) -> List[PassiveModifier]:
+    """
+    Aggregates all passive modifiers from a character's learned talents.
+    """
+    modifiers: List[PassiveModifier] = []
+    all_talents_data = data_loader.TALENT_DATA
+    if not all_talents_data:
+        logger.warning("Talent data not loaded in talent_logic.")
+        return modifiers
+
+    # Create a flat map of all talents for easier lookup
+    talent_map = {}
+    for talent in all_talents_data.get("single_stat_mastery", []):
+        talent_map[talent["talent_name"]] = talent
+    for talent in all_talents_data.get("dual_stat_focus", []):
+        talent_map[talent["talent_name"]] = talent
+    for category in all_talents_data.get("single_skill_mastery", {}).values():
+        for skill_group in category:
+            for talent in skill_group.get("talents", []):
+                talent_name = talent.get("talent_name") or talent.get("name")
+                if talent_name:
+                    talent_map[talent_name] = talent
+
+    for talent_name in character_talents:
+        talent_data = talent_map.get(talent_name)
+        if not talent_data:
+            logger.warning(f"Could not find data for talent: {talent_name}")
+            continue
+
+        for mod in talent_data.get("modifiers", []):
+            try:
+                # Basic validation
+                if "type" in mod and "bonus" in mod:
+                    effect_type = "UNKNOWN"
+                    if mod["type"] in ["contested_check", "skill_check", "stat_check"]:
+                        effect_type = "STAT_MODIFIER"
+                    else:
+                        effect_type = mod["type"].upper() + "_MODIFIER"
+
+                    modifiers.append(PassiveModifier(
+                        effect_type=effect_type,
+                        target=mod.get("stat") or mod.get("skill") or "general",
+                        value=mod["bonus"],
+                        source_id=talent_name
+                    ))
+            except Exception as e:
+                logger.error(f"Failed to parse modifier for talent {talent_name}: {mod}. Error: {e}")
+
+    return modifiers

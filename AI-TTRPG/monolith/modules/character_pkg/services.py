@@ -7,6 +7,8 @@ import logging
 from . import models, schemas
 from ..rules_pkg.data_loader import get_item_template
 from ..rules_pkg.models_inventory import PassiveModifier
+from ..rules_pkg.talent_logic import get_talent_modifiers
+from ..rules_pkg.inventory_logic import get_passive_modifiers
 from .. import rules as rules_api
 
 logger = logging.getLogger("monolith.character.services")
@@ -23,6 +25,32 @@ def get_characters(
     """Fetches a list of all characters."""
     return db.query(models.Character).offset(skip).limit(limit).all()
 
+def apply_passive_modifiers(character: models.Character) -> (Dict[str, Any], int):
+    """
+    Applies all passive modifiers from equipment and talents to a character's stats.
+    Returns a tuple containing the new, modified stats dictionary and the total DR.
+    """
+    base_stats = deepcopy(character.stats)
+    total_dr = 0
+
+    # Get modifiers from equipment
+    equipment_modifiers = get_passive_modifiers(character)
+
+    # Get modifiers from talents
+    talent_modifiers = get_talent_modifiers(character.talents or [])
+
+    all_modifiers = equipment_modifiers + talent_modifiers
+
+    for mod in all_modifiers:
+        if mod.effect_type == "STAT_MODIFIER" and mod.target in base_stats:
+            base_stats[mod.target] += mod.value
+            logger.info(f"Applied {mod.source_id}: {mod.target} +{mod.value}")
+        elif mod.effect_type == "DR_MODIFIER":
+            total_dr += mod.value
+            logger.info(f"Applied {mod.source_id}: DR +{mod.value}")
+
+    return base_stats, total_dr
+
 def get_character_context(
     db_character: models.Character,
 ) -> schemas.CharacterContextResponse:
@@ -33,7 +61,6 @@ def get_character_context(
     if not db_character:
         return None
 
-    def_stats = {}
     def_skills = {}
     def_pools = {}
     def_talents = []
@@ -43,8 +70,8 @@ def get_character_context(
     def_status = []
     def_injuries = []
 
-    raw_stats = db_character.stats if isinstance(db_character.stats, dict) else def_stats
-    final_stats = raw_stats.copy()
+    # Apply passive modifiers from talents and equipment
+    final_stats, total_dr = apply_passive_modifiers(db_character)
 
     # --- IMPLEMENT: DYNAMIC STAT OVERRIDE LOGIC ---
     current_statuses = db_character.status_effects or []
@@ -78,6 +105,7 @@ def get_character_context(
         temp_hp=getattr(db_character, "temp_hp", 0),
         xp=getattr(db_character, "xp", 0),
         is_dead=bool(getattr(db_character, "is_dead", 0)),
+        dr=total_dr,
         # --- END ADD ---
         max_composure=getattr(db_character, "max_composure", 10),
         current_composure=getattr(db_character, "current_composure", 10),

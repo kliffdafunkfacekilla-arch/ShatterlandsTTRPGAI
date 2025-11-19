@@ -134,6 +134,7 @@ class CharacterContextResponse(CharacterBase):
 
     # --- ADD THIS LINE ---
     current_location_id: int
+    dr: int = Field(default=0, description="Total Damage Reduction from all sources.")
     # --- END ADD ---
 
     position_x: int
