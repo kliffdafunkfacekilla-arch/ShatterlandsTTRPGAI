@@ -61,7 +61,7 @@ def test_eligibility():
     # Wait, let me check the signature of find_eligible_talents in core.py
     # It is: def find_eligible_talents(stats: Dict[str, int], skills: Dict[str, int], talent_data: Dict = None) -> List[TalentInfo]:
     
-    eligible = find_eligible_talents(stats, skills, talent_data=MOCK_TALENTS_DATA)
+    eligible = find_eligible_talents(stats, skills, MOCK_TALENTS_DATA, list(stats.keys()), {skill: {} for skill in skills.keys()})
     
     names = [t.name for t in eligible]
     print(f"Eligible Talents: {names}")
@@ -87,11 +87,11 @@ def test_modifier_application():
             source="talent",
             effect="test",
             modifiers=[
-                PassiveModifier(type="skill_check", skill="Intimidation", bonus=2),
+                PassiveModifier(type="skill_bonus", skill="Intimidation", bonus=2),
                 PassiveModifier(type="resource_max", resource="Presence", bonus=1),
                 PassiveModifier(type="immunity", tag="Poison"),
-                PassiveModifier(type="action_cost_reduction", action="draw_weapon", new_cost="free"),
-                PassiveModifier(type="reroll_on_failure", skill="Knowledge")
+                PassiveModifier(type="action_cost", action="draw_weapon", new_cost="free"),
+                PassiveModifier(type="reroll", skill="Knowledge")
             ]
         ),
         TalentInfo(
@@ -99,13 +99,13 @@ def test_modifier_application():
             source="talent",
             effect="test",
             modifiers=[
-                PassiveModifier(type="skill_check", skill="Intimidation", bonus=1),
+                PassiveModifier(type="skill_bonus", skill="Intimidation", bonus=1),
                 PassiveModifier(type="defense_bonus", tag="Melee", bonus=2)
             ]
         )
     ]
     
-    aggregated = apply_passive_modifiers(talents)
+    aggregated = apply_passive_modifiers({}, {}, talents)
     
     print("Aggregated Modifiers:", json.dumps(aggregated, indent=2, default=str))
     

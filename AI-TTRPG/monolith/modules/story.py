@@ -15,6 +15,11 @@ from ..event_bus import get_event_bus
 from .story_pkg import combat_handler as se_combat
 from .story_pkg import interaction_handler as se_interaction
 from .story_pkg import schemas as se_schemas
+from .story_pkg import dialogue_handler as se_dialogue
+from .story_pkg import shop_handler as se_shop
+from .rules_pkg import experience_handler as se_experience
+from .camp_pkg import services as camp_services
+from .camp_pkg import schemas as camp_schemas
 from .story_pkg import database as se_db
 from .story_pkg import crud as se_crud
 from .story_pkg import models as se_models
@@ -58,6 +63,80 @@ def start_combat(start_request: se_schemas.CombatStartRequest) -> Dict[str, Any]
         raise # Re-raise the exception so the client knows it failed
     finally:
         db.close()
+
+
+def add_experience(char_id: str, xp_amount: int) -> Dict[str, Any]:
+    """
+    Adds experience to a character and handles leveling up.
+    """
+    logger.info(f"[story.sync] add_experience command received: char={char_id}, xp={xp_amount}")
+    db = se_db.SessionLocal()
+    try:
+        updated_char = se_experience.add_experience(db, char_id, xp_amount)
+        # We need the full context, not just the character model
+        from .character_pkg import services as char_services
+        return char_services.get_character_context(db, updated_char).model_dump()
+    except Exception as e:
+        logger.exception(f"Failed to add experience: {e}")
+        raise
+    finally:
+        db.close()
+
+
+# --- SHOP API FUNCTIONS ---
+
+def get_shop_inventory(shop_id: str) -> Dict[str, Any]:
+    """
+    Retrieves the inventory for a specific shop.
+    """
+    logger.info(f"[story.sync] get_shop_inventory command received: shop_id={shop_id}")
+    try:
+        return se_shop.get_shop_inventory(shop_id)
+    except Exception as e:
+        logger.exception(f"Failed to get shop inventory: {e}")
+        raise
+
+def buy_item(char_id: str, shop_id: str, item_id: str, quantity: int) -> Dict[str, Any]:
+    """
+    Handles a character buying an item from a shop.
+    """
+    logger.info(f"[story.sync] buy_item command received: char={char_id}, shop={shop_id}, item={item_id}, qty={quantity}")
+    db = se_db.SessionLocal()
+    try:
+        updated_context = se_shop.buy_item(db, char_id, shop_id, item_id, quantity)
+        return updated_context.model_dump()
+    except Exception as e:
+        logger.exception(f"Failed to buy item: {e}")
+        raise
+    finally:
+        db.close()
+
+def sell_item(char_id: str, shop_id: str, item_id: str, quantity: int) -> Dict[str, Any]:
+    """
+    Handles a character selling an item to a shop.
+    """
+    logger.info(f"[story.sync] sell_item command received: char={char_id}, shop={shop_id}, item={item_id}, qty={quantity}")
+    db = se_db.SessionLocal()
+    try:
+        updated_context = se_shop.sell_item(db, char_id, shop_id, item_id, quantity)
+        return updated_context.model_dump()
+    except Exception as e:
+        logger.exception(f"Failed to sell item: {e}")
+        raise
+    finally:
+        db.close()
+
+
+def get_dialogue_node(dialogue_id: str, node_id: str) -> Dict[str, Any]:
+    """
+    Retrieves a specific node from a dialogue tree.
+    """
+    logger.info(f"[story.sync] get_dialogue_node command received: dialogue={dialogue_id}, node={node_id}")
+    try:
+        return se_dialogue.get_dialogue_node(dialogue_id, node_id)
+    except Exception as e:
+        logger.exception(f"Failed to get dialogue node: {e}")
+        raise
 
 def handle_player_action(combat_id: int, actor_id: str, action: se_schemas.PlayerActionRequest) -> Dict[str, Any]:
     """
@@ -154,6 +233,22 @@ def get_all_quests(campaign_id: int) -> List[Dict[str, Any]]:
     try:
         db_quests = se_crud.get_all_quests(db, campaign_id)
         return [se_schemas.ActiveQuest.from_orm(q).model_dump() for q in db_quests]
+    finally:
+        db.close()
+
+
+def rest_at_camp(rest_request: camp_schemas.CampRestRequest) -> Dict[str, Any]:
+    """
+    Synchronous API for the client to rest at a camp.
+    """
+    logger.info(f"[story.sync] rest_at_camp command received: {rest_request.model_dump_json(indent=2)}")
+    db = se_db.SessionLocal()
+    try:
+        updated_character_context = camp_services.rest_at_camp(db, rest_request)
+        return updated_character_context.model_dump()
+    except Exception as e:
+        logger.exception(f"Failed to rest at camp: {e}")
+        raise # Re-raise the exception so the client knows it failed
     finally:
         db.close()
 

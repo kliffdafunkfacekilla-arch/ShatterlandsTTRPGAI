@@ -72,3 +72,15 @@ class Inventory(BaseModel):
 class EquipmentSlot(BaseModel):
     name: str
     accepted_item_types: List[str]
+
+class PassiveModifier(BaseModel):
+    """
+    A standardized representation of a passive effect from an item or talent.
+    This is used to aggregate all passive effects for character stat calculation.
+    """
+    effect_type: str = Field(..., description="The type of modification (e.g., 'STAT_MOD', 'DR_MOD', 'SKILL_MOD').")
+    target: str = Field(..., description="The specific stat, skill, or area affected (e.g., 'Might', 'chest', 'Athletics').")
+    value: Union[int, float] = Field(..., description="The numeric value of the modification.")
+    source_id: Optional[str] = Field(None, description="The ID of the item or talent providing the effect.")
+
+    model_config = {"from_attributes": True}
