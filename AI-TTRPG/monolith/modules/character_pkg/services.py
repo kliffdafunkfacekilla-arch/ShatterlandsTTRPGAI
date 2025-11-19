@@ -683,6 +683,45 @@ def equip_item(db: Session, character_id: str, item_id: str, target_slot: str) -
         logger.exception(f"Database error while equipping item: {e}")
         raise
 
+def get_passive_modifiers(character: models.Character) -> List[PassiveModifier]:
+    """
+    Aggregates all passive modifiers from a character's equipped items.
+    """
+    modifiers: List[PassiveModifier] = []
+    if not isinstance(character.equipment, dict):
+        return modifiers
+
+    equipment = character.equipment
+
+    # Iterate through combat and accessory slots
+    for category in ["combat", "accessories"]:
+        for slot_name, item in equipment.get(category, {}).items():
+            if not item:
+                continue
+
+            item_id = item.get("id", "unknown_item")
+
+            # Handle direct DR stat
+            if "dr" in item and isinstance(item["dr"], int):
+                modifiers.append(PassiveModifier(
+                    effect_type="DR_MODIFIER",
+                    target=slot_name,
+                    value=item["dr"],
+                    source_id=item_id
+                ))
+
+            # Handle effects list
+            for effect in item.get("effects", []):
+                if effect.get("type") == "buff" and "target_stat" in effect:
+                    modifiers.append(PassiveModifier(
+                        effect_type="STAT_MODIFIER",
+                        target=effect["target_stat"],
+                        value=effect.get("value", 0),
+                        source_id=item_id
+                    ))
+
+    return modifiers
+
 def award_xp(db: Session, character_id: str, amount: int) -> Optional[models.Character]:
     """Awards XP and handles leveling up."""
     character = get_character(db, character_id)
