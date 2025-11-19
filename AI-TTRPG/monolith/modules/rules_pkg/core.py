@@ -505,6 +505,7 @@ def find_eligible_talents(
                     name=talent_group.get("talent_name", "Unknown Talent"),
                     source=f"Stat: {stat_name} {required_score}",
                     effect=talent_group.get("effect", ""),
+                    modifiers=[models.PassiveModifier(**m) for m in talent_group.get("modifiers", [])]
                 )
             )
 
@@ -525,6 +526,7 @@ def find_eligible_talents(
                         ),  # Check 'talent_name' field
                         source=f"Dual Stat: {stat1} & {stat2} {req_score}",
                         effect=talent.get("effect", ""),
+                        modifiers=[models.PassiveModifier(**m) for m in talent.get("modifiers", [])]
                     )
                 )
 
@@ -557,6 +559,7 @@ def find_eligible_talents(
                                     ),  # Check 'talent_name' field
                                     source=f"Skill: {skill_name} ({tier_name})",
                                     effect=talent.get("effect", ""),
+                                    modifiers=[models.PassiveModifier(**m) for m in talent.get("modifiers", [])]
                                 )
                             )
                 elif skill_name:
@@ -565,6 +568,50 @@ def find_eligible_talents(
                     )
 
     return unlocked_talents
+
+
+def apply_passive_modifiers(
+    stats: Dict[str, int],
+    skills: Dict[str, int],
+    talents: List[TalentInfo],
+    context: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Aggregates modifiers from talents and applies them to stats/skills/rolls.
+    Returns a dictionary of aggregated bonuses.
+    """
+    aggregated = {
+        "stat_bonuses": {},
+        "skill_bonuses": {},
+        "roll_bonuses": {}, # e.g. "contested_check:Might", "save_roll:Poison"
+        "action_cost_reductions": {},
+        "rerolls": [],
+        "resource_restores": [],
+        "damage_bonuses": 0,
+        "dr_bonuses": 0
+    }
+    
+    for talent in talents:
+        for mod in talent.modifiers:
+            # TODO: Check conditions here if context is provided
+            
+            if mod.type == "stat_bonus" and mod.stat:
+                aggregated["stat_bonuses"][mod.stat] = aggregated["stat_bonuses"].get(mod.stat, 0) + mod.bonus
+            elif mod.type == "skill_bonus" and mod.skill:
+                aggregated["skill_bonuses"][mod.skill] = aggregated["skill_bonuses"].get(mod.skill, 0) + mod.bonus
+            elif mod.type == "contested_check" and mod.stat:
+                key = f"contested_check:{mod.stat}"
+                aggregated["roll_bonuses"][key] = aggregated["roll_bonuses"].get(key, 0) + mod.bonus
+            elif mod.type == "save_roll" and mod.tag:
+                key = f"save_roll:{mod.tag}"
+                aggregated["roll_bonuses"][key] = aggregated["roll_bonuses"].get(key, 0) + mod.bonus
+            elif mod.type == "damage_bonus":
+                aggregated["damage_bonuses"] += mod.bonus
+            elif mod.type == "dr_bonus":
+                aggregated["dr_bonuses"] += mod.bonus
+            # Add other types as needed
+            
+    return aggregated
 
 
 def calculate_base_vitals(stats: Dict[str, int]) -> models.BaseVitalsResponse:

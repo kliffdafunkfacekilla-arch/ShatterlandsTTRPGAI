@@ -4,6 +4,35 @@ from typing import List, Dict, Any, Optional
 
 
 # --- NEW SCHEMAS ---
+class CombatSlots(BaseModel):
+    head: Optional[Dict[str, Any]] = None
+    chest: Optional[Dict[str, Any]] = None
+    legs: Optional[Dict[str, Any]] = None
+    shoulders: Optional[Dict[str, Any]] = None
+    boots: Optional[Dict[str, Any]] = None
+    hands: Optional[Dict[str, Any]] = None
+    main_hand: Optional[Dict[str, Any]] = None
+    off_hand: Optional[Dict[str, Any]] = None
+
+class AccessorySlots(BaseModel):
+    ring_1: Optional[Dict[str, Any]] = None
+    ring_2: Optional[Dict[str, Any]] = None
+    wrist_1: Optional[Dict[str, Any]] = None
+    wrist_2: Optional[Dict[str, Any]] = None
+    ear_1: Optional[Dict[str, Any]] = None
+    ear_2: Optional[Dict[str, Any]] = None
+    neck: Optional[Dict[str, Any]] = None
+    circlet: Optional[Dict[str, Any]] = None
+    face: Optional[Dict[str, Any]] = None
+    belt: Optional[Dict[str, Any]] = None
+    outfit: Optional[Dict[str, Any]] = None
+    brooch: Optional[Dict[str, Any]] = None
+
+class EquipmentSlots(BaseModel):
+    combat: CombatSlots = Field(default_factory=CombatSlots)
+    accessories: AccessorySlots = Field(default_factory=AccessorySlots)
+    equipped_gear: Optional[Dict[str, Any]] = None
+
 class FeatureChoice(BaseModel):
     """Represents a single feature choice made by the user."""
 
@@ -75,7 +104,7 @@ class CharacterContextResponse(CharacterBase):
     talents: List[str]
     abilities: List[str]
     inventory: Dict[str, Any]
-    equipment: Dict[str, Any]
+    equipment: EquipmentSlots
     status_effects: List[str]
     injuries: List[Dict[str, Any]]
 

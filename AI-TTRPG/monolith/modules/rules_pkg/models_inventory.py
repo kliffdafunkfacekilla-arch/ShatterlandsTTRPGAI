@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union, Any
 
 class ItemEffect(BaseModel):
     type: str = Field(..., description="Type of effect: 'heal', 'buff', 'utility', 'damage'")
@@ -31,19 +31,17 @@ class Item(BaseModel):
 
 class Inventory(BaseModel):
     items: List[Item] = Field(default_factory=list)
-    equipped_slots: Dict[str, Optional[Item]] = Field(default_factory=lambda: {
-        "Head": None,
-        "Chest": None,
-        "Shoulders": None,
-        "Arms": None,
-        "Legs": None,
-        "Boots": None,
-        "Tail": None,
-        "Hands": None,
-        "Main Hand": None,
-        "Off Hand": None,
-        "Accessory 1": None,
-        "Accessory 2": None
+    equipped_slots: Dict[str, Any] = Field(default_factory=lambda: {
+        "combat": {
+            "head": None, "chest": None, "legs": None, "shoulders": None, 
+            "boots": None, "hands": None, "main_hand": None, "off_hand": None
+        },
+        "accessories": {
+            "ring_1": None, "ring_2": None, "wrist_1": None, "wrist_2": None,
+            "ear_1": None, "ear_2": None, "neck": None, "circlet": None,
+            "face": None, "belt": None, "outfit": None, "brooch": None
+        },
+        "equipped_gear": None
     })
     currency: int = Field(default=0, description="Coins")
     

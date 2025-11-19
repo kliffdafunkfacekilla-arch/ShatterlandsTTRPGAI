@@ -5,8 +5,8 @@
         "category": "Double/dual wield",
         "weight": 3.0,
         "slots": [
-            "Main Hand",
-            "Off Hand"
+            "main_hand",
+            "off_hand"
         ],
         "damage_dice": "1d8"
     },
@@ -16,7 +16,7 @@
         "category": "Great Weapons",
         "weight": 6.0,
         "slots": [
-            "Main Hand"
+            "main_hand"
         ],
         "damage_dice": "1d12"
     },
@@ -26,8 +26,8 @@
         "category": "Bows and Firearms",
         "weight": 2.0,
         "slots": [
-            "Main Hand",
-            "Off Hand"
+            "main_hand",
+            "off_hand"
         ],
         "damage_dice": "1d6",
         "range_type": "ranged"
@@ -38,7 +38,7 @@
         "category": "Leather/Hides",
         "weight": 5.0,
         "slots": [
-            "Chest"
+            "chest"
         ],
         "dr": 1
     },
@@ -48,7 +48,7 @@
         "category": "Plate Armor",
         "weight": 25.0,
         "slots": [
-            "Chest"
+            "chest"
         ],
         "dr": 3
     },
@@ -58,7 +58,7 @@
         "category": "Unarmed/Fist Weapons",
         "weight": 1.0,
         "slots": [
-            "Hands"
+            "hands"
         ],
         "damage_dice": "1d4"
     },
@@ -74,10 +74,7 @@
         "type": "consumable",
         "category": "potion",
         "weight": 0.5,
-        "slots": [
-            "Quick Slot 1",
-            "Quick Slot 2"
-        ],
+        "slots": [],
         "effects": [
             {
                 "type": "heal",
@@ -117,13 +114,80 @@
         "category": "utility",
         "weight": 1.0,
         "slots": [
-            "Off Hand"
+            "off_hand",
+            "equipped_gear"
         ],
         "effects": [
             {
                 "type": "utility",
                 "value": 0,
                 "description": "Provides light."
+            }
+        ]
+    },
+    "item_gold_ring": {
+        "name": "Gold Ring",
+        "type": "accessory",
+        "category": "jewelry",
+        "weight": 0.1,
+        "slots": [
+            "ring_1",
+            "ring_2"
+        ],
+        "value": 50
+    },
+    "item_silver_necklace": {
+        "name": "Silver Necklace",
+        "type": "accessory",
+        "category": "jewelry",
+        "weight": 0.2,
+        "slots": [
+            "neck"
+        ],
+        "value": 30
+    },
+    "item_leather_belt": {
+        "name": "Leather Belt",
+        "type": "accessory",
+        "category": "clothing",
+        "weight": 0.5,
+        "slots": [
+            "belt"
+        ],
+        "value": 5
+    },
+    "item_ancient_tome": {
+        "name": "Ancient Tome",
+        "type": "book",
+        "category": "lore",
+        "weight": 2.0,
+        "slots": [],
+        "value": 100
+    },
+    "item_ruby_gem": {
+        "name": "Ruby Gem",
+        "type": "treasure",
+        "category": "gem",
+        "weight": 0.1,
+        "slots": [],
+        "value": 200
+    },
+    "item_lucky_charm": {
+        "name": "Lucky Charm",
+        "type": "charm",
+        "category": "charm",
+        "weight": 0.1,
+        "slots": [
+            "neck",
+            "wrist_1",
+            "wrist_2"
+        ],
+        "effects": [
+            {
+                "type": "buff",
+                "target_stat": "Luck",
+                "value": 1,
+                "description": "+1 Luck"
             }
         ]
     }

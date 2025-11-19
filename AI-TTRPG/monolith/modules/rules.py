@@ -241,8 +241,85 @@ def calculate_base_vitals_api(payload: Dict) -> Dict:
     return result.model_dump()
 
 def calculate_talent_bonuses(character_context: Dict, action_type: str, tags: List[str] = None) -> Dict[str, int]:
-    """Calculates bonuses from talents."""
-    return talent_logic.calculate_talent_bonuses(character_context, action_type, tags)
+    """Calculates bonuses from talents using the new PassiveModifier system."""
+    tags = tags or []
+    active_talents_names = character_context.get("talents", [])
+    
+    # Hydrate TalentInfo objects
+    hydrated_talents = []
+    for t_name in active_talents_names:
+        if isinstance(t_name, str):
+            t_data = get_talent_details(t_name)
+            if t_data:
+                # Convert to TalentInfo
+                hydrated_talents.append(
+                    rules_models.TalentInfo(
+                        name=t_data.get("talent_name", t_name),
+                        source="Hydrated",
+                        effect=t_data.get("effect", ""),
+                        modifiers=[rules_models.PassiveModifier(**m) for m in t_data.get("modifiers", [])]
+                    )
+                )
+        elif isinstance(t_name, dict):
+             # Already a dict (maybe from find_eligible_talents_api?)
+             # If it has modifiers, use them.
+             hydrated_talents.append(
+                rules_models.TalentInfo(
+                    name=t_name.get("name", "Unknown"),
+                    source=t_name.get("source", ""),
+                    effect=t_name.get("effect", ""),
+                    modifiers=[rules_models.PassiveModifier(**m) for m in t_name.get("modifiers", [])]
+                )
+             )
+
+    # Apply Modifiers
+    # We pass empty stats/skills because we are just aggregating bonuses here, 
+    # not checking prerequisites (which are assumed met if talent is active).
+    # However, some conditional modifiers might need stats/skills. 
+    # For now, we assume static bonuses.
+    aggregated = rules_core.apply_passive_modifiers({}, {}, hydrated_talents)
+    
+    bonuses = {
+        "attack_roll_bonus": 0,
+        "defense_roll_bonus": 0,
+        "damage_bonus": 0,
+        "skill_check_bonus": 0,
+        "stat_check_bonus": 0,
+        "initiative_bonus": 0
+    }
+
+    # Map aggregated results to requested action
+    if action_type == "attack_roll":
+        # Check for generic attack bonuses (if any)
+        # Check for Contested Check bonuses matching the stat
+        for tag in tags:
+            key = f"contested_check:{tag}"
+            if key in aggregated["roll_bonuses"]:
+                bonuses["attack_roll_bonus"] += aggregated["roll_bonuses"][key]
+        
+        # Check for Skill bonuses
+        # We need to know which skill is being used. It's not explicitly passed as "skill:Name" in tags usually.
+        # But tags might contain the skill name if it's a weapon category?
+        # Actually, weapon categories ARE skills (e.g. "Swords", "Bows").
+        for tag in tags:
+            if tag in aggregated["skill_bonuses"]:
+                bonuses["attack_roll_bonus"] += aggregated["skill_bonuses"][tag]
+
+    elif action_type == "defense_roll":
+        for tag in tags:
+            key = f"contested_check:{tag}" # e.g. contested_check:Reflexes
+            if key in aggregated["roll_bonuses"]:
+                bonuses["defense_roll_bonus"] += aggregated["roll_bonuses"][key]
+        
+        # Defense skills (e.g. Light Armor, Heavy Armor)
+        for tag in tags:
+            if tag in aggregated["skill_bonuses"]:
+                bonuses["defense_roll_bonus"] += aggregated["skill_bonuses"][tag]
+
+    elif action_type == "damage_roll":
+        bonuses["damage_bonus"] += aggregated["damage_bonuses"]
+    
+    return bonuses
 
 def register(orchestrator) -> None:
     logger.info("[rules] module registered (self-contained logic)")

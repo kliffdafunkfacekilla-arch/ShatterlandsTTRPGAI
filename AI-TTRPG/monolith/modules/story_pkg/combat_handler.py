@@ -1338,12 +1338,12 @@ def _handle_basic_attack(
     attacker_talent_bonuses = services.rules_api.calculate_talent_bonuses(
         attacker_context,
         "attack_roll",
-        tags=[weapon_category, weapon_type, "Melee" if weapon_type == "melee" else "Ranged"]
+        tags=[weapon_category, weapon_type, "Melee" if weapon_type == "melee" else "Ranged", weapon_data["skill_stat"]]
     )
     defender_talent_bonuses = services.rules_api.calculate_talent_bonuses(
         defender_context,
         "defense_roll",
-        tags=[armor_category]
+        tags=[armor_category, armor_data["skill_stat"]]
     )
 
     # Add talent bonuses to the base modifiers

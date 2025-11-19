@@ -162,10 +162,46 @@ class RollResult(BaseModel):
     sre_triggered: bool = False
 
 
+class PassiveModifier(BaseModel):
+    """
+    Represents a single mechanical effect from a talent or ability.
+    """
+    type: str = Field(..., description="Type of modifier: 'stat_bonus', 'skill_bonus', 'contested_check', 'save_roll', 'action_cost', 'reroll', 'resource_restore', 'damage_bonus', 'dr_bonus'")
+    
+    # Target identifiers
+    stat: Optional[str] = None
+    skill: Optional[str] = None
+    tag: Optional[str] = None # e.g., "Mind Control", "Poison"
+    action: Optional[str] = None # e.g., "draw_weapon"
+    
+    # Values
+    bonus: int = 0
+    value: int = 0 # Alternative to bonus
+    new_cost: Optional[str] = None # e.g., "free", "minor"
+    
+    # Conditions
+    condition: Optional[str] = None # e.g., "while_flanked", "first_round"
+    frequency: Optional[str] = None # e.g., "once_per_scene"
+    cost_resource: Optional[str] = None # e.g., "Guile"
+    
+    # Specifics
+    weapon_size: Optional[str] = None
+    trigger: Optional[str] = None
+
+class ModifierSource(BaseModel):
+    """
+    Represents the source of a modifier (e.g., a Talent).
+    """
+    name: str
+    source_type: str # Literal["talent", "ability", "item"]
+    modifiers: List[PassiveModifier]
+
+
 class TalentInfo(BaseModel):
     name: str
     source: str
     effect: str
+    modifiers: List[PassiveModifier] = []
 
 
 class FeatureStatsResponse(BaseModel):

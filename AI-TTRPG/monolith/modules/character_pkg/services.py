@@ -1,6 +1,7 @@
 # app/services.py
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
+from copy import deepcopy
 import uuid
 import logging
 from . import models, schemas
@@ -141,6 +142,7 @@ def _get_rules_engine_data() -> Dict[str, Any]:
             "training_choices": rules_api.get_training_choices(),
             "devotion_choices": rules_api.get_devotion_choices(),
             "all_talents_structured": rules_api.get_all_talents_data(),
+            "item_templates": rules_api._get_data("item_templates"),
         }
 
         all_talents_map = {}
@@ -477,7 +479,15 @@ def create_character(
         talents=[character.ability_talent],
         abilities=base_abilities,
         inventory={"item_iron_sword": 1, "item_leather_jerkin": 1},
-        equipment={"weapon": "item_iron_sword", "armor": "item_leather_jerkin"},
+
+        equipment={
+            "combat": {
+                "main_hand": rules.get("item_templates", {}).get("item_iron_sword"),
+                "chest": rules.get("item_templates", {}).get("item_leather_jerkin"),
+            },
+            "accessories": {},
+            "equipped_gear": None
+        },
         status_effects=[],
         injuries=[],
         current_location_id=1,
@@ -557,18 +567,92 @@ def remove_item_from_character(db: Session, character_id: str, item_id: str, qua
         raise
 
 def equip_item(db: Session, character_id: str, slot: str, item_id: str) -> Optional[models.Character]:
-    """Equips an item to a specific slot."""
+    """Equips an item to a specific slot, handling swapping and validation."""
     character = get_character(db, character_id)
     if not character:
         return None
 
-    inventory = character.inventory or {}
+    # Fetch item template to check valid slots
+    # Note: In a real app, we might want to cache this or pass it in.
+    # For now, we fetch it from rules_api each time or assume we can get it.
+    try:
+        item_templates = rules_api._get_data("item_templates")
+        item_data = item_templates.get(item_id)
+    except Exception as e:
+        logger.error(f"Failed to fetch item data for {item_id}: {e}")
+        return None
+
+    if not item_data:
+        logger.warning(f"Item {item_id} not found in templates.")
+        return None
+
+    # Validate slot
+    valid_slots = item_data.get("slots", [])
+    if slot not in valid_slots:
+        logger.warning(f"Slot {slot} is not valid for item {item_id}. Valid: {valid_slots}")
+        return None
+
+    inventory = dict(character.inventory) if character.inventory else {}
     if item_id not in inventory:
         logger.warning(f"Cannot equip {item_id}, not in inventory.")
         return None
 
-    equipment = dict(character.equipment) if character.equipment else {}
-    equipment[slot] = item_id
+    # Initialize equipment structure if needed
+    equipment = deepcopy(dict(character.equipment)) if character.equipment else {}
+    if "combat" not in equipment: equipment["combat"] = {}
+    if "accessories" not in equipment: equipment["accessories"] = {}
+
+    # Determine section
+    section = "combat"
+    if slot in ["ring_1", "ring_2", "wrist_1", "wrist_2", "ear_1", "ear_2", "neck", "circlet", "face", "belt", "outfit", "brooch"]:
+        section = "accessories"
+    elif slot == "equipped_gear":
+        section = "equipped_gear"
+
+    # Check if slot is occupied
+    current_item = None
+    if section == "equipped_gear":
+        current_item = equipment.get("equipped_gear")
+    else:
+        current_item = equipment.get(section, {}).get(slot)
+
+    # If occupied, unequip current item (add to inventory)
+    if current_item:
+        # current_item is the full item dict. We need its ID.
+        # Assuming item dict has 'id' or we use the key from template if stored.
+        # If we stored the template directly, it might not have the ID key if it was keyed in JSON.
+        # We should ensure we store the ID in the item data when equipping.
+        current_id = current_item.get("id") or current_item.get("name") # Fallback, ideally ID
+        # Wait, item_templates keys are IDs. The values don't have ID field usually.
+        # We should inject ID when equipping.
+        if current_id:
+             # Find the ID by name if needed, or better, store ID.
+             # Let's assume we store "item_id" in the object.
+             pass
+             # For now, let's just add 1 to inventory if we can identify it.
+             # If we can't identify it, we might lose it.
+             # Let's rely on 'item_id' field being added.
+             c_id = current_item.get("item_id")
+             if c_id:
+                 inventory[c_id] = inventory.get(c_id, 0) + 1
+
+    # Remove 1 of new item from inventory
+    if inventory[item_id] > 1:
+        inventory[item_id] -= 1
+    else:
+        del inventory[item_id]
+
+    # Equip new item
+    # Inject item_id into data so we can retrieve it later
+    item_data_to_store = item_data.copy()
+    item_data_to_store["item_id"] = item_id
+    
+    if section == "equipped_gear":
+        equipment["equipped_gear"] = item_data_to_store
+    else:
+        equipment[section][slot] = item_data_to_store
+
+    character.inventory = inventory
     character.equipment = equipment
 
     try:

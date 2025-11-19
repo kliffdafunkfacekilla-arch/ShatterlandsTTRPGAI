@@ -117,7 +117,14 @@
             "stat": "Awareness",
             "talent_name": "Sense Vulnerability",
             "effect": "Spend Tactics to discover the lowest Defense Stat of a target within line of sight.",
-            "score": 14
+            "score": 14,
+            "modifiers": [
+                {
+                    "type": "unlock_action",
+                    "action": "sense_vulnerability",
+                    "cost_resource": "Tactics"
+                }
+            ]
         },
         {
             "stat": "Intuition",
@@ -254,13 +261,27 @@
             "stat": "Knowledge",
             "talent_name": "Technological Savvy",
             "effect": "Spend Guile to treat any piece of Aether-Tech as functioning perfectly for 1 round.",
-            "score": 16
+            "score": 16,
+            "modifiers": [
+                {
+                    "type": "unlock_action",
+                    "action": "technological_savvy",
+                    "cost_resource": "Guile"
+                }
+            ]
         },
         {
             "stat": "Logic",
             "talent_name": "Strategic Reposition",
             "effect": "Spend Tactics to immediately switch places with an adjacent ally as a Minor Action.",
-            "score": 16
+            "score": 16,
+            "modifiers": [
+                {
+                    "type": "unlock_action",
+                    "action": "strategic_reposition",
+                    "cost_resource": "Tactics"
+                }
+            ]
         },
         {
             "stat": "Awareness",
@@ -292,13 +313,36 @@
             "stat": "Charm",
             "talent_name": "Mass Appeal",
             "effect": "Charm and Negotiation checks may target up to 3 individuals simultaneously (at increased resource cost).",
-            "score": 16
+            "score": 16,
+            "modifiers": [
+                {
+                    "type": "rule_override",
+                    "rule": "social_targeting",
+                    "value": 3
+                }
+            ]
         },
         {
             "stat": "Willpower",
             "talent_name": "Unbroken Command",
             "effect": "Willpower and Negotiation checks are immune to penalties caused by Shaken or Stunned.",
-            "score": 16
+            "score": 16,
+            "modifiers": [
+                {
+                    "type": "immunity",
+                    "effect": "penalty",
+                    "source": [
+                        "Shaken",
+                        "Stunned"
+                    ],
+                    "skills": [
+                        "Negotiation"
+                    ],
+                    "stats": [
+                        "Willpower"
+                    ]
+                }
+            ]
         },
         {
             "stat": "Might",
@@ -580,17 +624,40 @@
                     {
                         "tier": "MT3",
                         "talent_name": "Kinetic Dampening",
-                        "effect": "Gain Advantage on checks to resist Stagger effects caused by physical impact."
+                        "effect": "Gain Advantage on checks to resist Stagger effects caused by physical impact.",
+                        "modifiers": [
+                            {
+                                "type": "advantage",
+                                "roll_type": "save",
+                                "tag": "Stagger",
+                                "condition": "physical_impact"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT5",
                         "talent_name": "Spiked Retaliation",
-                        "effect": "Successful Melee attack against you causes 1 passive damage to the enemy."
+                        "effect": "Successful Melee attack against you causes 1 passive damage to the enemy.",
+                        "modifiers": [
+                            {
+                                "type": "reaction_damage",
+                                "trigger": "hit_by_melee",
+                                "amount": 1
+                            }
+                        ]
                     },
                     {
                         "tier": "MT7",
                         "talent_name": "Unstable Anchor",
-                        "effect": "Permanently reduce the negative effect of the Minor Injury status on your limbs by half."
+                        "effect": "Permanently reduce the negative effect of the Minor Injury status on your limbs by half.",
+                        "modifiers": [
+                            {
+                                "type": "effect_reduction",
+                                "source": "Minor Injury",
+                                "location": "limbs",
+                                "multiplier": 0.5
+                            }
+                        ]
                     }
                 ]
             },
@@ -601,17 +668,39 @@
                     {
                         "tier": "MT3",
                         "talent_name": "Iron Wall Stance",
-                        "effect": "Spend Stamina to ignore the Speed penalty of Plate Armor for one round."
+                        "effect": "Spend Stamina to ignore the Speed penalty of Plate Armor for one round.",
+                        "modifiers": [
+                            {
+                                "type": "ignore_armor_penalty",
+                                "penalty_type": "speed",
+                                "cost_resource": "Stamina",
+                                "duration": "1_round"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT5",
                         "talent_name": "Impact Nullification",
-                        "effect": "Spend Stamina to gain +5 to the damage roll of the next single physical attack."
+                        "effect": "Spend Stamina to gain +5 to the damage roll of the next single physical attack.",
+                        "modifiers": [
+                            {
+                                "type": "damage_bonus_active",
+                                "cost_resource": "Stamina",
+                                "bonus": 5,
+                                "trigger": "next_physical_attack"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT7",
                         "talent_name": "Pushback Wall",
-                        "effect": "You automatically succeed on all checks to resist being forcibly moved."
+                        "effect": "You automatically succeed on all checks to resist being forcibly moved.",
+                        "modifiers": [
+                            {
+                                "type": "immunity",
+                                "effect": "forced_movement"
+                            }
+                        ]
                     }
                 ]
             },
@@ -622,17 +711,43 @@
                     {
                         "tier": "MT3",
                         "name": "Silent Runner",
-                        "effect": "Ignore all penalties to Stealth or Evasion checks caused by complex camouflage patterns."
+                        "effect": "Ignore all penalties to Stealth or Evasion checks caused by complex camouflage patterns.",
+                        "modifiers": [
+                            {
+                                "type": "ignore_penalty",
+                                "skills": [
+                                    "Stealth",
+                                    "Evasion"
+                                ],
+                                "source": "camouflage_patterns"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT5",
                         "name": "Pattern Breach",
-                        "effect": "Minor Action, force one enemy to attack a random target on their next turn (Willpower save to resist)."
+                        "effect": "Minor Action, force one enemy to attack a random target on their next turn (Willpower save to resist).",
+                        "modifiers": [
+                            {
+                                "type": "unlock_action",
+                                "action": "pattern_breach",
+                                "cost_action": "minor"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT7",
                         "name": "True Invisibility",
-                        "effect": "Spend Guile to gain Advantage on all Stealth checks against Perception for 3 rounds."
+                        "effect": "Spend Guile to gain Advantage on all Stealth checks against Perception for 3 rounds.",
+                        "modifiers": [
+                            {
+                                "type": "advantage_active",
+                                "skill": "Stealth",
+                                "target_skill": "Perception",
+                                "cost_resource": "Guile",
+                                "duration": "3_rounds"
+                            }
+                        ]
                     }
                 ]
             },
@@ -643,17 +758,38 @@
                     {
                         "tier": "MT3",
                         "name": "Fluid Movement",
-                        "effect": "Permanently reduce the cost of performing Acrobatics maneuvers by 1 AP."
+                        "effect": "Permanently reduce the cost of performing Acrobatics maneuvers by 1 AP.",
+                        "modifiers": [
+                            {
+                                "type": "action_cost_reduction",
+                                "skill": "Acrobatics",
+                                "amount": 1
+                            }
+                        ]
                     },
                     {
                         "tier": "MT5",
                         "name": "Acrobatic Defense",
-                        "effect": "Spend Chi to immediately re-roll a failed Defense check caused by an area-of-effect ability."
+                        "effect": "Spend Chi to immediately re-roll a failed Defense check caused by an area-of-effect ability.",
+                        "modifiers": [
+                            {
+                                "type": "reroll_reactive",
+                                "trigger": "failed_defense_aoe",
+                                "cost_resource": "Chi"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT7",
                         "name": "Ghostly Dodge",
-                        "effect": "Once per round, when taking a full Dodge action, move 5m without provoking attacks of opportunity."
+                        "effect": "Once per round, when taking a full Dodge action, move 5m without provoking attacks of opportunity.",
+                        "modifiers": [
+                            {
+                                "type": "action_enhancement",
+                                "action": "Dodge",
+                                "effect": "move_5m_no_aao"
+                            }
+                        ]
                     }
                 ]
             },
@@ -664,17 +800,40 @@
                     {
                         "tier": "MT3",
                         "name": "Natural Buffer",
-                        "effect": "Gain Advantage on checks to resist the Hinder status."
+                        "effect": "Gain Advantage on checks to resist the Hinder status.",
+                        "modifiers": [
+                            {
+                                "type": "advantage",
+                                "roll_type": "save",
+                                "tag": "Hinder"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT5",
                         "name": "Toxic Barrier",
-                        "effect": "Gain Advantage on checks to resist Poison effects when exposed via physical contact."
+                        "effect": "Gain Advantage on checks to resist Poison effects when exposed via physical contact.",
+                        "modifiers": [
+                            {
+                                "type": "advantage",
+                                "roll_type": "save",
+                                "tag": "Poison",
+                                "condition": "physical_contact"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT7",
                         "name": "Fortified Stance",
-                        "effect": "Spend Vitality to ignore all T2 environmental penalties (e.g., extreme heat) for 3 rounds."
+                        "effect": "Spend Vitality to ignore all T2 environmental penalties (e.g., extreme heat) for 3 rounds.",
+                        "modifiers": [
+                            {
+                                "type": "ignore_penalty_active",
+                                "source": "environment_t2",
+                                "cost_resource": "Vitality",
+                                "duration": "3_rounds"
+                            }
+                        ]
                     }
                 ]
             },
@@ -685,17 +844,40 @@
                     {
                         "tier": "MT3",
                         "name": "Deflect Blow",
-                        "effect": "Spend Chi to impose a -2 penalty on the next Melee attack."
+                        "effect": "Spend Chi to impose a -2 penalty on the next Melee attack.",
+                        "modifiers": [
+                            {
+                                "type": "attack_penalty_reactive",
+                                "trigger": "next_melee_attack",
+                                "cost_resource": "Chi",
+                                "penalty": -2
+                            }
+                        ]
                     },
                     {
                         "tier": "MT5",
                         "name": "Adrenaline Surge",
-                        "effect": "When your HP drops below 50%, you automatically restore 1 Chi."
+                        "effect": "When your HP drops below 50%, you automatically restore 1 Chi.",
+                        "modifiers": [
+                            {
+                                "type": "resource_restore_on_trigger",
+                                "trigger": "hp_below_50_percent",
+                                "resource": "Chi",
+                                "amount": 1
+                            }
+                        ]
                     },
                     {
                         "tier": "MT7",
                         "name": "Inner Resilience",
-                        "effect": "Gain a permanent +1 bonus to all Composure checks."
+                        "effect": "Gain a permanent +1 bonus to all Composure checks.",
+                        "modifiers": [
+                            {
+                                "type": "save_roll",
+                                "tag": "Composure",
+                                "bonus": 1
+                            }
+                        ]
                     }
                 ]
             },
@@ -706,17 +888,44 @@
                     {
                         "tier": "MT3",
                         "name": "Arcane Dissipation",
-                        "effect": "Gain Advantage on checks to resist T1 Aether or Elemental damage."
+                        "effect": "Gain Advantage on checks to resist T1 Aether or Elemental damage.",
+                        "modifiers": [
+                            {
+                                "type": "advantage",
+                                "roll_type": "save",
+                                "damage_type": [
+                                    "Aether",
+                                    "Elemental"
+                                ],
+                                "tier": "T1"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT5",
                         "name": "Mage\u2019s Reposition",
-                        "effect": "Minor Action, sacrifice cloak piece to impose a -5 penalty on a Ranged Attack."
+                        "effect": "Minor Action, sacrifice cloak piece to impose a -5 penalty on a Ranged Attack.",
+                        "modifiers": [
+                            {
+                                "type": "attack_penalty_active",
+                                "trigger": "ranged_attack",
+                                "cost_item": "cloak_piece",
+                                "penalty": -5
+                            }
+                        ]
                     },
                     {
                         "tier": "MT7",
                         "name": "Runic Barrier",
-                        "effect": "Spend Guile to gain +5 to the next single instance of Magical Defense."
+                        "effect": "Spend Guile to gain +5 to the next single instance of Magical Defense.",
+                        "modifiers": [
+                            {
+                                "type": "defense_bonus_active",
+                                "defense_type": "Magical",
+                                "cost_resource": "Guile",
+                                "bonus": 5
+                            }
+                        ]
                     }
                 ]
             },
@@ -727,17 +936,38 @@
                     {
                         "tier": "MT3",
                         "name": "Balanced Defense",
-                        "effect": "Gain Advantage on all defense rolls against Melee attacks."
+                        "effect": "Gain Advantage on all defense rolls against Melee attacks.",
+                        "modifiers": [
+                            {
+                                "type": "advantage",
+                                "roll_type": "defense",
+                                "attack_type": "Melee"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT5",
                         "name": "Tactical Shift",
-                        "effect": "Minor Action, force 1 enemy to make a Willpower save or suffer T1 Composure Damage due to predictable tactics."
+                        "effect": "Minor Action, force 1 enemy to make a Willpower save or suffer T1 Composure Damage due to predictable tactics.",
+                        "modifiers": [
+                            {
+                                "type": "unlock_action",
+                                "action": "tactical_shift",
+                                "cost_action": "minor"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT7",
                         "name": "Adaptive Plating",
-                        "effect": "Defense Rating is permanently increased against the last damage type taken for the remainder of the encounter."
+                        "effect": "Defense Rating is permanently increased against the last damage type taken for the remainder of the encounter.",
+                        "modifiers": [
+                            {
+                                "type": "defense_bonus_reactive",
+                                "trigger": "damage_taken",
+                                "effect": "increase_defense_vs_type"
+                            }
+                        ]
                     }
                 ]
             },
@@ -748,17 +978,39 @@
                     {
                         "tier": "MT3",
                         "name": "Silent Advance",
-                        "effect": "You ignore the Stealth penalty of Leather/Hides on Stealth checks."
+                        "effect": "You ignore the Stealth penalty of Leather/Hides on Stealth checks.",
+                        "modifiers": [
+                            {
+                                "type": "ignore_armor_penalty",
+                                "skill": "Stealth",
+                                "armor_type": "Leather/Hides"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT5",
                         "name": "Tracker's Vigilance",
-                        "effect": "Gain Advantage on defense rolls against Ranged attacks made by hidden or concealed opponents."
+                        "effect": "Gain Advantage on defense rolls against Ranged attacks made by hidden or concealed opponents.",
+                        "modifiers": [
+                            {
+                                "type": "advantage",
+                                "roll_type": "defense",
+                                "attack_type": "Ranged",
+                                "condition": "hidden_opponent"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT7",
                         "name": "Instant Concealment",
-                        "effect": "Successfully using Evasion against a Ranged Attack allows you to immediately become Concealed (if cover is available)."
+                        "effect": "Successfully using Evasion against a Ranged Attack allows you to immediately become Concealed (if cover is available).",
+                        "modifiers": [
+                            {
+                                "type": "status_effect_reactive",
+                                "trigger": "evasion_success_ranged",
+                                "status": "Concealed"
+                            }
+                        ]
                     }
                 ]
             },
@@ -769,17 +1021,39 @@
                     {
                         "tier": "MT3",
                         "name": "Primal Ward",
-                        "effect": "Gain Advantage on Defense checks caused by Spirit abilities."
+                        "effect": "Gain Advantage on Defense checks caused by Spirit abilities.",
+                        "modifiers": [
+                            {
+                                "type": "advantage",
+                                "roll_type": "defense",
+                                "source": "Spirit"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT5",
                         "name": "Totemic Retribution",
-                        "effect": "When an enemy deals Physical damage to you, they suffer 1 psychic damage."
+                        "effect": "When an enemy deals Physical damage to you, they suffer 1 psychic damage.",
+                        "modifiers": [
+                            {
+                                "type": "reaction_damage",
+                                "trigger": "damage_taken_physical",
+                                "damage_type": "psychic",
+                                "amount": 1
+                            }
+                        ]
                     },
                     {
                         "tier": "MT7",
                         "name": "Instinctive Barrier",
-                        "effect": "You permanently reduce all Composure Damage you take by 1."
+                        "effect": "You permanently reduce all Composure Damage you take by 1.",
+                        "modifiers": [
+                            {
+                                "type": "damage_reduction",
+                                "damage_type": "Composure",
+                                "amount": 1
+                            }
+                        ]
                     }
                 ]
             },
@@ -790,17 +1064,40 @@
                     {
                         "tier": "MT3",
                         "name": "Distracting Flair",
-                        "effect": "Minor Action, force 1 enemy to suffer a -2 penalty to its next Melee attack roll."
+                        "effect": "Minor Action, force 1 enemy to suffer a -2 penalty to its next Melee attack roll.",
+                        "modifiers": [
+                            {
+                                "type": "attack_penalty_active",
+                                "cost_action": "minor",
+                                "penalty": -2,
+                                "target_attack_type": "Melee"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT5",
                         "name": "Commanding Presence",
-                        "effect": "You gain Advantage on all Intimidation checks."
+                        "effect": "You gain Advantage on all Intimidation checks.",
+                        "modifiers": [
+                            {
+                                "type": "advantage",
+                                "roll_type": "skill",
+                                "skill": "Intimidation"
+                            }
+                        ]
                     },
                     {
                         "tier": "MT7",
                         "name": "Gilded Defence",
-                        "effect": "Spend Presence to impose a -5 penalty on any Persuasion check aimed at you."
+                        "effect": "Spend Presence to impose a -5 penalty on any Persuasion check aimed at you.",
+                        "modifiers": [
+                            {
+                                "type": "skill_penalty_reactive",
+                                "trigger": "persuasion_check_against_you",
+                                "cost_resource": "Presence",
+                                "penalty": -5
+                            }
+                        ]
                     }
                 ]
             },
