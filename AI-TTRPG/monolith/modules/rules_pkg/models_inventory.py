@@ -10,7 +10,7 @@ class ItemEffect(BaseModel):
 
 class Item(BaseModel):
     name: str
-    item_type: str = Field(..., description="weapon, armor, consumable, tool, quest, material")
+    item_type: str = Field(..., description="weapon, armor, consumable, tool, quest, material, charm, book, treasure")
     category: str = Field(..., description="Sub-category matching JSON data keys")
     weight: float = Field(default=0.0, description="Weight in arbitrary units")
     slots: List[str] = Field(default_factory=list, description="Body slots this item occupies")
@@ -19,6 +19,10 @@ class Item(BaseModel):
     max_stack: int = Field(default=1, description="Max stack size")
     value: int = Field(default=0, description="Monetary value in coins")
     
+    # Graphics
+    icon: Optional[str] = Field(None, description="Icon resource ID")
+    sprite_ref: Optional[str] = Field(None, description="Sprite resource ID")
+
     # Weapon specific
     damage_dice: Optional[str] = None
     range_type: Optional[str] = None # 'melee', 'ranged'
@@ -34,14 +38,19 @@ class Inventory(BaseModel):
     equipped_slots: Dict[str, Any] = Field(default_factory=lambda: {
         "combat": {
             "head": None, "chest": None, "legs": None, "shoulders": None, 
-            "boots": None, "hands": None, "main_hand": None, "off_hand": None
+            "boots": None, "hands": None, "tail": None, "main_hand": None, "off_hand": None
         },
         "accessories": {
-            "ring_1": None, "ring_2": None, "wrist_1": None, "wrist_2": None,
-            "ear_1": None, "ear_2": None, "neck": None, "circlet": None,
-            "face": None, "belt": None, "outfit": None, "brooch": None
+            "glasses": None, "neck": None,
+            "ear_l1": None, "ear_l2": None, "ear_r1": None, "ear_r2": None,
+            "lip_1": None, "lip_2": None,
+            "wrist_l1": None, "wrist_l2": None, "wrist_r1": None, "wrist_r2": None,
+            "ring_l1": None, "ring_l2": None, "ring_l3": None, "ring_l4": None,
+            "ring_r1": None, "ring_r2": None, "ring_r3": None, "ring_r4": None,
+            "brooch": None, "circlet": None, "belt": None
         },
-        "equipped_gear": None
+        "equipped_gear": None,
+        "carried_gear": []
     })
     currency: int = Field(default=0, description="Coins")
     

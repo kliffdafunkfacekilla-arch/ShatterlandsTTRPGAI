@@ -182,7 +182,8 @@ class PassiveModifier(BaseModel):
     # Conditions
     condition: Optional[str] = None # e.g., "while_flanked", "first_round"
     frequency: Optional[str] = None # e.g., "once_per_scene"
-    cost_resource: Optional[str] = None # e.g., "Guile"
+    cost_resource: Optional[str] = None # e.g., "Guile" (for costs)
+    resource: Optional[str] = None # e.g., "Presence" (for bonuses/max increases)
     
     # Specifics
     weapon_size: Optional[str] = None

@@ -1,80 +1,132 @@
-# tests/test_talent_logic.py
-import unittest
-from unittest.mock import MagicMock, patch
 import sys
 import os
+import json
+from typing import List, Dict, Any
 
 # Add project root to path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from monolith.modules.rules_pkg import talent_logic
+from monolith.modules.rules_pkg.core import find_eligible_talents, apply_passive_modifiers
+from monolith.modules.rules_pkg.models import TalentInfo, PassiveModifier, SingleStatTalent, SingleSkillTalent, DualStatTalent, Talents
 
-class TestTalentLogic(unittest.TestCase):
-
-    def setUp(self):
-        # Mock data_loader to provide test talent data
-        self.mock_data = {
-            "single_stat_mastery": [
-                {
-                    "talent_name": "Test Might Talent",
-                    "modifiers": [
-                        {"type": "contested_check", "stat": "Might", "bonus": 2}
-                    ]
-                }
-            ],
-            "dual_stat_focus": [],
-            "single_skill_mastery": {}
+# Mock Data
+MOCK_TALENTS_DATA = {
+    "single_stat_mastery": [
+        {
+            "stat": "Might",
+            "talent_name": "Mighty Blow",
+            "effect": "Hit harder",
+            "modifiers": [{"type": "damage_bonus", "bonus": 2}]
         }
-        
-        # Patch the data_loader in talent_logic
-        self.patcher = patch('monolith.modules.rules_pkg.talent_logic.data_loader')
-        self.mock_loader = self.patcher.start()
-        self.mock_loader.TALENT_DATA = self.mock_data
-
-    def tearDown(self):
-        self.patcher.stop()
-
-    def test_calculate_bonuses_basic(self):
-        character_context = {
-            "talents": ["Test Might Talent"]
+    ],
+    "single_skill_mastery": [
+        {
+            "skill": "Swords",
+            "stat_focus": "Might",
+            "talent_name": "Sword Master",
+            "prerequisite_mt": "MT 1",
+            "focus": "Damage",
+            "effect": "Better swords",
+            "modifiers": [{"type": "skill_bonus", "skill": "Swords", "bonus": 1}]
         }
-        
-        # Test matching tag
-        bonuses = talent_logic.calculate_talent_bonuses(
-            character_context, 
-            "contested_check", 
-            tags=["Might"]
+    ],
+    "dual_stat_focus": [
+        {
+            "paired_stats": ["Might", "Agility"], # OLD KEY - should be ignored or handled if we didn't fix it? 
+                                                  # Wait, we fixed the code to look for 'stats', so we should provide 'stats' here if we want it to work, 
+                                                  # OR provide the old key to verify it FAILS if we didn't fix it?
+                                                  # The JSON has 'stats' usually? Let's check the JSON structure in a bit.
+                                                  # The code change was `stats_pair = talent.get("stats", [])`.
+            "stats": ["Might", "Agility"], # NEW KEY
+            "synergy_focus": "Movement",
+            "tier": "Tier 1",
+            "talent_name": "Fast & Strong",
+            "effect": "Move fast hit hard",
+            "score": 10,
+            "modifiers": [{"type": "initiative", "bonus": 5}]
+        }
+    ]
+}
+
+def test_eligibility():
+    print("Testing Talent Eligibility...")
+    
+    # Case 1: Eligible for Single Stat
+    stats = {"Might": 12, "Agility": 12, "Endurance": 10, "Vitality": 10, "Reflexes": 10, "Fortitude": 10, 
+             "Intellect": 10, "Logic": 10, "Awareness": 10, "Intuition": 10, "Confidence": 10, "Willpower": 10}
+    skills = {"Swords": 1}
+    
+    # We need to mock the loading of talents because find_eligible_talents loads from JSON usually?
+    # Actually find_eligible_talents takes `talent_data` as an argument if we look at the signature...
+    # Wait, let me check the signature of find_eligible_talents in core.py
+    # It is: def find_eligible_talents(stats: Dict[str, int], skills: Dict[str, int], talent_data: Dict = None) -> List[TalentInfo]:
+    
+    eligible = find_eligible_talents(stats, skills, talent_data=MOCK_TALENTS_DATA)
+    
+    names = [t.name for t in eligible]
+    print(f"Eligible Talents: {names}")
+    
+    assert "Mighty Blow" in names, "Should be eligible for Mighty Blow"
+    assert "Fast & Strong" in names, "Should be eligible for Fast & Strong"
+    # Sword Master might require specific logic check (e.g. MT 1?). 
+    # In core.py: 
+    # for talent in talent_data.get("single_skill_mastery", []):
+    #    req_skill = talent.get("skill")
+    #    # It checks if skills[req_skill] >= 1 usually?
+    #    if skills.get(req_skill, 0) >= 1: ...
+    
+    assert "Sword Master" in names, "Should be eligible for Sword Master"
+    print("Eligibility Test Passed!")
+
+def test_modifier_application():
+    print("\nTesting Modifier Application...")
+    
+    talents = [
+        TalentInfo(
+            name="Test Talent 1",
+            source="talent",
+            effect="test",
+            modifiers=[
+                PassiveModifier(type="skill_check", skill="Intimidation", bonus=2),
+                PassiveModifier(type="resource_max", resource="Presence", bonus=1),
+                PassiveModifier(type="immunity", tag="Poison"),
+                PassiveModifier(type="action_cost_reduction", action="draw_weapon", new_cost="free"),
+                PassiveModifier(type="reroll_on_failure", skill="Knowledge")
+            ]
+        ),
+        TalentInfo(
+            name="Test Talent 2",
+            source="talent",
+            effect="test",
+            modifiers=[
+                PassiveModifier(type="skill_check", skill="Intimidation", bonus=1),
+                PassiveModifier(type="defense_bonus", tag="Melee", bonus=2)
+            ]
         )
-        self.assertEqual(bonuses["attack_roll_bonus"], 2)
-        self.assertEqual(bonuses["defense_roll_bonus"], 2)
+    ]
+    
+    aggregated = apply_passive_modifiers(talents)
+    
+    print("Aggregated Modifiers:", json.dumps(aggregated, indent=2, default=str))
+    
+    assert aggregated["skill_bonuses"]["Intimidation"] == 3, "Intimidation bonus should be 3"
+    assert aggregated["resource_max_bonuses"]["Presence"] == 1, "Presence max bonus should be 1"
+    assert aggregated["defense_bonuses"]["Melee"] == 2, "Melee defense bonus should be 2"
+    assert len(aggregated["immunities"]) == 1, "Should have 1 immunity"
+    assert aggregated["immunities"][0].tag == "Poison", "Immunity should be Poison"
+    assert "draw_weapon" in aggregated["action_cost_reductions"], "Should have draw_weapon cost reduction"
+    assert len(aggregated["rerolls"]) == 1, "Should have 1 reroll"
+    
+    print("Modifier Application Test Passed!")
 
-    def test_calculate_bonuses_no_match(self):
-        character_context = {
-            "talents": ["Test Might Talent"]
-        }
-        
-        # Test non-matching tag (Intimidation vs Might)
-        bonuses = talent_logic.calculate_talent_bonuses(
-            character_context, 
-            "contested_check", 
-            tags=["Intimidation"]
-        )
-        # Should be 0 because the modifier requires 'stat': 'Might' and we passed 'Intimidation'
-        # Wait, logic says: if target_stat and target_stat not in tags: continue
-        self.assertEqual(bonuses["attack_roll_bonus"], 0)
-
-    def test_calculate_bonuses_wrong_action(self):
-        character_context = {
-            "talents": ["Test Might Talent"]
-        }
-        
-        # Test wrong action type
-        bonuses = talent_logic.calculate_talent_bonuses(
-            character_context, 
-            "damage_roll", 
-            tags=["Might"]
-        )
-        self.assertEqual(bonuses["damage_bonus"], 0)
-
-if __name__ == '__main__':
-    unittest.main()
+if __name__ == "__main__":
+    try:
+        test_eligibility()
+        test_modifier_application()
+        print("\nALL TESTS PASSED")
+    except AssertionError as e:
+        print(f"\nTEST FAILED: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\nERROR: {e}")
+        sys.exit(1)

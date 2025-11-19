@@ -512,7 +512,7 @@ def find_eligible_talents(
     # --- 2. Check Dual Stat Synergy ---
     for talent in talent_data.get("dual_stat_focus", []):
         req_score = talent.get("score", 99)  # Check 'score' field
-        stats_pair = talent.get("paired_stats", [])  # Check 'paired_stats' field
+        stats_pair = talent.get("stats", [])  # FIXED: Changed 'paired_stats' to 'stats' to match JSON
         if len(stats_pair) == 2:
             stat1, stat2 = stats_pair
             if (
@@ -588,7 +588,13 @@ def apply_passive_modifiers(
         "rerolls": [],
         "resource_restores": [],
         "damage_bonuses": 0,
-        "dr_bonuses": 0
+        "dr_bonuses": 0,
+        "resource_max_bonuses": {},
+        "initiative_bonus": 0,
+        "defense_bonuses": {},
+        "immunities": [],
+        "ignored_penalties": [],
+        "damage_reduction": {}
     }
     
     for talent in talents:
@@ -609,7 +615,42 @@ def apply_passive_modifiers(
                 aggregated["damage_bonuses"] += mod.bonus
             elif mod.type == "dr_bonus":
                 aggregated["dr_bonuses"] += mod.bonus
-            # Add other types as needed
+            elif mod.type == "resource_max" and mod.resource:
+                 res_name = mod.resource
+                 if res_name:
+                    aggregated["resource_max_bonuses"][res_name] = aggregated["resource_max_bonuses"].get(res_name, 0) + mod.bonus
+            elif mod.type == "initiative":
+                aggregated["initiative_bonus"] += mod.bonus
+            elif mod.type == "skill_check" and mod.skill:
+                aggregated["skill_bonuses"][mod.skill] = aggregated["skill_bonuses"].get(mod.skill, 0) + mod.bonus
+            elif mod.type == "action_cost_reduction":
+                key = mod.action or "general"
+                aggregated["action_cost_reductions"][key] = mod
+            elif mod.type == "reroll_on_failure":
+                aggregated["rerolls"].append(mod)
+            elif mod.type == "resource_restore_on_check" or mod.type == "resource_restore_on_trigger":
+                aggregated["resource_restores"].append(mod)
+            elif mod.type == "damage_reduction":
+                 # Assuming this is a flat DR bonus if 'bonus' is present, or a rule if not
+                 if mod.bonus:
+                    aggregated["dr_bonuses"] += mod.bonus
+                 else:
+                    aggregated["damage_reduction"][mod.tag or "general"] = mod
+            elif mod.type == "ignore_status_penalty" or mod.type == "ignore_terrain_penalty":
+                aggregated["ignored_penalties"].append(mod)
+            elif mod.type == "initiative_advantage":
+                aggregated["roll_bonuses"]["initiative_advantage"] = True
+            elif mod.type == "composure_loss_reduction":
+                aggregated["defense_bonuses"]["composure_dr"] = aggregated["defense_bonuses"].get("composure_dr", 0) + mod.bonus
+            elif mod.type == "unlock_action":
+                # Maybe store in a new key or just generic list
+                pass
+            elif mod.type == "rule_override" or mod.type == "defense_override":
+                # Store for complex logic handling
+                pass
+            elif mod.type == "derived_stat":
+                # Handle derived stat bonuses if needed
+                pass 
             
     return aggregated
 

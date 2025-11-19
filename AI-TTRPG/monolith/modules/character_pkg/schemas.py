@@ -11,27 +11,51 @@ class CombatSlots(BaseModel):
     shoulders: Optional[Dict[str, Any]] = None
     boots: Optional[Dict[str, Any]] = None
     hands: Optional[Dict[str, Any]] = None
+    tail: Optional[Dict[str, Any]] = None  # Added Tail slot
     main_hand: Optional[Dict[str, Any]] = None
     off_hand: Optional[Dict[str, Any]] = None
 
 class AccessorySlots(BaseModel):
-    ring_1: Optional[Dict[str, Any]] = None
-    ring_2: Optional[Dict[str, Any]] = None
-    wrist_1: Optional[Dict[str, Any]] = None
-    wrist_2: Optional[Dict[str, Any]] = None
-    ear_1: Optional[Dict[str, Any]] = None
-    ear_2: Optional[Dict[str, Any]] = None
+    # Glasses (1)
+    glasses: Optional[Dict[str, Any]] = None
+    # Necklaces (1)
     neck: Optional[Dict[str, Any]] = None
-    circlet: Optional[Dict[str, Any]] = None
-    face: Optional[Dict[str, Any]] = None
-    belt: Optional[Dict[str, Any]] = None
-    outfit: Optional[Dict[str, Any]] = None
+    # Earrings (Left: 2, Right: 2)
+    ear_l1: Optional[Dict[str, Any]] = None
+    ear_l2: Optional[Dict[str, Any]] = None
+    ear_r1: Optional[Dict[str, Any]] = None
+    ear_r2: Optional[Dict[str, Any]] = None
+    # Lip Rings (2)
+    lip_1: Optional[Dict[str, Any]] = None
+    lip_2: Optional[Dict[str, Any]] = None
+    # Bracelets (Left: 2, Right: 2)
+    wrist_l1: Optional[Dict[str, Any]] = None
+    wrist_l2: Optional[Dict[str, Any]] = None
+    wrist_r1: Optional[Dict[str, Any]] = None
+    wrist_r2: Optional[Dict[str, Any]] = None
+    # Rings (8 total - 4 per hand)
+    ring_l1: Optional[Dict[str, Any]] = None
+    ring_l2: Optional[Dict[str, Any]] = None
+    ring_l3: Optional[Dict[str, Any]] = None
+    ring_l4: Optional[Dict[str, Any]] = None
+    ring_r1: Optional[Dict[str, Any]] = None
+    ring_r2: Optional[Dict[str, Any]] = None
+    ring_r3: Optional[Dict[str, Any]] = None
+    ring_r4: Optional[Dict[str, Any]] = None
+    # Other
     brooch: Optional[Dict[str, Any]] = None
+    circlet: Optional[Dict[str, Any]] = None
+    belt: Optional[Dict[str, Any]] = None # Kept belt as it was in original, though not explicitly in new list, it's usually standard.
+    # Removed 'face', 'outfit' as they seem redundant or replaced by specific slots, 
+    # but keeping 'belt' as it is often a distinct slot. 
+    # If 'outfit' was cosmetic, it might be covered by 'shoulders/cloak' or just base gear.
+    # If 'face' was for masks/glasses, 'glasses' covers it.
 
 class EquipmentSlots(BaseModel):
     combat: CombatSlots = Field(default_factory=CombatSlots)
     accessories: AccessorySlots = Field(default_factory=AccessorySlots)
     equipped_gear: Optional[Dict[str, Any]] = None
+    carried_gear: List[Dict[str, Any]] = Field(default_factory=list) # New Carried Gear slot (List of items)
 
 class FeatureChoice(BaseModel):
     """Represents a single feature choice made by the user."""
