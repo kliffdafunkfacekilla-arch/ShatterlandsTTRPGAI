@@ -1,7 +1,9 @@
 # AI-TTRPG/monolith/modules/rules_pkg/data_loader.py
 import json
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import os
+from .models_inventory import Item
+from pydantic import ValidationError
 
 # --- File Path Setup ---
 # This is the corrected path.
@@ -287,3 +289,21 @@ def load_data() -> Dict[str, Any]:
     except Exception as e:
         print(f"FATAL ERROR during load_data execution: {e}")
         raise
+
+def get_item_template(item_id: str) -> Optional[Item]:
+    """
+    Retrieves and validates a single item template from the loaded data.
+    """
+    if not ITEM_TEMPLATES:
+        load_data()
+
+    item_data = ITEM_TEMPLATES.get(item_id)
+    if not item_data:
+        print(f"ERROR: Item template not found for ID: {item_id}")
+        return None
+
+    try:
+        return Item.model_validate(item_data)
+    except ValidationError as e:
+        print(f"ERROR: Pydantic validation failed for item '{item_id}': {e}")
+        return None
