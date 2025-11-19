@@ -412,6 +412,43 @@ def _handle_effect_move_self(
         log.append(f"Failed to move self: {e}")
         return False
 
+def _handle_effect_create_area(target_id: str, log: List[str], effect: Dict) -> bool:
+    """
+    Handles creating a persistent area effect (e.g., Wall of Stalwartness).
+    For now, this is a placeholder that logs the creation.
+    """
+    area_id = effect.get("effect_id", "Unknown Area")
+    shape = effect.get("shape", "radius")
+    range_val = effect.get("range", 0)
+    duration = effect.get("duration", 1)
+    
+    log.append(f"{target_id} creates a {shape} area '{area_id}' (Range: {range_val}m) for {duration} rounds.")
+    # TODO: Implement actual area persistence in World Engine or Combat State
+    return True
+
+def _handle_effect_reaction_contest(target_id: str, log: List[str], effect: Dict) -> bool:
+    """
+    Handles a reaction that triggers a contested roll (e.g., Counterspell-like effects).
+    """
+    contest_stat = effect.get("contest_stat", "Willpower")
+    dc = effect.get("dc", 15)
+    
+    log.append(f"{target_id} triggers a reaction contest using {contest_stat} vs DC {dc}!")
+    
+    _, target_context = get_actor_context(target_id)
+    stat_score = get_stat_score(target_context, contest_stat)
+    stat_mod = rules_core.calculate_modifier(stat_score)
+    
+    roll = random.randint(1, 20)
+    total = roll + stat_mod
+    
+    if total >= dc:
+        log.append(f"Success! ({total} vs {dc})")
+        return True
+    else:
+        log.append(f"Failure! ({total} vs {dc})")
+        return False
+
 # --- AoE Handlers ---
 
 def _get_targets_in_aoe(
@@ -714,6 +751,73 @@ def _handle_effect_aoe_damage(
                     services.apply_damage_to_npc(npc_instance_id, new_hp)
                 except Exception as e:
                     log.append(f"Failed to apply AoE damage to {target_hit_id}: {e}")
+
+    if targets_hit == 0:
+        log.append("...but nothing was in range!")
+
+    return True
+
+def _handle_effect_aoe_status_roll(
+    db: Session,
+    combat: models.CombatEncounter,
+    actor_id: str,
+    target_id: str,
+    attacker_context: Dict,
+    defender_context: Dict,
+    log: List[str],
+    effect: Dict
+) -> bool:
+    """
+    Handles AoE status application with a save (e.g., Flashbang).
+    """
+    status_id = effect.get("status_id")
+    shape = effect.get("shape", "radius")
+    aoe_range = effect.get("range", 2)
+    save_stat = effect.get("save_stat")
+    dc = effect.get("dc", 12)
+
+    if not status_id or not save_stat:
+        return False
+
+    log.append(f"{actor_id} unleashes an AoE {shape} to apply {status_id} around {target_id}!")
+
+    # 1. Get epicenter coordinates
+    epicenter_coords = _get_actor_coords(defender_context)
+    if not epicenter_coords:
+        return False
+
+    # 2. Find targets
+    all_targets = []
+    # Default to hitting everyone (or filter by faction if needed)
+    for p in combat.participants:
+         try:
+            _, p_context = get_actor_context(p.actor_id)
+            if p_context.get("current_hp", 0) > 0:
+                all_targets.append(p_context)
+         except:
+            continue
+
+    # 3. Apply to targets in range
+    targets_hit = 0
+    for target_ctx in all_targets:
+        target_coords = _get_actor_coords(target_ctx)
+        distance = _calculate_distance(epicenter_coords, target_coords)
+
+        if distance <= aoe_range:
+            targets_hit += 1
+            target_hit_id = target_ctx.get("id")
+            
+            # Roll Save
+            stat_score = get_stat_score(target_ctx, save_stat)
+            stat_mod = rules_core.calculate_modifier(stat_score)
+            roll = random.randint(1, 20)
+            total = roll + stat_mod
+
+            if total >= dc:
+                log.append(f"{target_hit_id} SAVED ({total} vs DC {dc}) against {status_id}.")
+            else:
+                log.append(f"{target_hit_id} FAILED to save ({total}) and is {status_id}!")
+                services.apply_status_to_target(target_hit_id, status_id)
 
     if targets_hit == 0:
         log.append("...but nothing was in range!")
@@ -1085,6 +1189,8 @@ ABILITY_EFFECT_HANDLERS: Dict[str, Callable] = {
 
     # Utility / Special
     "create_trap": _handle_effect_create_trap,
+    "create_area": _handle_effect_create_area, # Added
+    "reaction_contest": _handle_effect_reaction_contest, # Added
     "temp_hp": _handle_effect_temp_hp,
     # "random_status": _handle_effect_random_status,
     "random_stat_debuff": _handle_effect_random_stat_debuff,
@@ -1227,17 +1333,45 @@ def _handle_basic_attack(
 
     weapon_data = services.get_weapon_data(weapon_category, weapon_type)
     armor_data = services.get_armor_data(armor_category) if armor_category else {"dr": 0, "skill_stat": "Reflexes", "skill": "Natural/Unarmored"}
+    # --- TALENT BONUSES ---
+    # Calculate bonuses from talents for both attacker and defender
+    attacker_talent_bonuses = services.rules_api.calculate_talent_bonuses(
+        attacker_context,
+        "attack_roll",
+        tags=[weapon_category, weapon_type, "Melee" if weapon_type == "melee" else "Ranged"]
+    )
+    defender_talent_bonuses = services.rules_api.calculate_talent_bonuses(
+        defender_context,
+        "defense_roll",
+        tags=[armor_category]
+    )
 
+    # Add talent bonuses to the base modifiers
+    # Note: We are adding to the 'misc' bonus fields in the request
+    # Attacker
+    attack_bonus_val = attacker_talent_bonuses.get("attack_roll_bonus", 0)
+
+    # Defender
+    defense_bonus_val = defender_talent_bonuses.get("defense_roll_bonus", 0)
+
+    # Pre-calculate scores for clarity and reuse
+    attacker_stat_score = get_stat_score(attacker_context, weapon_data["skill_stat"])
+    attacker_skill_rank = get_skill_rank(attacker_context, weapon_data["skill"])
+    defender_stat_score = get_stat_score(defender_context, armor_data["skill_stat"])
+    defender_skill_rank = get_skill_rank(defender_context, armor_data["skill"])
+
+    # 4. Roll Attack
     attack_params = {
-        "attacker_attacking_stat_score": get_stat_score(attacker_context, weapon_data["skill_stat"]),
-        "attacker_skill_rank": get_skill_rank(attacker_context, weapon_data["skill"]),
-        "defender_armor_stat_score": get_stat_score(defender_context, armor_data["skill_stat"]),
-        "defender_armor_skill_rank": get_skill_rank(defender_context, armor_data["skill"]),
-        "attacker_attack_roll_bonus": 0,
+        "attacker_attacking_stat_score": attacker_stat_score,
+        "attacker_skill_rank": attacker_skill_rank,
+        "attacker_attack_roll_bonus": ability_mod.get("attack_bonus", 0) + attack_bonus_val, # Add talent bonus here
         "attacker_attack_roll_penalty": 0,
-        "defender_defense_roll_bonus": 0,
+        "attacker_weapon_penalty": weapon_data.get("penalty", 0), # New field
+        "defender_defending_stat_score": defender_stat_score,
+        "defender_skill_rank": defender_skill_rank,
+        "defender_defense_roll_bonus": defense_bonus_val, # Add talent bonus here
         "defender_defense_roll_penalty": 0,
-        "defender_weapon_penalty": weapon_data.get("penalty", 0)
+        "defender_weapon_penalty": 0 # This is usually 0 unless specific mechanics apply
     }
 
     # Check for Nausea status

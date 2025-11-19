@@ -16,6 +16,7 @@ from .rules_pkg import core as rules_core
 from .rules_pkg import models as rules_models
 from .rules_pkg import data_loader as rules_data_loader
 from .rules_pkg import data_validator as rules_data_validator
+from .rules_pkg import talent_logic
 
 logger = logging.getLogger("monolith.rules")
 
@@ -152,6 +153,36 @@ def get_all_talents_data() -> Dict:
     """Returns the full structured talents data."""
     return _get_data("talent_data")
 
+def get_talent_details(talent_name: str) -> Dict:
+    """
+    Looks up a specific talent by name and returns its details.
+    This searches through all talent categories.
+    """
+    all_data = _get_data("talent_data")
+    if not all_data:
+        return {}
+
+    # Search Single Stat Mastery
+    for t in all_data.get("single_stat_mastery", []):
+        if t.get("talent_name") == talent_name:
+            return t
+
+    # Search Dual Stat Focus
+    for t in all_data.get("dual_stat_focus", []):
+        if t.get("talent_name") == talent_name:
+            return t
+
+    # Search Skill Mastery (Nested)
+    skill_mastery = all_data.get("single_skill_mastery", {})
+    for category, skills in skill_mastery.items():
+        if isinstance(skills, list):
+            for skill_entry in skills:
+                for t in skill_entry.get("talents", []):
+                    if t.get("talent_name") == talent_name:
+                        return t
+
+    return {}
+
 def get_ability_school(school_name: str) -> Dict:
     """Looks up a single ability school."""
     school = _get_data("ability_data").get(school_name)
@@ -208,6 +239,10 @@ def calculate_base_vitals_api(payload: Dict) -> Dict:
     req_schema = rules_models.BaseVitalsRequest(**payload)
     result = rules_core.calculate_base_vitals(req_schema.stats)
     return result.model_dump()
+
+def calculate_talent_bonuses(character_context: Dict, action_type: str, tags: List[str] = None) -> Dict[str, int]:
+    """Calculates bonuses from talents."""
+    return talent_logic.calculate_talent_bonuses(character_context, action_type, tags)
 
 def register(orchestrator) -> None:
     logger.info("[rules] module registered (self-contained logic)")

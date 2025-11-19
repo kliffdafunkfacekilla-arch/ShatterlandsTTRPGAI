@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
+from .models_inventory import Inventory, Item
 
 
 # Game Data Models
@@ -481,3 +482,62 @@ class NpcTemplateResponse(BaseModel):
     max_hp: int
     behavior_tags: List[str]
     loot_table_ref: Optional[str] = None
+
+# --- ADDED MODELS for Social, Rest, and Exploration ---
+
+class SocialEncounterRequest(BaseModel):
+    """
+    Input for a social exchange.
+    """
+    attacker_skill: str = Field(..., description="The conversational skill used (e.g., Intimidation).")
+    attacker_stat_score: int = Field(..., description="Score of the relevant stat.")
+    attacker_skill_rank: int = Field(..., description="Rank of the skill.")
+    defender_skill: str = Field(default="Negotiations", description="The conversational skill used for defense.")
+    defender_willpower_score: int = Field(..., description="Defender's Willpower (or stat for their defense skill).")
+    defender_skill_rank: int = Field(default=0, description="Defender's relevant defensive skill rank.")
+    context_modifiers: int = Field(default=0, description="Situational bonuses/penalties.")
+
+class SocialEncounterResponse(BaseModel):
+    """
+    Output of a social exchange.
+    """
+    roll_value: int
+    total_value: int
+    target_dc: int
+    outcome: str = Field(..., description="Success, Failure, Critical Success, etc.")
+    composure_damage: int = Field(default=0, description="Damage to social HP/Patience.")
+
+class RestRequest(BaseModel):
+    """
+    Input for calculating rest benefits.
+    """
+    comfort_level: int = Field(ge=0, le=5, description="Quality of rest environment.")
+    security_level: int = Field(ge=0, le=5, description="Safety of the location.")
+    food_quality: int = Field(ge=0, le=5, description="Quality of rations/meal.")
+    prep_focus: str = Field(..., description="Activity during rest: 'tend_wounds', 'meditate', 'inspire', 'repair'.")
+    duration_hours: int = Field(..., ge=1)
+
+class RestResponse(BaseModel):
+    """
+    Output of rest calculation.
+    """
+    hp_recovered: int
+    resources_recovered: Dict[str, int]
+    buffs_gained: List[str]
+    fatigue_removed: int
+
+class StealthRequest(BaseModel):
+    """
+    Input for stealth calculation.
+    """
+    agility_score: int
+    stealth_skill_rank: int
+    armor_penalty: int
+    environmental_modifiers: int
+
+class StealthResponse(BaseModel):
+    """
+    Output for stealth check.
+    """
+    stealth_score: int
+    detection_dc: int
