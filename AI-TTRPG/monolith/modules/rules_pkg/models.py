@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Optional, Union
-from .models_inventory import Inventory, Item
+from .models_inventory import Item
 
 
 # Game Data Models

@@ -1,34 +1,40 @@
-from pydantic import BaseModel, Field, field_validator
-from typing import List, Dict, Optional, Union, Any
+from pydantic import BaseModel, Field
+from typing import List, Optional, Union
 
 class ItemEffect(BaseModel):
+    """
+    Represents a single, direct effect of an item, usually from being used (e.g., a consumable).
+    """
     type: str = Field(..., description="Type of effect: 'heal', 'buff', 'utility', 'damage'")
-    value: int = Field(default=0, description="Numeric value of the effect")
-    target_stat: Optional[str] = Field(None, description="Stat modified by the effect")
-    duration: int = Field(default=0, description="Duration in turns (0 for instant)")
-    description: str = Field(..., description="Human readable description")
+    value: Union[int, str] = Field(default=0, description="Numeric or string value of the effect (e.g., damage amount or a specific condition ID).")
+    target_stat: Optional[str] = Field(None, description="Stat modified by the effect, if any.")
+    duration: Optional[int] = Field(None, description="Duration in turns (0 for instant, None for permanent while equipped).")
+    description: str = Field(..., description="Human-readable description of the effect.")
 
 class Item(BaseModel):
+    """
+    Represents the static template data for an item, loaded from item_templates.json.
+    """
     name: str
-    item_type: str = Field(..., description="weapon, armor, consumable, tool, quest, material, charm, book, treasure")
-    category: str = Field(..., description="Sub-category matching JSON data keys")
-    weight: float = Field(default=0.0, description="Weight in arbitrary units")
-    slots: List[str] = Field(default_factory=list, description="Body slots this item occupies")
-    effects: List[ItemEffect] = Field(default_factory=list, description="Passive or active effects")
-    quantity: int = Field(default=1, description="Stack size")
-    max_stack: int = Field(default=1, description="Max stack size")
-    value: int = Field(default=0, description="Monetary value in coins")
+    item_type: str = Field(..., description="e.g., weapon, armor, consumable, tool, quest, material, charm, book, treasure")
+    category: str = Field(..., description="Sub-category, e.g., 'Double/dual wield', 'potion', 'jewelry'")
+    weight: float = Field(default=0.0)
+    slots: List[str] = Field(default_factory=list, description="List of valid equipment slots for this item.")
+    effects: List[ItemEffect] = Field(default_factory=list)
+    quantity: int = Field(default=1)
+    max_stack: int = Field(default=1)
+    value: int = Field(default=0, description="Monetary value.")
     
     # Graphics
-    icon: Optional[str] = Field(None, description="Icon resource ID")
-    sprite_ref: Optional[str] = Field(None, description="Sprite resource ID")
+    icon: Optional[str] = None
+    sprite_ref: Optional[str] = None
 
-    # Weapon specific
+    # Weapon-specific attributes
     damage_dice: Optional[str] = None
-    range_type: Optional[str] = None # 'melee', 'ranged'
+    range_type: Optional[str] = None
     
-    # Armor specific
-    dr: int = Field(default=0, description="Damage Reduction")
+    # Armor-specific attributes
+    dr: Optional[int] = Field(None, description="Damage Reduction provided by the item.")
     
     def is_stackable(self) -> bool:
         return self.max_stack > 1
