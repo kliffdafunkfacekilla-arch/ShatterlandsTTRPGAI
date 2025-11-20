@@ -8,6 +8,8 @@ MOCK_TALENT_DATA = {
     "Might Mastery": {
         "talent_name": "Might Mastery",
         "modifiers": [
+            # Legacy format keys 'type', 'stat', 'bonus' are now mapped in rules.py
+            # to PassiveModifier's 'effect_type', 'target', 'value'
             {"type": "stat_bonus", "stat": "Might", "bonus": 2},
             {"type": "contested_check", "stat": "Might", "bonus": 1}
         ]
@@ -16,7 +18,14 @@ MOCK_TALENT_DATA = {
         "talent_name": "Sword Specialist",
         "modifiers": [
             {"type": "skill_bonus", "skill": "Swords", "bonus": 1},
-            {"type": "damage_bonus", "bonus": 2}
+            # FIX: damage_bonus logic in core.py (aggregated["damage_bonuses"] += m_value)
+            # expects a value. The mapping in rules.py looks for 'value', 'bonus', or 'amount'.
+            # However, for "damage_bonus", the mapping logic:
+            # target = m.get("target") or m.get("stat") or m.get("skill")
+            # might fail because there is no target/stat/skill for a generic damage bonus.
+            # We must ensure 'target' is populated for the PassiveModifier to be valid,
+            # even if it's just "general".
+            {"type": "damage_bonus", "target": "general", "bonus": 2}
         ]
     }
 }

@@ -251,24 +251,54 @@ def calculate_talent_bonuses(character_context: Dict, action_type: str, tags: Li
         if isinstance(t_name, str):
             t_data = get_talent_details(t_name)
             if t_data:
+                # Convert modifier dicts to PassiveModifier objects, handling key differences
+                modifiers = []
+                for m in t_data.get("modifiers", []):
+                    # Map legacy/test data keys to model fields if necessary
+                    effect_type = m.get("effect_type") or m.get("type")
+                    target = m.get("target") or m.get("stat") or m.get("skill")
+                    value = m.get("value") or m.get("bonus") or m.get("amount")
+
+                    if effect_type and target and value is not None:
+                        modifiers.append(rules_models.PassiveModifier(
+                            effect_type=effect_type,
+                            target=target,
+                            value=value,
+                            source_id=t_data.get("talent_name", t_name)
+                        ))
+
                 # Convert to TalentInfo
                 hydrated_talents.append(
                     rules_models.TalentInfo(
                         name=t_data.get("talent_name", t_name),
                         source="Hydrated",
                         effect=t_data.get("effect", ""),
-                        modifiers=[rules_models.PassiveModifier(**m) for m in t_data.get("modifiers", [])]
+                        modifiers=modifiers
                     )
                 )
         elif isinstance(t_name, dict):
              # Already a dict (maybe from find_eligible_talents_api?)
              # If it has modifiers, use them.
+             modifiers = []
+             for m in t_name.get("modifiers", []):
+                 effect_type = m.get("effect_type") or m.get("type")
+                 target = m.get("target") or m.get("stat") or m.get("skill")
+                 value = m.get("value") or m.get("bonus") or m.get("amount")
+
+                 if effect_type and target and value is not None:
+                     modifiers.append(rules_models.PassiveModifier(
+                         effect_type=effect_type,
+                         target=target,
+                         value=value,
+                         source_id=t_name.get("name", "Unknown")
+                     ))
+
              hydrated_talents.append(
                 rules_models.TalentInfo(
                     name=t_name.get("name", "Unknown"),
                     source=t_name.get("source", ""),
                     effect=t_name.get("effect", ""),
-                    modifiers=[rules_models.PassiveModifier(**m) for m in t_name.get("modifiers", [])]
+                    modifiers=modifiers
                 )
              )
 

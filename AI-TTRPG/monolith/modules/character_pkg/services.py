@@ -79,12 +79,15 @@ def get_character_context(
         if status_id.startswith("TempDebuff_"):
             try:
                 # Expected format: TempDebuff_STATNAME_AMOUNT_DURATION (e.g., TempDebuff_Might_-2_1)
-                _, stat_name, amount_str, _ = status_id.split("_")
-                amount = int(amount_str)
+                # Note: amount is typically negative for debuffs
+                parts = status_id.split("_")
+                if len(parts) == 4:
+                    _, stat_name, amount_str, _ = parts
+                    amount = int(amount_str)
 
-                if stat_name in final_stats:
-                    final_stats[stat_name] += amount
-                    logger.info(f"Applying temporary modifier: {stat_name} adjusted by {amount}")
+                    if stat_name in final_stats:
+                        final_stats[stat_name] += amount
+                        logger.info(f"Applying temporary modifier: {stat_name} adjusted by {amount}")
             except Exception as e:
                 logger.warning(f"Failed to parse dynamic stat status {status_id}: {e}")
     # --- END IMPLEMENTATION ---

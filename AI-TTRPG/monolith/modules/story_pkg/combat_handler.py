@@ -943,8 +943,12 @@ def _handle_effect_random_stat_debuff(target_id: str, log: List[str], effect: Di
     amount = effect.get("amount", -1)
     duration = effect.get("duration", 1)
 
-    log.append(f"Random Debuff: {target_id} suffers {amount} penalty to {stat} for {duration} round(s). [STUB]")
-    # TODO: Implement temporary stat modification via status effect logic
+    # Generate the dynamic status ID: TempDebuff_STATNAME_AMOUNT_DURATION
+    # Ensure amount is negative in the ID if it's a penalty, though logic might expect just the value
+    status_id = f"TempDebuff_{stat}_{amount}_{duration}"
+
+    services.apply_status_to_target(target_id, status_id)
+    log.append(f"Random Debuff: {target_id} suffers {amount} penalty to {stat} for {duration} round(s).")
     return True
 
 def _handle_effect_reaction_damage(
