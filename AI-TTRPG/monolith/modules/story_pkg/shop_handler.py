@@ -4,9 +4,12 @@ Handles shop and barter logic.
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 
-from AI-TTRPG.monolith.modules.character_pkg import services as character_services
-from AI-TTRPG.monolith.modules.character_pkg import models as character_models
-from AI-TTRPG.monolith.modules.rules_pkg import data_loader
+# Fix imports to match correct relative pathing or package structure if needed,
+# but based on file structure these absolute imports look suspicious if running from root.
+# Assuming standard structure:
+from ..character_pkg import services as character_services
+from ..character_pkg import models as character_models
+from ..rules_pkg import data_loader
 
 # For now, a simple in-memory shop inventory.
 # In the future, this could be loaded from a file or database.
@@ -24,6 +27,15 @@ _shop_inventories: Dict[str, Dict[str, Any]] = {
 def get_shop_inventory(shop_id: str) -> Dict[str, Any]:
     """
     Retrieves the inventory for a specific shop.
+
+    Args:
+        shop_id (str): The unique identifier of the shop.
+
+    Returns:
+        Dict[str, Any]: The shop's data, including its inventory.
+
+    Raises:
+        ValueError: If the shop ID is not found.
     """
     if shop_id not in _shop_inventories:
         raise ValueError(f"Shop '{shop_id}' not found.")
@@ -31,7 +43,23 @@ def get_shop_inventory(shop_id: str) -> Dict[str, Any]:
 
 def buy_item(db: Session, char_id: str, shop_id: str, item_id: str, quantity: int):
     """
-    Handles the logic for a character buying an item from a shop.
+    Executes a purchase transaction.
+
+    Verifies the shop has stock and the character has funds.
+    Deducts currency and adds the item to the character's inventory.
+
+    Args:
+        db (Session): Database session.
+        char_id (str): Character ID.
+        shop_id (str): Shop ID.
+        item_id (str): Item ID to buy.
+        quantity (int): Amount to buy.
+
+    Returns:
+        schemas.CharacterContextResponse: Updated character context.
+
+    Raises:
+        ValueError: If validation fails (insufficient funds/stock).
     """
     character = db.query(character_models.Character).filter(character_models.Character.id == char_id).first()
     if not character:
@@ -63,7 +91,23 @@ def buy_item(db: Session, char_id: str, shop_id: str, item_id: str, quantity: in
 
 def sell_item(db: Session, char_id: str, shop_id: str, item_id: str, quantity: int):
     """
-    Handles the logic for a character selling an item to a shop.
+    Executes a sale transaction.
+
+    Verifies the character has the item. Calculates sell price (currently 50% value).
+    Removes item from character and adds currency.
+
+    Args:
+        db (Session): Database session.
+        char_id (str): Character ID.
+        shop_id (str): Shop ID.
+        item_id (str): Item ID to sell.
+        quantity (int): Amount to sell.
+
+    Returns:
+        schemas.CharacterContextResponse: Updated character context.
+
+    Raises:
+        ValueError: If character does not have the item.
     """
     character = db.query(character_models.Character).filter(character_models.Character.id == char_id).first()
     if not character:

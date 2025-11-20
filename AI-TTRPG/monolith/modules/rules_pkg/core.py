@@ -8,9 +8,18 @@ from . import models
 from .models import RollResult, TalentInfo, FeatureStatsResponse
 
 
-# ADD THIS FUNCTION
 def calculate_modifier(score: int) -> int:
-    """Calculates the attribute modifier from a score based on floor((Score - 10) / 2)."""
+    """
+    Calculates the standard attribute modifier from a score.
+
+    Formula: floor((Score - 10) / 2).
+
+    Args:
+        score (int): The raw attribute score (e.g., 10, 15, 8).
+
+    Returns:
+        int: The calculated modifier (e.g., 0, +2, -1).
+    """
     if not isinstance(score, int):
         # Basic type check for safety
         print(
@@ -26,8 +35,18 @@ def generate_npc_template_core(
     generation_rules: Dict[str, Any]
 ) -> Dict: # Returns a dict matching NpcTemplateResponse structure
     """
-    Core logic to generate an NPC template based on request parameters.
-    Consolidated from the old NPC Generator service.
+    Generates a full NPC template based on high-level request parameters.
+
+    This function combines base stats from the kingdom (species), style modifiers,
+    HP scaling, suggested abilities, and skill ranks to create a complete NPC stat block.
+
+    Args:
+        request (models.NpcGenerationRequest): The parameters guiding the generation (kingdom, style, difficulty, etc.).
+        all_skills_map (Dict[str, Dict[str, str]]): A mapping of all available skills.
+        generation_rules (Dict[str, Any]): The ruleset defining base stats, modifiers, and scaling factors.
+
+    Returns:
+        Dict: A dictionary structure matching `NpcTemplateResponse`, containing stats, skills, abilities, and derived values.
     """
     # 1. Determine Base Stats
     kingdom_stats = generation_rules.get("base_stats_by_kingdom", {})
@@ -91,12 +110,21 @@ def generate_npc_template_core(
     return {"generated_id": generated_id, "name": name, "description": description, "stats": final_stats, "skills": skills, "abilities": abilities, "max_hp": max_hp, "behavior_tags": behavior_tags, "loot_table_ref": f"{request.kingdom}_{request.difficulty}_loot"}
 
 
-# ADD THIS FUNCTION
 def calculate_skill_mt_bonus(rank: int) -> int:
     """
-    Calculates Skill Mastery Tier bonus from rank.
+    Calculates the Mastery Tier (MT) bonus derived from a skill rank.
+
     Assumption: Bonus = floor(Rank / 3).
-    Rank 0-2 = +0, Rank 3-5 = +1, Rank 6-8 = +2, etc.
+    Example:
+        - Rank 0-2 -> +0
+        - Rank 3-5 -> +1
+        - Rank 6-8 -> +2
+
+    Args:
+        rank (int): The skill rank.
+
+    Returns:
+        int: The calculated mastery tier bonus.
     """
     if not isinstance(rank, int) or rank < 0:
         print(
@@ -106,11 +134,17 @@ def calculate_skill_mt_bonus(rank: int) -> int:
     return math.floor(rank / 3)
 
 
-# ADD THIS FUNCTION
 def calculate_xp_for_level(level: int) -> int:
     """
-    Calculates the total XP required to reach the NEXT level.
+    Calculates the total experience points required to reach the NEXT level.
+
     Formula: Current Level * 1000.
+
+    Args:
+        level (int): The character's current level.
+
+    Returns:
+        int: The total XP required for the next level.
     """
     if level < 1: return 1000
     return level * 1000
@@ -128,7 +162,18 @@ def _roll_d6() -> int:
 
 
 def parse_dice_string(dice_str: str) -> (int, int):
-    """Parses a dice string like '2d6' into (number_of_dice, dice_sides). Handles '0' for no roll."""
+    """
+    Parses a standard dice notation string (e.g., '2d6') into its components.
+
+    Args:
+        dice_str (str): The dice string to parse. Accepts '0' for no roll.
+
+    Returns:
+        (int, int): A tuple containing (number_of_dice, sides_per_die).
+
+    Raises:
+        ValueError: If the string format is invalid or components are non-integer.
+    """
     if dice_str == "0":
         return 0, 0
     if "d" not in dice_str:
@@ -142,7 +187,16 @@ def parse_dice_string(dice_str: str) -> (int, int):
 
 
 def _roll_dice(num_dice: int, sides: int) -> int:
-    """Rolls a specified number of dice with a given number of sides."""
+    """
+    Rolls a specified number of dice with a given number of sides.
+
+    Args:
+        num_dice (int): The number of dice to roll.
+        sides (int): The number of sides on each die.
+
+    Returns:
+        int: The sum of the rolled results.
+    """
     if num_dice == 0:
         return 0
     return sum(random.randint(1, sides) for _ in range(num_dice))
@@ -151,7 +205,19 @@ def _roll_dice(num_dice: int, sides: int) -> int:
 def calculate_contested_attack(
     attack_data: models.ContestedAttackRequest,
 ) -> models.ContestedAttackResponse:
-    """Performs a contested d20 attack roll using pre-aggregated modifiers."""
+    """
+    Performs a contested attack roll logic (Attacker vs Defender).
+
+    This function calculates the total rolls for both the attacker and defender,
+    incorporating stats, skill ranks, and all provided pre-aggregated modifiers.
+    It determines the outcome (hit, miss, crit, etc.) and the margin of success.
+
+    Args:
+        attack_data (models.ContestedAttackRequest): The full parameters for the attack resolution.
+
+    Returns:
+        models.ContestedAttackResponse: The detailed results of the contest.
+    """
 
     # NOTE: We no longer need to look up weapon/armor data here,
     # as the necessary stats (Stat Scores, Skill Ranks, Weapon Penalty)
@@ -219,7 +285,18 @@ def calculate_contested_attack(
 
 
 def calculate_damage(damage_data: models.DamageRequest) -> models.DamageResponse:
-    """Calculates final damage using pre-aggregated modifiers."""
+    """
+    Calculates the final damage of an attack.
+
+    This function handles dice rolling, stat bonuses, misc damage bonuses/penalties,
+    and the application of the defender's Damage Reduction (DR).
+
+    Args:
+        damage_data (models.DamageRequest): The full parameters for damage calculation.
+
+    Returns:
+        models.DamageResponse: The detailed breakdown of the damage calculation.
+    """
 
     # NOTE: We no longer need to look up weapon/armor data here,
     # as base dice, relevant stat, damage bonus, DR modifier, and base DR
@@ -317,7 +394,17 @@ def calculate_initiative(stats: models.InitiativeRequest) -> models.InitiativeRe
 
 
 def calculate_skill_check(stat_mod: int, skill_rank: int, dc: int) -> RollResult:
-    """Performs a d20 skill check."""
+    """
+    Performs a standard d20 skill check.
+
+    Args:
+        stat_mod (int): The relevant attribute modifier.
+        skill_rank (int): The character's rank in the skill.
+        dc (int): The Difficulty Class to beat.
+
+    Returns:
+        RollResult: The outcome of the check.
+    """
     roll = _roll_d20()
     total = roll + stat_mod + skill_rank
     success = total >= dc
@@ -337,7 +424,23 @@ def calculate_skill_check(stat_mod: int, skill_rank: int, dc: int) -> RollResult
 
 
 def calculate_ability_check(rank: int, stat_mod: int, tier: int) -> RollResult:
-    """Performs a d20 Ability check against a Tiered DC."""
+    """
+    Performs a d20 Ability check against a DC determined by the ability's Tier.
+
+    DC Tiers:
+    - Tier 1-3: DC 12
+    - Tier 4-6: DC 14
+    - Tier 7-9: DC 16
+    - Tier 10+: DC 20
+
+    Args:
+        rank (int): The character's rank in the ability school.
+        stat_mod (int): The associated attribute modifier.
+        tier (int): The tier of the ability being used.
+
+    Returns:
+        RollResult: The outcome of the check.
+    """
     if tier <= 3:
         dc = 12
     elif tier <= 6:
@@ -370,7 +473,19 @@ def calculate_ability_check(rank: int, stat_mod: int, tier: int) -> RollResult:
 def get_kingdom_feature_stats(
     feature_name: str, feature_map: Dict[str, Any]
 ) -> FeatureStatsResponse:
-    """Looks up stat mods using the provided map."""
+    """
+    Looks up the statistic modifiers associated with a specific kingdom feature (species trait).
+
+    Args:
+        feature_name (str): The name of the feature to look up.
+        feature_map (Dict[str, Any]): The loaded map of features and their stats.
+
+    Returns:
+        FeatureStatsResponse: The feature name and its modifiers.
+
+    Raises:
+        ValueError: If the map is missing or the feature is not found.
+    """
     if not feature_map:
         raise ValueError("Feature map not provided or empty.")
     if feature_name not in feature_map:
@@ -385,14 +500,37 @@ def get_kingdom_feature_stats(
 def get_skills_by_category(
     skill_categories_map: Dict[str, List[str]],
 ) -> Dict[str, List[str]]:
-    """Returns skills grouped by category from the provided map."""
+    """
+    Returns the mapping of skill categories to their list of skills.
+
+    Args:
+        skill_categories_map (Dict[str, List[str]]): The loaded skill category map.
+
+    Returns:
+        Dict[str, List[str]]: The requested map.
+
+    Raises:
+        ValueError: If the map is empty.
+    """
     if not skill_categories_map:
         raise ValueError("Skill categories map not provided or empty.")
     return skill_categories_map
 
 
 def get_skill_for_category(category_name: str, skill_map: Dict[str, str]) -> str:
-    """Looks up the skill for a given equipment category."""
+    """
+    Resolves the governing skill for a given equipment or weapon category.
+
+    Args:
+        category_name (str): The name of the equipment category (e.g., 'Heavy Blades').
+        skill_map (Dict[str, str]): The loaded map linking categories to skills.
+
+    Returns:
+        str: The name of the governing skill.
+
+    Raises:
+        ValueError: If the category is not found in the map.
+    """
     if not skill_map:
         raise ValueError("Skill map not provided or empty.")
     if category_name not in skill_map:
@@ -403,7 +541,21 @@ def get_skill_for_category(category_name: str, skill_map: Dict[str, str]) -> str
 def get_status_effect(
     status_name: str, status_effects_data: Dict[str, Any]
 ) -> models.StatusEffectResponse:
-    """Looks up the definition and effects for a specific status by name from loaded data."""
+    """
+    Retrieves the definition and effects for a specific status condition by name.
+
+    Performs a case-insensitive lookup against the provided data.
+
+    Args:
+        status_name (str): The name of the status effect (e.g., 'Poisoned').
+        status_effects_data (Dict[str, Any]): The loaded status effect data.
+
+    Returns:
+        models.StatusEffectResponse: The structured status effect data.
+
+    Raises:
+        ValueError: If the status effect is not found.
+    """
 
     status_data = None
     found_key = None
@@ -448,7 +600,19 @@ def get_status_effect(
 def get_injury_effects(
     request: models.InjuryLookupRequest, injury_effects_data: Dict[str, Any]
 ) -> models.InjuryEffectResponse:
-    """Looks up injury effects from the loaded injury data."""
+    """
+    Resolves the effects of a specific injury based on location and severity.
+
+    Args:
+        request (models.InjuryLookupRequest): The injury details (location, sub-location, severity).
+        injury_effects_data (Dict[str, Any]): The loaded injury data map.
+
+    Returns:
+        models.InjuryEffectResponse: The name and effects of the injury.
+
+    Raises:
+        ValueError: If the location, sub-location, or severity is invalid.
+    """
     location_data = injury_effects_data.get(request.location)
     if not location_data:
         raise ValueError(f"Invalid injury location: '{request.location}'")
@@ -479,7 +643,21 @@ def find_eligible_talents(
     stats_list: List[str],
     all_skills_map: Dict[str, Dict[str, str]],
 ) -> List[TalentInfo]:
-    """Finds unlocked talents based on stats, skills, and provided talent data."""
+    """
+    Identifies all talents a character qualifies for based on their stats and skills.
+
+    Checks against Single Stat Mastery, Dual Stat Focus, and Single Skill Mastery prerequisites.
+
+    Args:
+        stats_in (Dict[str, int]): Character's stat scores.
+        skills_in (Dict[str, int]): Character's skill ranks (mapping skill name to rank).
+        talent_data (Dict[str, Any]): The full loaded talent data structure.
+        stats_list (List[str]): List of valid stat names.
+        all_skills_map (Dict[str, Dict[str, str]]): Master mapping of all skills.
+
+    Returns:
+        List[TalentInfo]: A list of talents the character is eligible for.
+    """
     unlocked_talents = []
 
     if not talent_data or not stats_list or not all_skills_map:

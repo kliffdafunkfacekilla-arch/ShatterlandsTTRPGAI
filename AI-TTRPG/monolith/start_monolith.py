@@ -41,11 +41,13 @@ def _run_migrations_for_module(module_name: str, root_path: Path, mode: str):
     """
     Generic function to find and run Alembic migrations for a module.
 
-    A module is expected to have its package at:
-    .../modules/<module_name>/<module_name>_pkg/
+    Resolves paths to the module's package and alembic configuration.
+    Supports 'migrate', 'auto', and 'none' modes for database initialization.
 
-    And its alembic.ini at:
-    .../modules/<module_name>/<module_name>_pkg/alembic.ini
+    Args:
+        module_name (str): The name of the module (e.g., 'character').
+        root_path (Path): The root directory of the monolith.
+        mode (str): The migration mode ('migrate', 'auto', 'none').
     """
     if not AlembicConfig or not alembic_command:
         logger.warning(f"Skipping migrations for '{module_name}' (Alembic not loaded).")
@@ -111,6 +113,14 @@ def _run_migrations_for_module(module_name: str, root_path: Path, mode: str):
 
 # --- Main Startup Function ---
 async def _main():
+    """
+    The main async entry point for the Monolith.
+
+    1. Runs database migrations for all modules.
+    2. Registers modules with the Orchestrator.
+    3. Starts the Orchestrator.
+    4. Enters a keep-alive loop (unless run-once mode is set).
+    """
     orch = get_orchestrator()
     bus = orch.bus
 

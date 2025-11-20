@@ -216,6 +216,12 @@ MAIN_INTERFACE_KV = """
 Builder.load_string(MAIN_INTERFACE_KV)
 
 class MainInterfaceScreen(Screen):
+    """
+    The primary gameplay screen for exploration.
+
+    Displays the map, party status, chat/log, and action buttons.
+    Handles movement, resting, saving, and transitioning to other screens (Combat, Shop, etc.).
+    """
     # ... (all existing ObjectProperty references) ...
     log_label = ObjectProperty(None)
     narration_label = ObjectProperty(None)
@@ -238,6 +244,9 @@ class MainInterfaceScreen(Screen):
     party_list = ListProperty([])
 
     def __init__(self, **kwargs):
+        """
+        Initializes the screen layout and widget bindings.
+        """
         super().__init__(**kwargs)
         if MapViewWidget:
             self.map_view_widget = MapViewWidget()
@@ -261,6 +270,9 @@ class MainInterfaceScreen(Screen):
             logging.error("Failed to bind dm_input, widget not found.")
 
     def center_layout(self, instance, width, height):
+        """
+        Centers the map view within the screen.
+        """
         if self.map_view_anchor:
             self.map_view_anchor.pos = (
                 (width - self.map_view_anchor.width) / 2,
@@ -269,7 +281,8 @@ class MainInterfaceScreen(Screen):
 
     def on_enter(self, *args):
         """
-        MODIFIED: Loads the *entire party* and the location.
+        Called when the screen becomes active.
+        Loads the full game state (party, location) and renders the scene.
         """
         logging.info("Entering Main Interface Screen. Loading game state...")
         if self.map_view_anchor and self.map_view_widget:

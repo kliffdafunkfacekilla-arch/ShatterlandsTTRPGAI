@@ -2,10 +2,17 @@ import json
 import sys
 
 def load_json(path):
+    """Helper to load a JSON file."""
     with open(path, 'r') as f:
         return json.load(f)
 
 def verify_skills():
+    """
+    Verifies consistency between `stats_and_skills.json` and `talents.json`.
+
+    Ensures that every skill defined in the master skill list has a corresponding
+    entry in the talent skill mastery section, and that their governing stats match.
+    """
     stats_skills = load_json("monolith/modules/rules_pkg/data/stats_and_skills.json")
     talents = load_json("monolith/modules/rules_pkg/data/talents.json")
     

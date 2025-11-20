@@ -45,8 +45,16 @@ KIVY_TEXTURE_CACHE: Dict[str, ObjectProperty] = {}
 
 def get_texture(sheet_path: str):
     """
-    Caches and returns a Kivy texture to avoid loading
-    the same image file multiple times.
+    Caches and returns a Kivy texture object for the given file path.
+
+    Loads the image from disk if not already cached, setting appropriate
+    filtering for pixel art (nearest neighbor).
+
+    Args:
+        sheet_path (str): The absolute path to the spritesheet file.
+
+    Returns:
+        Texture: The Kivy Texture object, or None if loading failed.
     """
     if sheet_path not in KIVY_TEXTURE_CACHE:
         logging.info(f"AssetLoader: Caching new texture for {sheet_path}")
@@ -67,7 +75,15 @@ def get_texture(sheet_path: str):
     return KIVY_TEXTURE_CACHE[sheet_path]
 
 def _load_json_data(filepath: Path) -> Dict:
-    """Helper to load a JSON file."""
+    """
+    Helper function to safely load a JSON file.
+
+    Args:
+        filepath (Path): The path to the JSON file.
+
+    Returns:
+        Dict: The parsed JSON data, or an empty dict on failure.
+    """
     if not filepath.exists():
         logging.error(f"AssetLoader: JSON file not found at {filepath}")
         return {}
@@ -80,8 +96,11 @@ def _load_json_data(filepath: Path) -> Dict:
 
 def _build_sprite_lookup_map():
     """
-    Processes raw definitions into a unified lookup map for rendering.
-    This function calculates and caches the (path, sx, sy) for every sprite.
+    Compiles raw tile and entity definitions into a fast lookup map for rendering.
+
+    Iterates through all loaded definitions, resolves spritesheet paths,
+    and calculates the top-left pixel coordinates (sx, sy) for each sprite frame.
+    Populates the global `SPRITE_RENDER_INFO` dictionary.
     """
     global SPRITE_RENDER_INFO
 
@@ -140,8 +159,10 @@ def _build_sprite_lookup_map():
 
 def initialize_assets():
     """
-    Loads all asset definitions from JSON files.
-    This must be called once at application startup.
+    The main initialization routine for the Asset Loader.
+
+    Loads tile and entity definition JSONs from the assets directory and builds
+    the sprite lookup map. This function must be called before any rendering occurs.
     """
     global TILE_DEFINITIONS, ENTITY_DEFINITIONS
 
@@ -163,10 +184,20 @@ def initialize_assets():
 
 def get_sprite_render_info(entity_id: str, state: Optional[str] = None) -> Optional[Tuple[str, int, int, int, int]]:
     """
-    Gets the render info for a tile or entity ID.
+    Retrieves the rendering information for a specific entity or tile.
+
+    Calculates the texture coordinates required by Kivy to render the correct
+    sub-region (sprite) from the spritesheet.
+
+    Args:
+        entity_id (str): The unique identifier of the tile or entity.
+        state (Optional[str]): An optional state suffix (e.g., "open" for a door).
 
     Returns:
-        A tuple (spritesheet_path, u, v, u2, v2) for Kivy's texture coords.
+        Optional[Tuple[str, int, int, int, int]]: A tuple containing:
+            (spritesheet_path, x, y, x2, y2)
+            where coords are in pixels relative to the texture's origin.
+            Returns None if the sprite cannot be resolved.
     """
     key = str(entity_id)
     if state:
@@ -209,13 +240,25 @@ def get_sprite_render_info(entity_id: str, state: Optional[str] = None) -> Optio
 
 def get_tile_definition(tile_id: int) -> Optional[Dict[str, Any]]:
     """
-    Gets the raw data for a tile (name, passable, etc.)
+    Retrieves the raw definition data for a specific tile ID.
+
+    Args:
+        tile_id (int): The ID of the tile.
+
+    Returns:
+        Optional[Dict[str, Any]]: The tile definition dictionary.
     """
     return TILE_DEFINITIONS.get(str(tile_id))
 
 def get_entity_definition(entity_id: str) -> Optional[Dict[str, Any]]:
     """
-    Gets the raw data for an entity (name, sheet, etc.)
+    Retrieves the raw definition data for a specific entity ID.
+
+    Args:
+        entity_id (str): The ID of the entity.
+
+    Returns:
+        Optional[Dict[str, Any]]: The entity definition dictionary.
     """
     return ENTITY_DEFINITIONS.get(entity_id)
 

@@ -8,7 +8,16 @@ TILE_DEFINITIONS: Dict[str, Any] = {}
 GENERATION_ALGORITHMS: List[Dict[str, Any]] = []
 
 def load_data():
-    """Loads map generation data files."""
+    """
+    Loads map generation configuration from JSON files.
+
+    Reads `tile_definitions.json` and `generation_algorithms.json` from the package's
+    `data` directory and populates the global configuration variables.
+
+    Raises:
+        FileNotFoundError: If a required data file is missing.
+        json.JSONDecodeError: If a data file contains invalid JSON.
+    """
     global TILE_DEFINITIONS, GENERATION_ALGORITHMS
 
     # --- THIS PATH IS NOW CORRECT ---

@@ -21,8 +21,19 @@ logger = logging.getLogger("monolith.story.combat")
 
 def _find_next_step(start_coords: List[int], end_coords: List[int], location_id: int, log: List[str]) -> Optional[List[int]]:
     """
-    Finds the next single step towards a target using A* pathfinding.
-    Returns the coordinates of the next step, or None if no path is found.
+    Calculates the next movement step towards a destination using A* pathfinding.
+
+    This function computes the shortest path on the grid, considering obstacles and map
+    boundaries, and returns the coordinates of the very first step along that path.
+
+    Args:
+        start_coords (List[int]): The [x, y] starting coordinates.
+        end_coords (List[int]): The [x, y] destination coordinates.
+        location_id (int): The ID of the location (for map data lookup).
+        log (List[str]): A log list to append error or debug messages to.
+
+    Returns:
+        Optional[List[int]]: The [x, y] coordinates of the next step, or None if no path exists.
     """
     try:
         width, height, map_data, impassable_ids = _get_map_dimensions_and_data(location_id)
@@ -89,7 +100,18 @@ def _find_next_step(start_coords: List[int], end_coords: List[int], location_id:
     return None # No path found
 
 def _get_actor_coords(actor_context: Dict) -> Optional[List[int]]:
-    """Helper to get coordinates for any actor context."""
+    """
+    Extracts the [x, y] coordinates from an actor's context dictionary.
+
+    Handles differences in schema between Players ('position_x', 'position_y') and
+    NPCs ('coordinates' list).
+
+    Args:
+        actor_context (Dict): The full context dictionary of the actor.
+
+    Returns:
+        Optional[List[int]]: The coordinates [x, y], or None if not found.
+    """
     if "coordinates" in actor_context: # For NPCs
         return actor_context.get("coordinates")
     if "position_x" in actor_context: # For Players
@@ -100,7 +122,17 @@ def _get_actor_coords(actor_context: Dict) -> Optional[List[int]]:
 # --- Resource Management ---
 
 def _handle_effect_composure_damage(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles effects that deal damage directly to the Composure pool (e.g., Spirit T1)."""
+    """
+    Applies direct damage to a target's Composure pool.
+
+    Args:
+        target_id (str): The ID of the target actor.
+        log (List[str]): The combat log.
+        effect (Dict): The effect definition containing 'amount' (dice string).
+
+    Returns:
+        bool: True if executed successfully.
+    """
     amount_str = effect.get("amount", "1d6")
     damage_amount = _roll_dice_string(amount_str)
 
@@ -114,7 +146,17 @@ def _handle_effect_composure_damage(target_id: str, log: List[str], effect: Dict
     return True
 
 def _handle_effect_composure_damage_roll(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles effects that deal Composure damage with a save for half damage (e.g., Psionics T4)."""
+    """
+    Applies Composure damage, allowing a saving throw for half damage.
+
+    Args:
+        target_id (str): The ID of the target actor.
+        log (List[str]): The combat log.
+        effect (Dict): The effect definition containing 'amount', 'save_stat', and 'dc'.
+
+    Returns:
+        bool: True if executed (regardless of save outcome).
+    """
     amount_str = effect.get("amount", "3d6")
     save_stat = effect.get("save_stat")
     dc = effect.get("dc", 14)
@@ -147,7 +189,17 @@ def _handle_effect_composure_damage_roll(target_id: str, log: List[str], effect:
     return True
 
 def _handle_effect_composure_heal(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles effects that restore Composure to a target (e.g., Spirit T1)."""
+    """
+    Restores points to a target's Composure pool.
+
+    Args:
+        target_id (str): The ID of the target actor.
+        log (List[str]): The combat log.
+        effect (Dict): The effect definition containing 'amount'.
+
+    Returns:
+        bool: True if executed successfully.
+    """
     amount_str = effect.get("amount", "1d6")
     heal_amount = _roll_dice_string(amount_str)
 
@@ -160,7 +212,19 @@ def _handle_effect_composure_heal(target_id: str, log: List[str], effect: Dict) 
     return True
 
 def _handle_effect_resource_damage(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles effects that drain a character's resource pool (e.g., Cosmos T5, Spirit T3)."""
+    """
+    Drains a specific resource pool (e.g., Chi, Stamina) from the target.
+
+    Optionally supports a saving throw to negate the effect.
+
+    Args:
+        target_id (str): The ID of the target actor.
+        log (List[str]): The combat log.
+        effect (Dict): The effect definition containing 'resource', 'amount', and optional save params.
+
+    Returns:
+        bool: True if damage was applied, False if resisted or failed.
+    """
     resource_id = effect.get("resource")
     amount_str = effect.get("amount", "1d4")
     damage_amount = _roll_dice_string(amount_str)
@@ -211,14 +275,41 @@ def _handle_effect_modify_attack(
     defender_context: Dict,
     log: List[str],
     effect: Dict) -> bool:
-    """Handles abilities that modify a basic attack (e.g., "Concussive Strike")."""
+    """
+    Executes a basic attack modified by an ability's parameters.
+
+    This wrapper calls `_handle_basic_attack` passing the effect dictionary as `ability_mod`.
+
+    Args:
+        db: Database session.
+        combat: Combat encounter model.
+        actor_id: Attacker ID.
+        target_id: Target ID.
+        attacker_context: Attacker's data.
+        defender_context: Defender's data.
+        log: Combat log.
+        effect: The ability effect definition.
+
+    Returns:
+        bool: The result of `_handle_basic_attack`.
+    """
     return _handle_basic_attack(db, combat, actor_id, target_id, attacker_context, defender_context, log, ability_mod=effect)
 
 def _handle_effect_direct_damage(
     target_id: str,
     log: List[str],
     effect: Dict) -> bool:
-    """Handles effects that deal direct damage without an attack roll (e.g., Biomancy T2)."""
+    """
+    Applies direct HP damage to a target without an attack roll.
+
+    Args:
+        target_id: The target ID.
+        log: Combat log.
+        effect: Effect definition with 'amount' and 'damage_type'.
+
+    Returns:
+        bool: True if applied successfully.
+    """
     amount_str = effect.get("amount", "1d4")
     damage_type = effect.get("damage_type", "physical")
     damage_amount = _roll_dice_string(amount_str)
@@ -240,7 +331,17 @@ def _handle_effect_direct_damage(
     return True
 
 def _handle_effect_heal(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles effects that restore HP (e.g., Biomancy T2)."""
+    """
+    Restores HP to the target.
+
+    Args:
+        target_id: Target ID.
+        log: Combat log.
+        effect: Effect definition with 'amount'.
+
+    Returns:
+        bool: True if applied successfully.
+    """
     amount_str = effect.get("amount", "1d8")
     heal_amount = _roll_dice_string(amount_str)
 
@@ -263,7 +364,17 @@ def _handle_effect_heal(target_id: str, log: List[str], effect: Dict) -> bool:
     return True
 
 def _handle_effect_apply_status(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles effects that apply a status, no save (e.g., Force T1)."""
+    """
+    Applies a status effect to the target automatically (no saving throw).
+
+    Args:
+        target_id: Target ID.
+        log: Combat log.
+        effect: Effect definition with 'status_id'.
+
+    Returns:
+        bool: True if applied.
+    """
     status_id = effect.get("status_id")
     if not status_id: return False
     services.apply_status_to_target(target_id, status_id)
@@ -271,7 +382,17 @@ def _handle_effect_apply_status(target_id: str, log: List[str], effect: Dict) ->
     return True
 
 def _handle_effect_apply_status_roll(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles effects that apply a status, WITH a save (e.g., Biomancy T1)."""
+    """
+    Applies a status effect if the target fails a saving throw.
+
+    Args:
+        target_id: Target ID.
+        log: Combat log.
+        effect: Effect definition with 'status_id', 'save_stat', and 'dc'.
+
+    Returns:
+        bool: True if status applied, False if saved.
+    """
     status_id = effect.get("status_id")
     save_stat = effect.get("save_stat")
     dc = effect.get("dc", 12)
@@ -294,7 +415,17 @@ def _handle_effect_apply_status_roll(target_id: str, log: List[str], effect: Dic
         return True
 
 def _handle_effect_remove_status(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles removing a specific status (e.g., Biomancy T1)."""
+    """
+    Removes a specific status effect from the target.
+
+    Args:
+        target_id: Target ID.
+        log: Combat log.
+        effect: Effect definition with 'status_id'.
+
+    Returns:
+        bool: True if removal attempted.
+    """
     status_id = effect.get("status_id")
 
     if not status_id:
@@ -317,7 +448,22 @@ def _handle_effect_move_target_roll(
     defender_context: Dict,
     log: List[str],
     effect: Dict) -> bool:
-    """Handles effects that move a target, WITH a save (e.g., Force T1)."""
+    """
+    Attempts to forcibly move a target, allowing a saving throw to resist.
+
+    If the save fails, calls `_handle_effect_move_target`.
+
+    Args:
+        actor_id: Attacker ID.
+        target_id: Target ID.
+        attacker_context: Attacker's data.
+        defender_context: Defender's data.
+        log: Combat log.
+        effect: Effect definition.
+
+    Returns:
+        bool: True if moved, False if resisted.
+    """
     save_stat = effect.get("save_stat")
     dc = effect.get("dc", 12)
 
@@ -342,7 +488,19 @@ def _handle_effect_move_target(
     target_id: str,
     log: List[str],
     effect: Dict) -> bool:
-    """Handles effects that move a target (used by _handle_effect_move_target_roll when save fails)."""
+    """
+    Forcibly moves a target a specified distance.
+
+    Note: Currently assumes a push directly along the Y-axis for simplicity (needs vector logic).
+
+    Args:
+        target_id: Target ID.
+        log: Combat log.
+        effect: Effect definition with 'distance'.
+
+    Returns:
+        bool: True if moved.
+    """
     if target_id.startswith("npc_"):
         try:
             distance = effect.get("distance", 1)
@@ -374,7 +532,22 @@ def _handle_effect_move_self(
     defender_context: Dict,
     log: List[str],
     effect: Dict) -> bool:
-    """Handles effects that move the caster (e.g., Force T2: Repel Step)."""
+    """
+    Moves the caster (actor) a specified distance.
+
+    Used for abilities like 'Repel Step' or 'Dash'.
+
+    Args:
+        actor_id: Attacker ID.
+        target_id: Target ID (unused).
+        attacker_context: Attacker's data.
+        defender_context: Defender's data (unused).
+        log: Combat log.
+        effect: Effect definition with 'distance'.
+
+    Returns:
+        bool: True if moved.
+    """
     distance = effect.get("distance", 2)
     direction = "up"
 
@@ -414,8 +587,18 @@ def _handle_effect_move_self(
 
 def _handle_effect_create_area(target_id: str, log: List[str], effect: Dict) -> bool:
     """
-    Handles creating a persistent area effect (e.g., Wall of Stalwartness).
-    For now, this is a placeholder that logs the creation.
+    Creates a persistent area of effect at the target location.
+
+    Currently a placeholder that logs the event. Future implementation requires
+    a system for tracking persistent combat zones.
+
+    Args:
+        target_id: Target ID (center of area).
+        log: Combat log.
+        effect: Effect definition.
+
+    Returns:
+        bool: True.
     """
     area_id = effect.get("effect_id", "Unknown Area")
     shape = effect.get("shape", "radius")
@@ -428,7 +611,15 @@ def _handle_effect_create_area(target_id: str, log: List[str], effect: Dict) -> 
 
 def _handle_effect_reaction_contest(target_id: str, log: List[str], effect: Dict) -> bool:
     """
-    Handles a reaction that triggers a contested roll (e.g., Counterspell-like effects).
+    Resolves a reaction via a contested roll (e.g., trying to counter an action).
+
+    Args:
+        target_id: The reactor's ID.
+        log: Combat log.
+        effect: Effect definition with 'contest_stat' and 'dc'.
+
+    Returns:
+        bool: True if contest succeeded.
     """
     contest_stat = effect.get("contest_stat", "Willpower")
     dc = effect.get("dc", 15)
@@ -459,8 +650,20 @@ def _get_targets_in_aoe(
     target_type: str = "all" # "all", "enemy", "ally", "ally_or_self"
 ) -> List[Tuple[str, Dict]]:
     """
-    Helper to find all actors within a certain radius of a target actor.
-    Returns a list of (actor_id, actor_context).
+    Identifies all combat participants within a specified area of effect.
+
+    Calculates distance from a center target and filters potential targets by faction
+    (enemy/ally) based on the `target_type`.
+
+    Args:
+        combat: The combat encounter model.
+        center_target_id: The ID of the actor at the center of the AoE.
+        shape: The shape of the AoE (currently only 'radius' logic is implemented).
+        radius: The radius in grid units/meters.
+        target_type: Filter for targets ('all', 'enemy', 'ally', 'ally_or_self').
+
+    Returns:
+        List[Tuple[str, Dict]]: A list of tuples containing (actor_id, actor_context) for all valid targets.
     """
     targets = []
     try:
@@ -507,7 +710,20 @@ def _calculate_distance(coords1: List[int], coords2: List[int]) -> float:
     return max(abs(coords1[0] - coords2[0]), abs(coords1[1] - coords2[1]))
 
 def check_combat_end_condition(db: Session, combat: models.CombatEncounter, log: List[str]) -> bool:
-    """Checks if all NPCs or all Players are defeated."""
+    """
+    Determines if the combat encounter has ended.
+
+    Checks if all members of one side (Players or NPCs) are defeated (0 HP or Downed).
+    Updates the combat status and grants rewards if players win.
+
+    Args:
+        db: Database session.
+        combat: Combat encounter model.
+        log: Combat log.
+
+    Returns:
+        bool: True if combat has ended, False otherwise.
+    """
     players_alive, npcs_alive = False, False
 
     for p in combat.participants:
@@ -539,7 +755,17 @@ def check_combat_end_condition(db: Session, combat: models.CombatEncounter, log:
     return False
 
 def _grant_combat_rewards(db: Session, combat: models.CombatEncounter, log: List[str]):
-    """Calculates and grants rewards (items, XP, etc.) upon combat victory."""
+    """
+    Distributes loot and experience points to players after a victory.
+
+    Loot is generated based on the 'loot_table_ref' of defeated NPCs.
+    XP is currently a fixed placeholder amount.
+
+    Args:
+        db: Database session.
+        combat: Combat encounter model.
+        log: Combat log.
+    """
     logger.info(f"Granting rewards for combat {combat.id}")
 
     player_ids = [p.actor_id for p in combat.participants if p.actor_type == "player" and p.actor_id]
@@ -588,7 +814,18 @@ def _handle_effect_aoe_status_apply(
     db: Session,
     combat: models.CombatEncounter,
     actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Handles AoE application of a status (no roll) (e.g., Cunning T4)."""
+    """
+    Applies a status effect to all valid targets in an area (no save).
+    Typically used for buffs like 'Inspire'.
+
+    Args:
+        db, combat, actor_id, target_id, attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition with 'status_id', 'shape', 'range'.
+
+    Returns:
+        bool: True if applied.
+    """
     status_id = effect.get("status_id")
     shape = effect.get("shape", "radius")
     range_m = effect.get("range", 5)
@@ -609,7 +846,17 @@ def _handle_effect_aoe_composure_damage_roll(
     db: Session,
     combat: models.CombatEncounter,
     actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Handles AoE Composure damage with individual saves for half damage (e.g., Spirit T4)."""
+    """
+    Deals Composure damage to all enemies in an area, with a save for half damage.
+
+    Args:
+        db, combat, actor_id, target_id, attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition.
+
+    Returns:
+        bool: True if executed.
+    """
     amount_str = effect.get("amount", "1d6")
     shape = effect.get("shape", "radius")
     range_m = effect.get("range", 5)
@@ -648,7 +895,17 @@ def _handle_effect_aoe_heal(
     db: Session,
     combat: models.CombatEncounter,
     actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Handles AoE healing for HP (e.g., Biomancy T8)."""
+    """
+    Heals all allies within an area.
+
+    Args:
+        db, combat, actor_id, target_id, attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition.
+
+    Returns:
+        bool: True if executed.
+    """
     amount_str = effect.get("amount", "1d6")
     shape = effect.get("shape", "radius")
     range_m = effect.get("range", 5)
@@ -689,7 +946,17 @@ def _handle_effect_aoe_damage(
     effect: Dict
 ) -> bool:
     """
-    Handles effects that deal AoE damage.
+    Deals direct damage to all targets within a specified area.
+
+    The damage is rolled once and applied to all valid targets.
+
+    Args:
+        db, combat, actor_id, target_id, attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition including 'damage', 'range', 'shape', 'target_faction'.
+
+    Returns:
+        bool: True if executed.
     """
     damage_str = effect.get("damage", "1d8")
     damage_type = effect.get("damage_type", "elemental")
@@ -768,7 +1035,15 @@ def _handle_effect_aoe_status_roll(
     effect: Dict
 ) -> bool:
     """
-    Handles AoE status application with a save (e.g., Flashbang).
+    Applies a status effect to targets in an area who fail a saving throw.
+
+    Args:
+        db, combat, actor_id, target_id, attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition.
+
+    Returns:
+        bool: True if executed.
     """
     status_id = effect.get("status_id")
     shape = effect.get("shape", "radius")
@@ -837,8 +1112,18 @@ def _handle_effect_summon_creature(
     effect: Dict
 ) -> bool:
     """
-    Handles abilities that spawn a new NPC into the combat encounter.
-    The summoned creature is immediately added to the turn order.
+    Spawns a new NPC into the combat encounter.
+
+    The new creature is generated using the rules engine, added to the world database,
+    and inserted into the combat turn order.
+
+    Args:
+        db, combat, actor_id, target_id, attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition with 'npc_template_id'.
+
+    Returns:
+        bool: True if successful.
     """
     npc_template_id = effect.get("npc_template_id")
     if not npc_template_id:
@@ -911,7 +1196,17 @@ def _handle_effect_summon_creature(
         return False
 
 def _handle_effect_temp_hp(actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Grants Temporary HP to a target (e.g., Psionics T2)."""
+    """
+    Grants Temporary HP to a target.
+
+    Args:
+        actor_id, target_id, attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition with 'amount'.
+
+    Returns:
+        bool: True if applied.
+    """
     amount_str = effect.get("amount", "1d8")
     amount = _roll_dice_string(amount_str)
 
@@ -936,7 +1231,18 @@ def _handle_effect_temp_hp(actor_id: str, target_id: str, attacker_context: Dict
     return True
 
 def _handle_effect_random_stat_debuff(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Applies a random penalty to one of the target's stats (e.g., Chaos T2)."""
+    """
+    Applies a random penalty to one of the target's 12 Core Stats.
+    Used for Chaos magic effects.
+
+    Args:
+        target_id: Target ID.
+        log: Combat log.
+        effect: Effect definition with 'amount' and 'duration'.
+
+    Returns:
+        bool: True if applied.
+    """
     # A list of Core Stats (A-L)
     stats_to_debuff = ["Might", "Endurance", "Finesse", "Reflexes", "Vitality", "Fortitude", "Knowledge", "Logic", "Awareness", "Intuition", "Charm", "Willpower"]
     stat = random.choice(stats_to_debuff)
@@ -974,6 +1280,19 @@ def _handle_effect_create_trap(
     defender_context: Dict, # This is the context of the targeted position
     log: List[str],
     effect: Dict) -> bool:
+    """
+    Creates a hidden trap at the target location.
+
+    Args:
+        actor_id: Actor creating the trap.
+        target_id: Target ID (location reference).
+        attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition with 'trap_template_id'.
+
+    Returns:
+        bool: True if created.
+    """
 
     trap_template_id = effect.get("trap_template_id")
     if not trap_template_id:
@@ -1226,8 +1545,22 @@ def _check_and_trigger_reactions(
     log: List[str],
     event_data: Optional[Dict[str, Any]] = None) -> bool:
     """
-    Checks all participants for readied or innate reactions to an event.
-    Returns True if a reaction was triggered, False otherwise.
+    Evaluates whether any combat participant reacts to a specific event.
+
+    Iterates through all other participants to check for:
+    1. Innate Status Effect triggers (e.g., 'Threat Zone').
+    2. Readied Actions set by players.
+
+    Args:
+        db: Database session.
+        combat: Combat encounter model.
+        trigger_event: The event name (e.g., 'actor_move', 'attack_miss').
+        trigger_actor_id: The ID of the actor causing the event.
+        log: Combat log.
+        event_data: Optional data context (e.g., old coordinates).
+
+    Returns:
+        bool: True if any reaction was triggered and executed.
     """
     logger.info(f"Checking reactions for event: {trigger_event} (Actor: {trigger_actor_id})")
     event_data = event_data or {}
@@ -1326,8 +1659,27 @@ def _handle_basic_attack(
     log: List[str],
     ability_mod: Optional[Dict] = None) -> bool:
     """
-    Performs the core attack roll, damage, and HP update logic.
-    Returns True if the target was hit, False otherwise.
+    Executes the full resolution chain for a basic attack.
+
+    Steps:
+    1. Determine weapon and armor stats.
+    2. Calculate modifiers (talents, skills, stats).
+    3. Roll Contested Attack (Attacker vs Defender).
+    4. If hit, roll Damage (accounting for DR and bonuses).
+    5. Apply final damage to target's HP.
+
+    Args:
+        db: Database session.
+        combat: Combat encounter model.
+        actor_id: Attacker ID.
+        target_id: Target ID.
+        attacker_context: Attacker's full context.
+        defender_context: Defender's full context.
+        log: Combat log.
+        ability_mod: Optional dictionary of modifiers from an ability used to attack.
+
+    Returns:
+        bool: True if the attack hit, False if it missed.
     """
     ability_mod = ability_mod or {}
     target_type = "player" if target_id.startswith("player_") else "npc"
@@ -1449,7 +1801,22 @@ def _handle_basic_attack(
         return False
 
 def _process_status_effects_on_turn_start(db: Session, combat: models.CombatEncounter, actor_id: str, log: List[str]) -> bool:
-    """Applies continuous effects (like DOT) and handles turn-based duration."""
+    """
+    Processes effects that occur at the start of a participant's turn.
+
+    1. Applies Damage Over Time (DOT) effects.
+    2. Decrements duration of temporary status effects.
+    3. Removes expired statuses.
+
+    Args:
+        db: Database session.
+        combat: Combat encounter model.
+        actor_id: The ID of the active actor.
+        log: Combat log.
+
+    Returns:
+        bool: True if any status expired or effect was applied.
+    """
     actor_type, actor_context = get_actor_context(actor_id)
     current_statuses = actor_context.get("status_effects", [])
     statuses_to_remove = []
@@ -1505,6 +1872,22 @@ def _process_status_effects_on_turn_start(db: Session, combat: models.CombatEnco
 
 # --- Main Action Handler (Original/Core) ---
 def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: str, action: schemas.PlayerActionRequest) -> schemas.PlayerActionResponse:
+    """
+    The central entry point for processing a player's turn in combat.
+
+    Validates turn order, processes start-of-turn effects, and routes the requested action
+    (attack, move, ability, item, ready, etc.) to the appropriate handler logic.
+    Advances the turn counter upon completion.
+
+    Args:
+        db: Database session.
+        combat: Combat encounter model.
+        actor_id: The ID of the player acting.
+        action: The action request object.
+
+    Returns:
+        schemas.PlayerActionResponse: The result of the turn, including logs and new state.
+    """
     log = []
 
     current_actor_id = combat.turn_order[combat.current_turn_index]

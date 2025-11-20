@@ -9,8 +9,18 @@ logger = logging.getLogger("uvicorn.error")
 
 def handle_interaction(request: schemas.InteractionRequest) -> schemas.InteractionResponse:
     """
-    Handles player interactions with objects based on world state annotations.
-    NOW SYNCHRONOUS.
+    Processes a player's request to interact with a world object (e.g., open a door, pick up an item).
+
+    The function:
+    1. Retrieves the current location's AI annotations to check object state.
+    2. Executes the requested interaction logic (e.g., checks for keys, updates status).
+    3. Updates the world state and character inventory if successful.
+
+    Args:
+        request (schemas.InteractionRequest): The details of the interaction (actor, target, type).
+
+    Returns:
+        schemas.InteractionResponse: The outcome of the interaction, including messages and state updates.
     """
     logger.info(f"Handling interaction: Actor '{request.actor_id}' -> Target '{request.target_object_id}' in Loc {request.location_id}")
 

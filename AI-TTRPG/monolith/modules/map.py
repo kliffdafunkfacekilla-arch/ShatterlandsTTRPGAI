@@ -62,6 +62,15 @@ def generate_map(tags: List[str], seed: Optional[str] = None) -> Dict[str, Any]:
         raise
 
 def register(orchestrator) -> None:
+    """
+    Registers the map generation module.
+
+    This function is called during startup. The module does not subscribe to the event bus
+    but makes its functions available for direct import by other modules.
+
+    Args:
+        orchestrator: The system orchestrator instance (unused but required).
+    """
     # This module is self-contained. It doesn't subscribe
     # to the event bus but is loaded and its data is cached.
     # Other modules will import and call its functions.
