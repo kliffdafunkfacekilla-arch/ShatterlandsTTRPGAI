@@ -8,7 +8,20 @@ from AI-TTRPG.monolith.modules.camp_pkg import schemas as camp_schemas
 
 def rest_at_camp(db: Session, rest_request: camp_schemas.CampRestRequest):
     """
-    Heals a character and resolves status effects.
+    Executes a rest action at a campsite.
+
+    Restores HP and Composure based on the duration of the rest.
+    Future logic will include status effect resolution and resource consumption.
+
+    Args:
+        db (Session): Database session.
+        rest_request (camp_schemas.CampRestRequest): The rest request parameters (char_id, duration).
+
+    Returns:
+        schemas.CharacterContextResponse: The updated character context.
+
+    Raises:
+        ValueError: If the character ID is not found.
     """
     character = db.query(character_models.Character).filter(character_models.Character.id == rest_request.char_id).first()
     if not character:

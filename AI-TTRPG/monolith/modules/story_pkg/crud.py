@@ -5,9 +5,11 @@ from typing import List, Optional
 
 # --- Campaign ---
 def get_campaign(db: Session, campaign_id: int) -> Optional[models.Campaign]:
+    """Retrieves a campaign by its ID."""
     return db.query(models.Campaign).filter(models.Campaign.id == campaign_id).first()
 
 def create_campaign(db: Session, campaign: schemas.CampaignCreate) -> models.Campaign:
+    """Creates a new campaign record."""
     db_campaign = models.Campaign(**campaign.dict())
     db.add(db_campaign)
     db.commit()
@@ -16,12 +18,15 @@ def create_campaign(db: Session, campaign: schemas.CampaignCreate) -> models.Cam
 
 # --- ActiveQuest ---
 def get_quest(db: Session, quest_id: int) -> Optional[models.ActiveQuest]:
+    """Retrieves a specific quest by ID."""
     return db.query(models.ActiveQuest).filter(models.ActiveQuest.id == quest_id).first()
 
 def get_quests_for_campaign(db: Session, campaign_id: int) -> List[models.ActiveQuest]:
+    """Retrieves all quests associated with a campaign ID."""
     return db.query(models.ActiveQuest).filter(models.ActiveQuest.campaign_id == campaign_id).all()
 
 def create_quest(db: Session, quest: schemas.ActiveQuestCreate) -> models.ActiveQuest:
+    """Creates a new quest record."""
     db_quest = models.ActiveQuest(**quest.dict())
     db.add(db_quest)
     db.commit()
@@ -31,6 +36,7 @@ def create_quest(db: Session, quest: schemas.ActiveQuestCreate) -> models.Active
 def update_quest(
     db: Session, quest_id: int, updates: schemas.ActiveQuestUpdate
 ) -> Optional[models.ActiveQuest]:
+    """Updates an existing quest with provided fields."""
     db_quest = get_quest(db, quest_id)
     if db_quest:
         update_data = updates.dict(exclude_unset=True)
@@ -46,6 +52,7 @@ def update_quest(
 
 # --- StoryFlag ---
 def get_flag(db: Session, flag_name: str) -> Optional[models.StoryFlag]:
+    """Retrieves a story flag by its name."""
     return db.query(models.StoryFlag).filter(models.StoryFlag.flag_name == flag_name).first()
 
 def set_flag(db: Session, flag: schemas.StoryFlagBase) -> models.StoryFlag:

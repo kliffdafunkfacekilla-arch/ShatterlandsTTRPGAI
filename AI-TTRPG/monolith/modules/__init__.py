@@ -8,6 +8,16 @@ from typing import List
 import logging
 
 def register_all(orchestrator) -> None:
+    """
+    Registers all Monolith modules with the orchestrator.
+
+    This function imports and initializes each module, allowing them to
+    subscribe to event bus topics or expose their APIs.
+    Imports are performed lazily to avoid circular dependencies during startup.
+
+    Args:
+        orchestrator: The system orchestrator instance.
+    """
     # import modules lazily to avoid import cycles during bootstrap
     from . import narrative, combat, rules, encounter_generator, story, world
     from . import character, save_api, ai_dm

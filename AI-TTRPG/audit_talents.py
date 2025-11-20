@@ -2,6 +2,12 @@ import json
 from pathlib import Path
 
 def audit_talents():
+    """
+    Checks `talents.json` for any talent entries missing the 'modifiers' field.
+
+    Iterates through Single Stat Mastery, Dual Stat Focus, and Single Skill Mastery
+    categories and reports any talents that lack mechanical modifier definitions.
+    """
     path = Path("monolith/modules/rules_pkg/data/talents.json")
     with open(path, "r") as f:
         data = json.load(f)

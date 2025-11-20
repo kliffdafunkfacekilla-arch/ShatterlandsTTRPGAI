@@ -6,7 +6,18 @@ from .data_loader import GENERATION_ALGORITHMS, TILE_DEFINITIONS
 
 # --- Algorithm Selection ---
 def select_algorithm(tags: List[str]) -> Optional[Dict[str, Any]]:
-    """Finds a generation algorithm matching the input tags."""
+    """
+    Selects a map generation algorithm configuration based on a list of tags.
+
+    Iterates through available algorithms and checks if their required tags
+    are a subset of the provided tags.
+
+    Args:
+        tags (List[str]): A list of descriptive tags (e.g., ["forest", "open"]).
+
+    Returns:
+        Optional[Dict[str, Any]]: The selected algorithm configuration dict, or None.
+    """
     tag_set = set(t.lower() for t in tags)
     possible_matches = []
     for algo in GENERATION_ALGORITHMS:
@@ -21,7 +32,18 @@ def select_algorithm(tags: List[str]) -> Optional[Dict[str, Any]]:
 
 # --- Cellular Automata Implementation ---
 def _count_neighbors(grid: np.ndarray, x: int, y: int, wall_id: int) -> int:
-    """Counts wall neighbors for a cell, including diagonals."""
+    """
+    Counts the number of wall tiles surrounding a given cell (Moore neighborhood).
+
+    Args:
+        grid (np.ndarray): The 2D map grid.
+        x (int): The x-coordinate of the cell.
+        y (int): The y-coordinate of the cell.
+        wall_id (int): The tile ID representing a wall.
+
+    Returns:
+        int: The number of adjacent wall tiles.
+    """
     count = 0
     height, width = grid.shape
     for i in range(-1, 2):
@@ -37,7 +59,18 @@ def _count_neighbors(grid: np.ndarray, x: int, y: int, wall_id: int) -> int:
     return count
 
 def _run_ca_iteration(grid: np.ndarray, params: Dict[str, Any]) -> np.ndarray:
-    """Runs a single iteration of the Cellular Automata simulation."""
+    """
+    Executes one smoothing iteration of the Cellular Automata algorithm.
+
+    Applies "birth" and "death" rules based on neighbor counts to refine the cave structure.
+
+    Args:
+        grid (np.ndarray): The current map grid.
+        params (Dict[str, Any]): Configuration parameters (birth/death limits).
+
+    Returns:
+        np.ndarray: The new grid after the iteration.
+    """
     height, width = grid.shape
     new_grid = grid.copy()
     wall_id = params.get("wall_tile_id", 1)
@@ -57,7 +90,20 @@ def _run_ca_iteration(grid: np.ndarray, params: Dict[str, Any]) -> np.ndarray:
     return new_grid
 
 def generate_cellular_automata(params: Dict[str, Any], width: int, height: int, seed: str) -> np.ndarray:
-    """Generates a map using the Cellular Automata method."""
+    """
+    Generates a cave-like map using Cellular Automata.
+
+    Initializes a random noise grid and then smooths it over several iterations.
+
+    Args:
+        params (Dict[str, Any]): Algorithm parameters (density, iterations, tile IDs).
+        width (int): Map width.
+        height (int): Map height.
+        seed (str): Random seed for reproducibility.
+
+    Returns:
+        np.ndarray: The generated 2D map grid.
+    """
     random.seed(seed) # Use the seed
     np.random.seed(int(float(seed))) # Numpy needs an int seed
 
@@ -82,8 +128,19 @@ def generate_cellular_automata(params: Dict[str, Any], width: int, height: int, 
 # --- Drunkard's Walk Implementation ---
 def generate_drunkards_walk(params: Dict[str, Any], width: int, height: int, seed: str) -> np.ndarray:
     """
-    Generates a map using the Drunkard's Walk algorithm.
-    Carves out floor tiles by simulating random walks.
+    Generates a connected map using the Drunkard's Walk algorithm.
+
+    Starts with a solid block of walls and uses a random walker to carve out open floor space.
+    Guarantees connectivity of the carved area.
+
+    Args:
+        params (Dict[str, Any]): Algorithm parameters (steps, tile IDs).
+        width (int): Map width.
+        height (int): Map height.
+        seed (str): Random seed.
+
+    Returns:
+        np.ndarray: The generated 2D map grid.
     """
     random.seed(seed) # Use the seed for Python's random
     # Note: numpy's random is not heavily used here, but seeding both is good practice
@@ -120,7 +177,16 @@ def generate_drunkards_walk(params: Dict[str, Any], width: int, height: int, see
 
 # --- Post-Processing ---
 def post_process_add_border(grid: np.ndarray, params: Dict[str, Any]) -> np.ndarray:
-    """Adds a border of wall tiles around the map."""
+    """
+    Post-processing step: Encases the entire map in a 1-tile thick border of walls.
+
+    Args:
+        grid (np.ndarray): The map grid.
+        params (Dict[str, Any]): Parameters containing the wall tile ID.
+
+    Returns:
+        np.ndarray: The modified grid.
+    """
     wall_id = params.get("wall_tile_id", 1) # Get wall ID relevant to the algorithm
     grid[0, :] = wall_id  # Top row
     grid[-1, :] = wall_id # Bottom row
@@ -129,7 +195,17 @@ def post_process_add_border(grid: np.ndarray, params: Dict[str, Any]) -> np.ndar
     return grid
 
 def post_process_clear_center(grid: np.ndarray, params: Dict[str, Any]) -> np.ndarray:
-    """Clears a small area in the center to be floor tiles."""
+    """
+    Post-processing step: Ensures a central area is open floor.
+    Useful for ensuring a valid starting area.
+
+    Args:
+        grid (np.ndarray): The map grid.
+        params (Dict[str, Any]): Parameters containing radius and floor ID.
+
+    Returns:
+        np.ndarray: The modified grid.
+    """
     height, width = grid.shape
     center_x, center_y = width // 2, height // 2
     clear_radius = params.get("clear_center_radius", 2) # Example parameter
@@ -143,7 +219,19 @@ def post_process_clear_center(grid: np.ndarray, params: Dict[str, Any]) -> np.nd
     return grid
 
 def post_process_fill_unreachable(grid: np.ndarray, params: Dict[str, Any]) -> np.ndarray:
-    """Finds the largest floor area and fills smaller disconnected areas with walls."""
+    """
+    Post-processing step: Removes disconnected floor regions.
+
+    Identifies the largest connected component of floor tiles and converts
+    all other isolated floor regions into walls.
+
+    Args:
+        grid (np.ndarray): The map grid.
+        params (Dict[str, Any]): Parameters containing tile IDs.
+
+    Returns:
+        np.ndarray: The modified grid.
+    """
     height, width = grid.shape
     floor_id = params.get("floor_tile_id", 0)
     wall_id = params.get("wall_tile_id", 1)
@@ -192,7 +280,18 @@ POST_PROCESSING_FUNCTIONS = {
 
 # --- Spawn Point Placement ---
 def find_spawn_points(grid: np.ndarray, floor_id: int, num_player: int = 1, num_enemy: int = 3) -> Dict[str, List[List[int]]]:
-    """Finds valid floor tiles for spawn points."""
+    """
+    Identifies random valid floor locations for entity spawning.
+
+    Args:
+        grid (np.ndarray): The map grid.
+        floor_id (int): The tile ID representing walkable floor.
+        num_player (int): Number of player spawn points needed.
+        num_enemy (int): Number of enemy spawn points needed.
+
+    Returns:
+        Dict[str, List[List[int]]]: A dict with 'player' and 'enemy' keys mapping to lists of [x, y] coordinates.
+    """
     height, width = grid.shape
     valid_spawns = []
     for y in range(height):
@@ -224,7 +323,22 @@ def find_spawn_points(grid: np.ndarray, floor_id: int, num_player: int = 1, num_
 # --- Main Generation Runner ---
 def run_generation(algorithm: Dict[str, Any], seed: str, width_override: Optional[int], height_override: Optional[int]) -> models.MapGenerationResponse:
     """
-    Selects and executes the chosen procedural generation algorithm and post-processing.
+    Orchestrates the map generation process.
+
+    1. Selects the algorithm based on input.
+    2. Executes the core generation function (CA, Drunkard's Walk, etc.).
+    3. Applies defined post-processing steps.
+    4. Calculates spawn points.
+    5. Packages the result into a response model.
+
+    Args:
+        algorithm (Dict[str, Any]): The algorithm configuration dictionary.
+        seed (str): Random seed.
+        width_override (Optional[int]): Optional width override.
+        height_override (Optional[int]): Optional height override.
+
+    Returns:
+        models.MapGenerationResponse: The complete generated map data.
     """
     algo_name = algorithm.get("name", "Unknown Algorithm")
     algo_type = algorithm.get("algorithm", "cellular_automata") # Default to CA

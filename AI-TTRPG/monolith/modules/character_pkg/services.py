@@ -821,8 +821,17 @@ def update_character_context(
 
 def create_default_test_character(db: Session, rules_data: dict):
     """
-    Creates a hardcoded default character for testing by calling the main creation service.
-    This is now a SYNCHRONOUS function.
+    Creates a hardcoded default character for testing purposes.
+
+    This function constructs a fixed `CharacterCreate` payload and invokes the
+    main `create_character` service to generate a complete character record.
+
+    Args:
+        db (Session): The database session.
+        rules_data (dict): The pre-loaded rules data required for creation.
+
+    Returns:
+        models.Character: The created character object.
     """
     logger.info("--- Creating Default Test Character ---")
 

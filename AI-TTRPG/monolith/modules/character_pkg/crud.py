@@ -8,13 +8,33 @@ import logging
 logger = logging.getLogger("monolith.character.crud")
 
 def get_character(db: Session, char_id: str) -> models.Character | None:
-    """Retrieves a single character by ID."""
+    """
+    Retrieves a single character record by its unique ID.
+
+    Args:
+        db (Session): The database session.
+        char_id (str): The UUID string of the character.
+
+    Returns:
+        models.Character | None: The character object if found, else None.
+    """
     return db.query(models.Character).filter(models.Character.id == char_id).first()
 
 def apply_damage_to_character(
 db: Session, character: models.Character, damage_amount: int) -> models.Character:
     """
-    Subtracts damage from current_hp, depleting temp_hp first.
+    Applies damage to a character, prioritizing Temporary HP before Actual HP.
+
+    If damage exceeds Temp HP, the remainder is subtracted from Current HP.
+    Current HP cannot drop below 0.
+
+    Args:
+        db (Session): The database session.
+        character (models.Character): The character model instance.
+        damage_amount (int): The amount of damage to apply.
+
+    Returns:
+        models.Character: The updated character instance.
     """
     if damage_amount <= 0:
         return character # No damage
@@ -52,7 +72,19 @@ db: Session, character: models.Character, damage_amount: int) -> models.Characte
 
 def apply_status_to_character(
 db: Session, character: models.Character, status_id: str) -> models.Character:
-    """Adds a status effect ID to the status_effects list."""
+    """
+    Adds a status effect identifier to the character's list of active statuses.
+
+    Prevents duplicate entries of the same status ID.
+
+    Args:
+        db (Session): The database session.
+        character (models.Character): The character model instance.
+        status_id (str): The unique string ID of the status effect.
+
+    Returns:
+        models.Character: The updated character instance.
+    """
     status_effects = character.status_effects or []
 
     if status_id not in status_effects:
@@ -66,7 +98,17 @@ db: Session, character: models.Character, status_id: str) -> models.Character:
 
 def remove_status_from_character(
 db: Session, character: models.Character, status_id: str) -> models.Character:
-    """Removes a status effect ID from the status_effects list."""
+    """
+    Removes a status effect identifier from the character's list of active statuses.
+
+    Args:
+        db (Session): The database session.
+        character (models.Character): The character model instance.
+        status_id (str): The unique string ID of the status effect to remove.
+
+    Returns:
+        models.Character: The updated character instance.
+    """
     status_effects = character.status_effects or []
 
     if status_id in status_effects:
@@ -85,7 +127,18 @@ def update_character_location_and_coords(
     new_location_id: int,
     new_coordinates: List[int],
 ) -> models.Character:
-    """Updates the character's location ID and coordinates."""
+    """
+    Updates the character's location ID and X/Y coordinates.
+
+    Args:
+        db (Session): The database session.
+        character (models.Character): The character model instance.
+        new_location_id (int): The ID of the new location.
+        new_coordinates (List[int]): A list containing [x, y] coordinates.
+
+    Returns:
+        models.Character: The updated character instance.
+    """
 
     character.current_location_id = new_location_id
     character.position_x = new_coordinates[0]
@@ -103,6 +156,20 @@ def update_character_location_and_coords(
 def add_item_to_inventory(
     db: Session, character: models.Character, item_id: str, quantity: int
 ) -> models.Character:
+    """
+    Adds a specified quantity of an item to the character's inventory.
+
+    Currently assumes a simple inventory structure of `{item_id: quantity}`.
+
+    Args:
+        db (Session): The database session.
+        character (models.Character): The character model instance.
+        item_id (str): The unique ID of the item template.
+        quantity (int): The number of items to add.
+
+    Returns:
+        models.Character: The updated character instance.
+    """
     # --- MODIFICATION: Update the correct column ---
     inventory = character.inventory or {}
 
@@ -137,6 +204,18 @@ def add_item_to_inventory(
 def remove_item_from_inventory(
     db: Session, character: models.Character, item_id: str, quantity: int
 ) -> models.Character:
+    """
+    Removes a specified quantity of an item from the character's inventory.
+
+    Args:
+        db (Session): The database session.
+        character (models.Character): The character model instance.
+        item_id (str): The unique ID of the item template.
+        quantity (int): The number of items to remove.
+
+    Returns:
+        models.Character: The updated character instance.
+    """
     # --- MODIFICATION: Update the correct column ---
     inventory = character.inventory or {}
 
@@ -159,16 +238,45 @@ def remove_item_from_inventory(
 def list_characters(
     db: Session, skip: int = 0, limit: int = 100
 ) -> List[models.Character]:
-    """Retrieves a list of characters."""
+    """
+    Retrieves a paginated list of characters.
+
+    Args:
+        db (Session): The database session.
+        skip (int): Number of records to skip.
+        limit (int): Maximum number of records to return.
+
+    Returns:
+        List[models.Character]: A list of character models.
+    """
     return db.query(models.Character).offset(skip).limit(limit).all()
 
 
 def get_character_by_name(db: Session, name: str) -> models.Character | None:
-    """Retriees a single character by their name."""
+    """
+    Retrieves a single character by their name.
+
+    Args:
+        db (Session): The database session.
+        name (str): The name of the character.
+
+    Returns:
+        models.Character | None: The character object if found, else None.
+    """
     return db.query(models.Character).filter(models.Character.name == name).first()
 
 def apply_composure_healing(db: Session, character: models.Character, amount: int) -> models.Character:
-    """Applies healing to a character's composure pool."""
+    """
+    Heals a character's Composure points, up to their maximum.
+
+    Args:
+        db (Session): The database session.
+        character (models.Character): The character model instance.
+        amount (int): The amount of composure to restore.
+
+    Returns:
+        models.Character: The updated character instance.
+    """
     if amount <= 0:
         return character
 
@@ -180,7 +288,17 @@ def apply_composure_healing(db: Session, character: models.Character, amount: in
     return character
 
 def apply_composure_damage(db: Session, character: models.Character, damage_amount: int) -> models.Character:
-    """Subtracts damage from current_composure."""
+    """
+    Reduces a character's Composure points. Composure cannot drop below 0.
+
+    Args:
+        db (Session): The database session.
+        character (models.Character): The character model instance.
+        damage_amount (int): The amount of composure damage to apply.
+
+    Returns:
+        models.Character: The updated character instance.
+    """
     if damage_amount <= 0:
         return character
 
@@ -192,7 +310,18 @@ def apply_composure_damage(db: Session, character: models.Character, damage_amou
     return character
 
 def apply_resource_damage(db: Session, character: models.Character, resource_name: str, damage_amount: int) -> models.Character:
-    """Subtracts damage from a generic resource pool (e.g., Chi, Stamina)."""
+    """
+    Subtracts points from a specific resource pool (e.g., Chi, Stamina).
+
+    Args:
+        db (Session): The database session.
+        character (models.Character): The character model instance.
+        resource_name (str): The name of the resource pool.
+        damage_amount (int): The amount to subtract.
+
+    Returns:
+        models.Character: The updated character instance.
+    """
     if damage_amount <= 0 or resource_name not in character.resource_pools:
         return character
 
@@ -212,7 +341,17 @@ def apply_resource_damage(db: Session, character: models.Character, resource_nam
     return character
 
 def apply_healing(db: Session, character: models.Character, amount: int) -> models.Character:
-    """Applies healing to a character."""
+    """
+    Restores a character's HP, up to their maximum.
+
+    Args:
+        db (Session): The database session.
+        character (models.Character): The character model instance.
+        amount (int): The amount of HP to restore.
+
+    Returns:
+        models.Character: The updated character instance.
+    """
     new_hp = min(character.current_hp + amount, character.max_hp)
     character.current_hp = new_hp
     flag_modified(character, "current_hp")
@@ -221,7 +360,17 @@ def apply_healing(db: Session, character: models.Character, amount: int) -> mode
     return character
 
 def unequip_item(db: Session, character: models.Character, slot: str) -> models.Character:
-    """Unequips an item from a slot and moves it back to inventory."""
+    """
+    Unequips an item from a specified slot and returns it to the inventory.
+
+    Args:
+        db (Session): The database session.
+        character (models.Character): The character model instance.
+        slot (str): The slot identifier (e.g., 'head', 'main_hand').
+
+    Returns:
+        models.Character: The updated character instance.
+    """
     inventory = character.inventory or {}
     equipment = character.equipment or {}
 
@@ -244,7 +393,21 @@ def unequip_item(db: Session, character: models.Character, slot: str) -> models.
     return character
 
 def equip_item(db: Session, character: models.Character, item_id: str, slot: str) -> models.Character:
-    """Equips an item to a character, handling movement from inventory to equipment."""
+    """
+    Equips an item from the inventory to a specified slot.
+
+    Handles decrementing inventory count and setting the equipment slot.
+    Swaps items if the slot is already occupied.
+
+    Args:
+        db (Session): The database session.
+        character (models.Character): The character model instance.
+        item_id (str): The unique ID of the item to equip.
+        slot (str): The target equipment slot.
+
+    Returns:
+        models.Character: The updated character instance.
+    """
     inventory = character.inventory or {}
     equipment = character.equipment or {}
 
@@ -273,7 +436,17 @@ def equip_item(db: Session, character: models.Character, item_id: str, slot: str
 def apply_temp_hp(db: Session, character: models.Character, amount: int) -> models.Character:
     """
     Applies temporary HP to a character.
-    Temp HP does not stack; the highest value is taken.
+
+    Temporary HP acts as a buffer before real HP is damaged.
+    It does not stack; if the new amount is higher than current, it replaces it.
+
+    Args:
+        db (Session): The database session.
+        character (models.Character): The character model instance.
+        amount (int): The amount of Temp HP to apply.
+
+    Returns:
+        models.Character: The updated character instance.
     """
     # --- THIS FUNCTION IS NO LONGER A PLACEHOLDER ---
     logger.info(f"Applying {amount} Temp HP to {character.name}. Current Temp HP: {character.temp_hp}")
@@ -291,7 +464,20 @@ def apply_temp_hp(db: Session, character: models.Character, amount: int) -> mode
     return character
 
 def update_resource_pool(db: Session, character: models.Character, pool_name: str, new_value: int) -> models.Character:
-    """Updates a specific resource pool for a character."""
+    """
+    Updates the current value of a specific resource pool.
+
+    The value is clamped between 0 and the pool's maximum.
+
+    Args:
+        db (Session): The database session.
+        character (models.Character): The character model instance.
+        pool_name (str): The name of the resource pool.
+        new_value (int): The new current value.
+
+    Returns:
+        models.Character: The updated character instance.
+    """
     current_pools = character.resource_pools or {}
 
     if pool_name not in current_pools:
@@ -306,32 +492,6 @@ def update_resource_pool(db: Session, character: models.Character, pool_name: st
     character.resource_pools = current_pools
 
     flag_modified(character, "resource_pools")
-    db.commit()
-    db.refresh(character)
-    return character
-    inventory = character.inventory or {}
-    equipment = character.equipment or {}
-
-    if item_id not in inventory or inventory[item_id] <= 0:
-        # Item not in inventory, do nothing
-        return character
-
-    # Unequip old item if any
-    currently_equipped_item_id = equipment.get(slot)
-    if currently_equipped_item_id:
-        inventory[currently_equipped_item_id] = inventory.get(currently_equipped_item_id, 0) + 1
-
-    # Equip new item
-    inventory[item_id] -= 1
-    if inventory[item_id] == 0:
-        del inventory[item_id]
-    equipment[slot] = item_id
-
-    character.inventory = inventory
-    character.equipment = equipment
-    flag_modified(character, "inventory")
-    flag_modified(character, "equipment")
-
     db.commit()
     db.refresh(character)
     return character

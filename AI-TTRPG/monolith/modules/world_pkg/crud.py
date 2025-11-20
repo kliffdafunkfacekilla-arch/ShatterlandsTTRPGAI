@@ -15,9 +15,15 @@ logger = logging.getLogger("monolith.world.crud")
 
 # --- Faction ---
 def get_faction(db: Session, faction_id: int) -> Optional[models.Faction]:
+    """
+    Retrieves a faction by ID.
+    """
     return db.query(models.Faction).filter(models.Faction.id == faction_id).first()
 
 def create_faction(db: Session, faction: schemas.FactionCreate) -> models.Faction:
+    """
+    Creates a new faction entry in the database.
+    """
     db_faction = models.Faction(**faction.dict())
     db.add(db_faction)
     db.commit()
@@ -26,9 +32,15 @@ def create_faction(db: Session, faction: schemas.FactionCreate) -> models.Factio
 
 # --- Region ---
 def get_region(db: Session, region_id: int) -> Optional[models.Region]:
+    """
+    Retrieves a region by ID.
+    """
     return db.query(models.Region).filter(models.Region.id == region_id).first()
 
 def create_region(db: Session, region: schemas.RegionCreate) -> models.Region:
+    """
+    Creates a new region entry in the database.
+    """
     db_region = models.Region(name=region.name)
     db.add(db_region)
     db.commit()
@@ -45,6 +57,9 @@ def get_location(db: Session, location_id: int) -> Optional[models.Location]:
     return db.query(models.Location).filter(models.Location.id == location_id).first()
 
 def create_location(db: Session, loc: schemas.LocationCreate) -> models.Location:
+    """
+    Creates a new location in the database.
+    """
     db_loc = models.Location(
         name=loc.name,
         region_id=loc.region_id,
@@ -58,7 +73,8 @@ def create_location(db: Session, loc: schemas.LocationCreate) -> models.Location
 
 def update_location_map(db: Session, location_id: int, map_update: schemas.LocationMapUpdate) -> Optional[models.Location]:
     """
-    This is how the story_engine saves a persistent map.
+    Updates the generated map data, seed, and spawn points for a location.
+    Used to persist a procedurally generated map.
     """
     db_loc = get_location(db, location_id)
     if db_loc:
@@ -75,6 +91,9 @@ def update_location_map(db: Session, location_id: int, map_update: schemas.Locat
     return db_loc
 
 def update_location_annotations(db: Session, location_id: int, annotations: dict) -> Optional[models.Location]:
+    """
+    Updates the AI annotations for a location (e.g., descriptions of scene elements).
+    """
     db_loc = get_location(db, location_id)
     if db_loc:
         db_loc.ai_annotations = annotations
@@ -85,9 +104,16 @@ def update_location_annotations(db: Session, location_id: int, annotations: dict
 
 # --- NPC Instance ---
 def get_npc(db: Session, npc_id: int) -> Optional[models.NpcInstance]:
+    """
+    Retrieves an NPC instance by ID.
+    """
     return db.query(models.NpcInstance).filter(models.NpcInstance.id == npc_id).first()
 
 def spawn_npc(db: Session, npc: schemas.NpcSpawnRequest) -> models.NpcInstance:
+    """
+    Creates a new NPC instance in the world from a spawn request.
+    Initializes vitals, resource pools, and abilities.
+    """
     # --- THIS FUNCTION IS MODIFIED ---
     db_npc = models.NpcInstance(
         template_id=npc.template_id,
@@ -120,7 +146,8 @@ def spawn_npc(db: Session, npc: schemas.NpcSpawnRequest) -> models.NpcInstance:
 
 def update_npc(db: Session, npc_id: int, updates: schemas.NpcUpdate) -> Optional[models.NpcInstance]:
     """
-    This is how we deal damage, apply status, or move an NPC.
+    Updates an existing NPC instance with new values.
+    Handles damage, status updates, movement, etc.
     """
     db_npc = get_npc(db, npc_id)
     if db_npc:
@@ -179,7 +206,9 @@ def remove_status_from_npc(db: Session, npc_id: int, status_id: str) -> Optional
 
 
 def apply_injury_to_npc(db: Session, npc_id: int, injury: dict) -> Optional[models.NpcInstance]:
-    """Applies an injury to an NPC."""
+    """
+    Appends an injury record to an NPC's injury list.
+    """
     db_npc = get_npc(db, npc_id)
     if db_npc:
         injuries = db_npc.injuries or []
@@ -193,7 +222,9 @@ def apply_injury_to_npc(db: Session, npc_id: int, injury: dict) -> Optional[mode
 
 
 def remove_injury_from_npc(db: Session, npc_id: int, severity: str) -> Optional[models.NpcInstance]:
-    """Removes the first injury of a given severity from an NPC."""
+    """
+    Removes the first occurrence of an injury with the specified severity from an NPC.
+    """
     db_npc = get_npc(db, npc_id)
     if db_npc:
         injuries = db_npc.injuries or []
@@ -214,7 +245,9 @@ def remove_injury_from_npc(db: Session, npc_id: int, severity: str) -> Optional[
 
 
 def delete_npc(db: Session, npc_id: int) -> bool:
-    """This is how we remove a dead NPC from the world."""
+    """
+    Permanently deletes an NPC and their inventory from the database.
+    """
     db_npc = get_npc(db, npc_id)
     if db_npc:
         # Also delete all items in their inventory
@@ -227,6 +260,9 @@ def delete_npc(db: Session, npc_id: int) -> bool:
 
 # --- Trap Instance ---
 def create_trap(db: Session, trap: schemas.TrapInstanceCreate) -> models.TrapInstance:
+    """
+    Creates a new trap instance in the world.
+    """
     db_trap = models.TrapInstance(**trap.dict())
     db.add(db_trap)
     db.commit()
@@ -234,12 +270,21 @@ def create_trap(db: Session, trap: schemas.TrapInstanceCreate) -> models.TrapIns
     return db_trap
 
 def get_trap(db: Session, trap_id: int) -> Optional[models.TrapInstance]:
+    """
+    Retrieves a trap by ID.
+    """
     return db.query(models.TrapInstance).filter(models.TrapInstance.id == trap_id).first()
 
 def get_traps_for_location(db: Session, location_id: int) -> List[models.TrapInstance]:
+    """
+    Retrieves all traps in a specific location.
+    """
     return db.query(models.TrapInstance).filter(models.TrapInstance.location_id == location_id).all()
 
 def update_trap_status(db: Session, trap_id: int, status: str) -> Optional[models.TrapInstance]:
+    """
+    Updates the status of a trap (e.g., 'armed', 'triggered', 'disarmed').
+    """
     db_trap = get_trap(db, trap_id)
     if db_trap:
         db_trap.status = status

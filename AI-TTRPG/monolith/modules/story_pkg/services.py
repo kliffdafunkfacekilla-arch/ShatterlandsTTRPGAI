@@ -26,113 +26,140 @@ logger = logging.getLogger("monolith.story.services")
 
 # --- Rules Engine Functions ---
 def roll_initiative(**stats) -> Dict:
+    """Calls the rules engine to roll initiative based on stats."""
     logger.debug(f"Calling internal rules_api.roll_initiative with {stats.keys()}")
     return rules_api.roll_initiative(**stats)
 
 def get_npc_generation_params(template_id: str) -> Dict:
+    """Retrieves generation parameters for a specific NPC template."""
     logger.debug(f"Calling internal rules_api.get_npc_generation_params for {template_id}")
     return rules_api.get_npc_generation_params(template_id)
 
 def get_item_template_params(item_id: str) -> Dict:
+    """Retrieves data for a specific item template."""
     logger.debug(f"Calling internal rules_api.get_item_template_params for {item_id}")
     return rules_api.get_item_template_params(item_id)
 
 def generate_npc_template(generation_request: Dict) -> Dict:
+    """Generates a complete NPC template using the rules engine."""
     logger.debug(f"Calling internal rules_api.generate_npc_template")
     return rules_api.generate_npc_template(generation_request)
 
 def roll_contested_attack(attack_params: Dict) -> Dict:
+    """Resolves a contested attack roll via the rules engine."""
     logger.debug(f"Calling internal rules_api.roll_contested_attack")
     return rules_api.roll_contested_attack(attack_params)
 
 def calculate_damage(damage_params: Dict) -> Dict:
+    """Calculates damage output via the rules engine."""
     logger.debug(f"Calling internal rules_api.calculate_damage")
     return rules_api.calculate_damage(damage_params)
 
 def get_weapon_data(category_name: str, weapon_type: str) -> Dict:
+    """Retrieves weapon statistics for a given category."""
     logger.debug(f"Calling internal rules_api.get_weapon_data for {category_name}")
     return rules_api.get_weapon_data(category_name, weapon_type)
 
 def get_armor_data(category_name: str) -> Dict:
+    """Retrieves armor statistics for a given category."""
     logger.debug(f"Calling internal rules_api.get_armor_data for {category_name}")
     return rules_api.get_armor_data(category_name)
 
 def get_loot_table(loot_table_ref: str) -> Dict:
+    """Retrieves a loot table by its reference ID."""
     logger.debug(f"Calling internal rules_api.get_loot_table for {loot_table_ref}")
     return rules_api.get_loot_table(loot_table_ref)
 
 def get_status_effect_data(status_name: str) -> Dict:
+    """Retrieves definition data for a specific status effect."""
     logger.debug(f"Calling internal rules_api.get_status_effect_data for {status_name}")
     return rules_api.get_status_effect_data(status_name)
 
 def get_all_status_effects() -> Dict:
+    """Retrieves all defined status effects."""
     logger.debug(f"Calling internal rules_api.get_all_status_effects")
     return rules_api.get_all_status_effects()
 
 # --- World Engine Functions ---
 def get_world_location_context(location_id: int) -> Dict:
+    """Retrieves location data from the world module."""
     logger.debug(f"Calling internal world_api.get_world_location_context for {location_id}")
     return world_api.get_world_location_context(location_id)
 
 def update_location_annotations(location_id: int, annotations: Dict[str, Any]) -> Dict:
+    """Updates AI annotations for a location."""
     logger.debug(f"Calling internal world_api.update_location_annotations for {location_id}")
     return world_api.update_location_annotations(location_id, annotations)
 
 def spawn_npc_in_world(spawn_request: schemas.OrchestrationSpawnNpc) -> Dict:
+    """Spawns an NPC in the world via the world module."""
     logger.debug(f"Calling internal world_api.spawn_npc_in_world for {spawn_request.template_id}")
     return world_api.spawn_npc_in_world(spawn_request)
 
 def get_npc_context(npc_instance_id: int) -> Dict:
+    """Retrieves data for a specific NPC instance."""
     logger.debug(f"Calling internal world_api.get_npc_context for {npc_instance_id}")
     return world_api.get_npc_context(npc_instance_id)
 
 def apply_damage_to_npc(npc_id: int, new_hp: int) -> Dict:
+    """Directly updates an NPC's HP in the world module."""
     logger.debug(f"Calling internal world_api.update_npc_state for {npc_id} (HP: {new_hp})")
     update_payload = {"current_hp": new_hp}
     return world_api.update_npc_state(npc_id, update_payload)
 
 def spawn_item_in_world(spawn_request: schemas.OrchestrationSpawnItem) -> Dict:
+    """Spawns an item in the world via the world module."""
     logger.debug(f"Calling internal world_api.spawn_item_in_world for {spawn_request.template_id}")
     return world_api.spawn_item_in_world(spawn_request)
 
 def delete_item_from_world(item_id: int) -> Dict:
+    """Removes an item from the world via the world module."""
     logger.debug(f"Calling internal world_api.delete_item_from_world for {item_id}")
     return world_api.delete_item_from_world(item_id)
 
 def update_location_map(location_id: int, map_update: Dict[str, Any]) -> Dict:
+    """Updates map data for a location."""
     logger.debug(f"Calling internal world_api.update_location_map for {location_id}")
     return world_api.update_location_map(location_id, map_update)
 
 def spawn_trap_in_world(trap_request: schemas.TrapInstanceCreate) -> Dict:
+    """Spawns a trap in the world via the world module."""
     logger.debug(f"Calling internal world_api.spawn_trap_in_world for {trap_request.template_id}")
     return world_api.spawn_trap_in_world(trap_request)
 
 def apply_composure_damage_to_npc(npc_id: int, damage_amount: int) -> Dict:
+    """Applies composure damage to an NPC via the world module."""
     logger.debug(f"Calling internal world_api.apply_composure_damage_to_npc for {npc_id}")
     return world_api.apply_composure_damage_to_npc(npc_id, damage_amount)
 
 def apply_composure_healing_to_npc(npc_id: int, amount: int) -> Dict:
+    """Heals NPC composure via the world module."""
     logger.debug(f"Calling internal world_api.apply_composure_healing_to_npc for {npc_id}")
     return world_api.apply_composure_healing_to_npc(npc_id, amount)
 
 def apply_temp_hp_to_npc(npc_id: int, amount: int) -> Dict:
+    """Applies temporary HP to an NPC via the world module."""
     logger.debug(f"Calling internal world_api.apply_temp_hp_to_npc for {npc_id}")
     return world_api.apply_temp_hp_to_npc(npc_id, amount)
 
 def update_npc_resource_pool(npc_id: int, pool_name: str, new_value: int) -> Dict:
+    """Updates a specific resource pool for an NPC."""
     logger.debug(f"Calling internal world_api.update_npc_resource_pool for {npc_id}")
     return world_api.update_npc_resource_pool(npc_id, pool_name, new_value)
 
 # --- Character Engine Functions ---
 def get_character_context(char_id: str) -> Dict:
+    """Retrieves character data from the character module."""
     logger.debug(f"Calling internal character_api.get_character_context for {char_id}")
     return char_api.get_character_context(char_id)
 
 def apply_damage_to_character(char_id: str, damage_amount: int) -> Dict:
+    """Applies damage to a character via the character module."""
     logger.debug(f"Calling internal character_api.apply_damage_to_character for {char_id}")
     return char_api.apply_damage_to_character(char_id, damage_amount)
 
 def apply_composure_damage_to_character(char_id: str, damage_amount: int) -> Dict:
+    """Applies composure damage to a character."""
     logger.debug(f"Calling internal character_api.apply_composure_damage_to_character for {char_id}")
     return character_api.apply_composure_damage_to_character(char_id, damage_amount)
 
@@ -147,18 +174,22 @@ def apply_composure_healing_to_character(char_id: str, amount: int):
     return character_api.apply_composure_healing_to_character(char_id, amount)
 
 def add_item_to_character(char_id: str, item_id: str, quantity: int) -> Dict:
+    """Adds an item to a character's inventory."""
     logger.debug(f"Calling internal character_api.add_item_to_character for {char_id}")
     return char_api.add_item_to_character(char_id, item_id, quantity)
 
 def remove_item_from_character(char_id: str, item_id: str, quantity: int) -> Dict:
+    """Removes an item from a character's inventory."""
     logger.debug(f"Calling internal character_api.remove_item_from_character for {char_id}")
     return char_api.remove_item_from_character(char_id, item_id, quantity)
 
 def apply_temp_hp_to_character(char_id: str, amount: int) -> Dict:
+    """Applies temporary HP to a character."""
     logger.debug(f"Calling internal character_api.apply_temp_hp_to_character for {char_id}")
     return character_api.apply_temp_hp_to_character(char_id, amount)
 
 def update_character_resource_pool(char_id: str, pool_name: str, new_value: int) -> Dict:
+    """Updates a character's resource pool."""
     logger.debug(f"Calling internal character_api.update_character_resource_pool for {char_id}")
     return character_api.update_character_resource_pool(char_id, pool_name, new_value)
 
@@ -231,13 +262,16 @@ def apply_resource_damage_to_target(target_id: str, resource_name: str, damage_a
         raise ValueError(f"Unknown target type for ID {target_id}")
 
 def apply_temp_hp_to_character(char_id: str, amount: int) -> Dict:
+    """Applies temporary HP to a character."""
     logger.debug(f"Calling internal character_api.apply_temp_hp_to_character for {char_id}")
     return character_api.apply_temp_hp_to_character(char_id, amount)
 
 def update_character_resource_pool(char_id: str, pool_name: str, new_value: int) -> Dict:
+    """Updates a character's resource pool."""
     logger.debug(f"Calling internal character_api.update_character_resource_pool for {char_id}")
     return character_api.update_character_resource_pool(char_id, pool_name, new_value)
 
 def award_xp(char_id: str, amount: int) -> Dict:
+    """Awards XP to a character."""
     logger.debug(f"Calling internal character_api.award_xp for {char_id}")
     return character_api.award_xp(char_id, amount)

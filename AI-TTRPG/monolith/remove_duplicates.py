@@ -7,7 +7,16 @@ import json
 from pathlib import Path
 
 def remove_duplicates():
-    """Remove duplicate talent entries from talents.json."""
+    """
+    Scans 'talents.json' for known duplicate entries and removes them.
+
+    This utility targets specific duplicate entries identified in the
+    Single Skill Mastery section (Camouflage, Leather/Hides, Daggers, etc.)
+    and preserves the entry with more detailed information.
+
+    Returns:
+        int: The count of duplicate entries removed.
+    """
     talents_path = Path(__file__).parent / 'modules' / 'rules_pkg' / 'data' / 'talents.json'
     
     with open(talents_path, 'r') as f:
