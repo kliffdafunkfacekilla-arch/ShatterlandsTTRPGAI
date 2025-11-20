@@ -505,7 +505,7 @@ def find_eligible_talents(
                     name=talent_group.get("talent_name", "Unknown Talent"),
                     source=f"Stat: {stat_name} {required_score}",
                     effect=talent_group.get("effect", ""),
-                    modifiers=[models.PassiveModifier(**m) for m in talent_group.get("modifiers", [])]
+                        modifiers=[models.PassiveModifier(**m) for m in talent_group.get("modifiers", [])]
                 )
             )
 
@@ -526,7 +526,7 @@ def find_eligible_talents(
                         ),  # Check 'talent_name' field
                         source=f"Dual Stat: {stat1} & {stat2} {req_score}",
                         effect=talent.get("effect", ""),
-                        modifiers=[models.PassiveModifier(**m) for m in talent.get("modifiers", [])]
+                            modifiers=[models.PassiveModifier(**m) for m in talent.get("modifiers", [])]
                     )
                 )
 

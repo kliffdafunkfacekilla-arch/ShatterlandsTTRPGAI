@@ -49,6 +49,8 @@ from views.character_sheet_screen import CharacterSheetScreen
 from views.load_game_screen import LoadGameScreen
 from views.inventory_screen import InventoryScreen
 from views.quest_log_screen import QuestLogScreen
+from views.dialogue_screen import DialogueScreen
+from views.shop_screen import ShopScreen
 # --- ADD THIS IMPORT ---
 from views.settings_screen import SettingsScreen
 # --- END ADD ---
@@ -79,6 +81,8 @@ class ShatterlandsClientApp(App):
         sm.add_widget(CharacterSheetScreen(name='character_sheet'))
         sm.add_widget(InventoryScreen(name='inventory'))
         sm.add_widget(QuestLogScreen(name='quest_log'))
+        sm.add_widget(DialogueScreen(name='dialogue_screen'))
+        sm.add_widget(ShopScreen(name='shop_screen'))
 
         # --- ADD THIS LINE ---
         sm.add_widget(SettingsScreen(name='settings'))

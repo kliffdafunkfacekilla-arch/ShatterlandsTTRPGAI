@@ -162,32 +162,7 @@ class RollResult(BaseModel):
     sre_triggered: bool = False
 
 
-class PassiveModifier(BaseModel):
-    """
-    Represents a single mechanical effect from a talent or ability.
-    """
-    type: str = Field(..., description="Type of modifier: 'stat_bonus', 'skill_bonus', 'contested_check', 'save_roll', 'action_cost', 'reroll', 'resource_restore', 'damage_bonus', 'dr_bonus'")
-    
-    # Target identifiers
-    stat: Optional[str] = None
-    skill: Optional[str] = None
-    tag: Optional[str] = None # e.g., "Mind Control", "Poison"
-    action: Optional[str] = None # e.g., "draw_weapon"
-    
-    # Values
-    bonus: int = 0
-    value: int = 0 # Alternative to bonus
-    new_cost: Optional[str] = None # e.g., "free", "minor"
-    
-    # Conditions
-    condition: Optional[str] = None # e.g., "while_flanked", "first_round"
-    frequency: Optional[str] = None # e.g., "once_per_scene"
-    cost_resource: Optional[str] = None # e.g., "Guile" (for costs)
-    resource: Optional[str] = None # e.g., "Presence" (for bonuses/max increases)
-    
-    # Specifics
-    weapon_size: Optional[str] = None
-    trigger: Optional[str] = None
+from .models_inventory import PassiveModifier
 
 class ModifierSource(BaseModel):
     """
@@ -491,6 +466,8 @@ class BaseVitalsResponse(BaseModel):
     resources: Dict[str, Dict[str, int]] = Field(
         description="Dictionary of all 6 resource pools with current/max values."
     )
+
+    model_config = {"from_attributes": True}
 
 # --- ADDED NPC GENERATION MODELS (Consolidated from npc_generator) ---
 class NpcGenerationRequest(BaseModel):

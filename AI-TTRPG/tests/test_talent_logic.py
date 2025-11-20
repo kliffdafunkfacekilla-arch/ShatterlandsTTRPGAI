@@ -23,7 +23,9 @@ def test_eligibility():
     
     eligible = find_eligible_talents(stats, skills)
     
-    names = [t.get("talent_name") or t.get("name") for t in eligible]
+    eligible = find_eligible_talents(stats, skills, MOCK_TALENTS_DATA, list(stats.keys()), {skill: {} for skill in skills.keys()})
+    
+    names = [t.name for t in eligible]
     print(f"Eligible Talents: {names}")
     
     assert "Overpowering Presence" in names, "Should be eligible for Overpowering Presence"
@@ -33,23 +35,31 @@ def test_modifier_application():
     print("\nTesting Modifier Application...")
     data_loader.load_data()
     
-    mock_character = Character(
-        id="test",
-        name="Test Character",
-        stats={"Might": 14},
-        skills={},
-        talents=["Overpowering Presence", "Unfailing Stamina"],
-        equipment={
-            "combat": {
-                "chest": {
-                    "id": "item_leather_jerkin",
-                    "dr": 1
-                }
-            }
-        }
-    )
-
-    modified_stats, total_dr = apply_passive_modifiers(mock_character)
+    talents = [
+        TalentInfo(
+            name="Test Talent 1",
+            source="talent",
+            effect="test",
+            modifiers=[
+                PassiveModifier(type="skill_bonus", skill="Intimidation", bonus=2),
+                PassiveModifier(type="resource_max", resource="Presence", bonus=1),
+                PassiveModifier(type="immunity", tag="Poison"),
+                PassiveModifier(type="action_cost", action="draw_weapon", new_cost="free"),
+                PassiveModifier(type="reroll", skill="Knowledge")
+            ]
+        ),
+        TalentInfo(
+            name="Test Talent 2",
+            source="talent",
+            effect="test",
+            modifiers=[
+                PassiveModifier(type="skill_bonus", skill="Intimidation", bonus=1),
+                PassiveModifier(type="defense_bonus", tag="Melee", bonus=2)
+            ]
+        )
+    ]
+    
+    aggregated = apply_passive_modifiers({}, {}, talents)
     
     print("Modified Stats:", json.dumps(modified_stats, indent=2, default=str))
     print("Total DR:", total_dr)
