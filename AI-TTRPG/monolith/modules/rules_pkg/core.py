@@ -601,55 +601,60 @@ def apply_passive_modifiers(
         for mod in talent.modifiers:
             # TODO: Check conditions here if context is provided
             
-            if mod.type == "stat_bonus" and mod.stat:
-                aggregated["stat_bonuses"][mod.stat] = aggregated["stat_bonuses"].get(mod.stat, 0) + mod.bonus
-            elif mod.type == "skill_bonus" and mod.skill:
-                aggregated["skill_bonuses"][mod.skill] = aggregated["skill_bonuses"].get(mod.skill, 0) + mod.bonus
-            elif mod.type == "contested_check" and mod.stat:
-                key = f"contested_check:{mod.stat}"
-                aggregated["roll_bonuses"][key] = aggregated["roll_bonuses"].get(key, 0) + mod.bonus
-            elif mod.type == "save_roll" and mod.tag:
-                key = f"save_roll:{mod.tag}"
-                aggregated["roll_bonuses"][key] = aggregated["roll_bonuses"].get(key, 0) + mod.bonus
-            elif mod.type == "damage_bonus":
-                aggregated["damage_bonuses"] += mod.bonus
-            elif mod.type == "dr_bonus":
-                aggregated["dr_bonuses"] += mod.bonus
-            elif mod.type == "resource_max" and mod.resource:
-                 res_name = mod.resource
+            # Convert Pydantic model values to local variables for cleaner logic
+            # PassiveModifier uses: effect_type, target, value
+            # We map these to the logic previously used with dict keys
+
+            m_type = mod.effect_type
+            m_target = mod.target
+            m_value = mod.value
+
+            if m_type == "stat_bonus" and m_target:
+                aggregated["stat_bonuses"][m_target] = aggregated["stat_bonuses"].get(m_target, 0) + m_value
+            elif m_type == "skill_bonus" and m_target:
+                aggregated["skill_bonuses"][m_target] = aggregated["skill_bonuses"].get(m_target, 0) + m_value
+            elif m_type == "contested_check" and m_target:
+                key = f"contested_check:{m_target}"
+                aggregated["roll_bonuses"][key] = aggregated["roll_bonuses"].get(key, 0) + m_value
+            elif m_type == "save_roll" and m_target:
+                key = f"save_roll:{m_target}"
+                aggregated["roll_bonuses"][key] = aggregated["roll_bonuses"].get(key, 0) + m_value
+            elif m_type == "damage_bonus":
+                aggregated["damage_bonuses"] += m_value
+            elif m_type == "dr_bonus":
+                aggregated["dr_bonuses"] += m_value
+            elif m_type == "resource_max" and m_target:
+                 res_name = m_target
                  if res_name:
-                    aggregated["resource_max_bonuses"][res_name] = aggregated["resource_max_bonuses"].get(res_name, 0) + mod.bonus
-            elif mod.type == "initiative":
-                aggregated["initiative_bonus"] += mod.bonus
-            elif mod.type == "skill_check" and mod.skill:
-                aggregated["skill_bonuses"][mod.skill] = aggregated["skill_bonuses"].get(mod.skill, 0) + mod.bonus
-            elif mod.type == "action_cost_reduction":
-                key = mod.action or "general"
-                aggregated["action_cost_reductions"][key] = mod
-            elif mod.type == "reroll_on_failure":
+                    aggregated["resource_max_bonuses"][res_name] = aggregated["resource_max_bonuses"].get(res_name, 0) + m_value
+            elif m_type == "initiative":
+                aggregated["initiative_bonus"] += m_value
+            elif m_type == "skill_check" and m_target:
+                aggregated["skill_bonuses"][m_target] = aggregated["skill_bonuses"].get(m_target, 0) + m_value
+            elif m_type == "action_cost_reduction":
+                key = m_target or "general"
+                aggregated["action_cost_reductions"][key] = mod # Store full object for complex data
+            elif m_type == "reroll_on_failure":
                 aggregated["rerolls"].append(mod)
-            elif mod.type == "resource_restore_on_check" or mod.type == "resource_restore_on_trigger":
+            elif m_type == "resource_restore_on_check" or m_type == "resource_restore_on_trigger":
                 aggregated["resource_restores"].append(mod)
-            elif mod.type == "damage_reduction":
-                 # Assuming this is a flat DR bonus if 'bonus' is present, or a rule if not
-                 if mod.bonus:
-                    aggregated["dr_bonuses"] += mod.bonus
+            elif m_type == "damage_reduction":
+                 # Assuming this is a flat DR bonus if 'value' is non-zero/present
+                 if m_value:
+                    aggregated["dr_bonuses"] += m_value
                  else:
-                    aggregated["damage_reduction"][mod.tag or "general"] = mod
-            elif mod.type == "ignore_status_penalty" or mod.type == "ignore_terrain_penalty":
+                    aggregated["damage_reduction"][m_target or "general"] = mod
+            elif m_type == "ignore_status_penalty" or m_type == "ignore_terrain_penalty":
                 aggregated["ignored_penalties"].append(mod)
-            elif mod.type == "initiative_advantage":
+            elif m_type == "initiative_advantage":
                 aggregated["roll_bonuses"]["initiative_advantage"] = True
-            elif mod.type == "composure_loss_reduction":
-                aggregated["defense_bonuses"]["composure_dr"] = aggregated["defense_bonuses"].get("composure_dr", 0) + mod.bonus
-            elif mod.type == "unlock_action":
-                # Maybe store in a new key or just generic list
+            elif m_type == "composure_loss_reduction":
+                aggregated["defense_bonuses"]["composure_dr"] = aggregated["defense_bonuses"].get("composure_dr", 0) + m_value
+            elif m_type == "unlock_action":
                 pass
-            elif mod.type == "rule_override" or mod.type == "defense_override":
-                # Store for complex logic handling
+            elif m_type == "rule_override" or m_type == "defense_override":
                 pass
-            elif mod.type == "derived_stat":
-                # Handle derived stat bonuses if needed
+            elif m_type == "derived_stat":
                 pass 
             
     return aggregated
