@@ -134,6 +134,7 @@ class CombatParticipantResponse(BaseModel):
     actor_id: str
     actor_type: str
     initiative_roll: int
+    ability_usage: Dict[str, int] = {}
     class Config:
         from_attributes = True # or orm_mode = True
 

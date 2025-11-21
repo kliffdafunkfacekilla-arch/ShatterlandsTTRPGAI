@@ -72,6 +72,11 @@ def generate_npc_template_core(
             except ValueError:
                 print(f"Warning: Invalid modifier format '{mod_str}' for stat '{stat}'")
 
+    # Quick math for Speed: Base 5 + (Reflexes Mod)
+    reflexes = final_stats.get("Reflexes", 10)
+    ref_mod = calculate_modifier(reflexes)
+    final_stats["Speed"] = 5 + max(0, ref_mod)
+
     # 3. Calculate HP
     base_hp = final_stats.get("Endurance", 10) + final_stats.get("Vitality", 10) * 2
     hp_multiplier = generation_rules.get("hp_scaling_by_difficulty", {}).get(request.difficulty.lower(), 1.0)
@@ -321,7 +326,12 @@ def calculate_damage(damage_data: models.DamageRequest) -> models.DamageResponse
             final_damage=0,
         )
 
-    rolls, roll_total = _roll_dice(num_dice, die_type)
+    # Use internal logic to get individual rolls because _roll_dice only returns sum
+    rolls = []
+    roll_total = 0
+    if num_dice > 0:
+        rolls = [random.randint(1, die_type) for _ in range(num_dice)]
+        roll_total = sum(rolls)
 
     # --- 2. Calculate Stat Bonus ---
     stat_bonus = calculate_modifier(damage_data.relevant_stat_score)

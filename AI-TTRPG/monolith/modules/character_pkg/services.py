@@ -470,6 +470,17 @@ def create_character(
                 logger.exception(f"Error applying mods for talent '{character.ability_talent}': {e}")
 
     logger.info(f"Final calculated stats: {base_stats}")
+
+    # Quick math for Speed: Base 5 + (Reflexes Mod)
+    # We need calculate_modifier which is in rules_pkg.core
+    try:
+        reflexes = base_stats.get("Reflexes", 10)
+        ref_mod = rules_api.core.calculate_modifier(reflexes)
+        base_stats["Speed"] = 5 + max(0, ref_mod)
+        logger.info(f"Calculated Speed: {base_stats['Speed']}")
+    except Exception as e:
+        logger.warning(f"Speed calculation failed: {e}")
+
     logger.info("Calculating vitals...")
 
     # --- UPDATE: Use New Vitals Logic ---
@@ -511,9 +522,9 @@ def create_character(
             try:
                 first_branch = branches[0]
                 first_tier = first_branch.get("tiers", [])[0]
-                description = first_tier.get("description", "Unknown Ability")
-                base_abilities.append(description)
-                logger.info(f"Added T1 ability: {description}")
+                ability_name = first_tier.get("name", "Unknown Ability")
+                base_abilities.append(ability_name)
+                logger.info(f"Added T1 ability: {ability_name}")
             except Exception as e:
                 logger.exception(f"Could not parse T1 ability from school '{character.ability_school}': {e}")
 

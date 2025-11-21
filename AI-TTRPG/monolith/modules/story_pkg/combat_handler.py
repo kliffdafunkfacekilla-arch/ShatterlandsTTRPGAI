@@ -121,6 +121,55 @@ def _get_actor_coords(actor_context: Dict) -> Optional[List[int]]:
 
 # --- Resource Management ---
 
+def _check_and_update_usage(
+    db: Session,
+    combat: models.CombatEncounter,
+    actor_id: str,
+    ability_name: str,
+    limit_str: Optional[str],
+    log: List[str]) -> bool:
+    """
+    Checks if an ability is within its usage limits.
+    If valid, it increments the counter.
+    Returns True if the action can proceed.
+    """
+    if not limit_str:
+        return True # No limits defined
+
+    # Parse the limit string (e.g., "once_per_encounter", "3_per_encounter")
+    max_uses = 999
+    if limit_str == "once_per_encounter":
+        max_uses = 1
+    elif "_per_encounter" in limit_str:
+        try:
+            max_uses = int(limit_str.split("_")[0])
+        except:
+            pass # Default to unlimited if parsing fails
+
+    # Find the participant record
+    participant = None
+    for p in combat.participants:
+        if p.actor_id == actor_id:
+            participant = p
+            break
+
+    if not participant:
+        return True # Should not happen
+
+    # Get current usage dict (ensure it's a dict)
+    usage = dict(participant.ability_usage) if participant.ability_usage else {}
+    current_count = usage.get(ability_name, 0)
+
+    if current_count >= max_uses:
+        log.append(f"Cannot use {ability_name}: Limit reached ({current_count}/{max_uses}).")
+        return False
+
+    # Increment and save
+    usage[ability_name] = current_count + 1
+    participant.ability_usage = usage
+    # Note: We don't commit here; the main handler commits the transaction.
+    return True
+
 def _handle_effect_composure_damage(target_id: str, log: List[str], effect: Dict) -> bool:
     """
     Applies direct damage to a target's Composure pool.
@@ -1959,6 +2008,31 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
             log.append(f"Move failed. Waiting instead.")
             return handle_no_action(db, combat, actor_id)
 
+        # --- FIX: DISTANCE VALIDATION ---
+        # 1. Get Start Position
+        old_coords = _get_actor_coords(attacker_context)
+        if not old_coords:
+            log.append("Move failed: Could not locate actor.")
+            return handle_no_action(db, combat, actor_id)
+
+        # 2. Calculate Distance
+        dist_x = abs(coords[0] - old_coords[0])
+        dist_y = abs(coords[1] - old_coords[1])
+        distance = max(dist_x, dist_y) # Match client logic (Chebyshev)
+
+        # 3. Get Speed Limit
+        # Look for 'Speed' in stats, otherwise default to 6
+        speed_limit = attacker_context.get("stats", {}).get("Speed", 6)
+
+        # 4. Check for Status Effects (e.g., Slowed)
+        if "Slowed" in attacker_context.get("status_effects", []):
+            speed_limit = speed_limit // 2
+
+        if distance > speed_limit:
+            log.append(f"Move failed: Distance {distance}m exceeds Speed {speed_limit}m.")
+            return handle_no_action(db, combat, actor_id)
+        # --- END FIX ---
+
         try:
             # --- REACTION CALL (3) ---
             # Get old coordinates *before* updating the actor's position
@@ -2016,6 +2090,21 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
             if not ability_data:
                 log.append(f"Unknown ability: {ability_name}. Action failed.")
             else:
+                # --- NEW CHECK START ---
+                limit_tag = ability_data.get("limit")
+                if not _check_and_update_usage(db, combat, actor_id, ability_name, limit_tag, log):
+                    # Limit reached! Return success=False but keep the turn
+                    # or return success=True with a log message and NO turn advancement?
+                    # Burt says: Fail the action, let them pick something else.
+                    return schemas.PlayerActionResponse(
+                        success=False,
+                        message="Ability limit reached.",
+                        log=log,
+                        new_turn_index=combat.current_turn_index,
+                        combat_over=False
+                    )
+                # --- NEW CHECK END ---
+
                 cost = ability_data.get("cost")
                 if cost:
                     log.append(f"Paid {cost['amount']} {cost['resource']}.")
@@ -2106,14 +2195,9 @@ def determine_npc_action(
     npc_context: Dict
 ) -> Dict:
     """
-    Determines the best action for an NPC based on its AI tag and current state.
-    Returns a dictionary representing the action (similar to PlayerActionRequest).
+    The 'Burt Reynolds' AI: Evaluates all valid moves and picks the highest scoring one.
     """
-    ai_tag = npc_context.get("ai_tag", "basic_melee")
-    # Default fallback
-    action = {"action": "pass_turn", "target_id": None}
-
-    # Identify potential targets (players)
+    # 1. Identify Enemies (Players)
     enemies = []
     for p in combat.participants:
         if p.actor_id.startswith("player_"):
@@ -2125,24 +2209,95 @@ def determine_npc_action(
                 continue
 
     if not enemies:
-        return action
+        return {"action": "pass_turn"}
 
-    # Simple targeting logic: closest or random
-    target_id = random.choice(enemies)
+    # 2. Get Self State
+    my_resources = npc_context.get("resource_pools", {})
+    my_hp = npc_context.get("current_hp", 0)
+    max_hp = npc_context.get("max_hp", 10)
+    hp_percent = my_hp / max_hp
     
-    # AI Logic
-    if ai_tag == "aggressive":
-        # Try to attack
-        # Check if has melee attack
-        action = {"action": "attack", "target_id": target_id, "ability_id": "Basic Melee"}
-    elif ai_tag == "caster":
-        # Try to cast a spell if available, else attack
-        action = {"action": "attack", "target_id": target_id, "ability_id": "Basic Ranged"}
-    else:
-        # Basic behavior
-        action = {"action": "attack", "target_id": target_id, "ability_id": "Basic Melee"}
+    # 3. Get Usage History (for limits)
+    participant = next((p for p in combat.participants if p.actor_id == npc_id), None)
+    usage_history = participant.ability_usage if participant else {}
 
-    return action
+    best_action = {"action": "attack", "target_id": random.choice(enemies), "ability_id": "Basic Melee"}
+    best_score = 0
+
+    # 4. Evaluate Available Abilities
+    # (Ensure 'abilities' is a list of names in your NPC context)
+    known_abilities = npc_context.get("abilities", [])
+
+    # Add "Basic Melee" as a fallback option to check
+    candidates = known_abilities + ["Basic Melee"]
+
+    for ability_name in candidates:
+        if ability_name == "Basic Melee":
+            # Default attack score
+            score = 10
+            target = random.choice(enemies)
+            if score > best_score:
+                best_score = score
+                best_action = {"action": "attack", "target_id": target, "ability_id": "Basic Melee"}
+            continue
+
+        # Lookup Data
+        data = services.rules_api.get_ability_data(ability_name)
+        if not data: continue
+
+        # A. Check Limits
+        limit = data.get("limit")
+        if limit == "once_per_encounter" and usage_history.get(ability_name, 0) >= 1:
+            continue
+
+        # B. Check Resources
+        cost = data.get("cost")
+        if cost:
+            res_name = cost.get("resource")
+            amount = cost.get("amount", 0)
+            current_val = my_resources.get(res_name, {}).get("current", 0)
+            if current_val < amount:
+                continue # Can't afford it
+
+        # C. Scoring Logic (The Brain)
+        score = 0
+        target = None
+
+        # Heuristic: Healing
+        if "heal" in str(data.get("effects", [])).lower():
+            if hp_percent < 0.5:
+                score += 50 # Panic heal!
+                target = npc_id # Self heal
+            else:
+                score -= 10 # Don't heal if healthy
+
+        # Heuristic: AoE
+        elif "aoe" in str(data.get("effects", [])).lower():
+            score += 20
+            target = enemies[0] # Simplified targeting for AoE
+
+        # Heuristic: Debuffs
+        elif "status" in str(data.get("effects", [])).lower():
+            score += 15
+            target = random.choice(enemies)
+
+        # Heuristic: Big Damage
+        elif "damage" in str(data.get("effects", [])).lower():
+            score += 10 + int(data.get("tier", "T1").replace("T","")) * 5
+            target = random.choice(enemies)
+
+        # Update Best
+        if score > best_score:
+            best_score = score
+            # Determine action type based on ability data
+            action_type = "use_ability"
+            best_action = {
+                "action": action_type,
+                "target_id": target,
+                "ability_id": ability_name
+            }
+
+    return best_action
 
 def handle_npc_turn(
     db: Session,
@@ -2189,6 +2344,42 @@ def handle_npc_turn(
                 _handle_basic_attack(db, combat, npc_id, target_id, npc_context, target_context, log)
             else:
                 log.append(f"{npc_id} could not find a target.")
+
+        elif action_type == "use_ability": # <--- NEW BLOCK
+             # Call the same logic players use!
+             # We can actually verify/deduct resource here if we want to be strict
+             # For now, we trust the AI's pre-check.
+
+             # Reuse the ability routing from player handler:
+             ability_data = services.rules_api.get_ability_data(ability_id)
+
+             # PAY COST
+             cost = ability_data.get("cost")
+             if cost:
+                 res_name = cost.get("resource")
+                 amt = cost.get("amount", 0)
+                 services.update_npc_resource_pool(
+                    int(npc_id.split("_")[1]),
+                    res_name,
+                    npc_context["resource_pools"][res_name]["current"] - amt
+                 )
+                 log.append(f"{npc_id} spends {amt} {res_name}.")
+
+             # UPDATE USAGE (The Limit System)
+             # We manually update it here for NPCs since we aren't calling handle_player_action
+             _check_and_update_usage(db, combat, npc_id, ability_id, ability_data.get("limit"), log)
+
+             _, target_context = get_actor_context(target_id)
+
+             # EXECUTE EFFECTS
+             for effect in ability_data.get("effects", []):
+                 handler = ABILITY_EFFECT_HANDLERS.get(effect["type"])
+                 if handler:
+                     # Use the same robust calling convention we fixed earlier
+                     if effect["type"] in ("modify_attack", "aoe_damage", "apply_injury", "repair_injury", "summon", "special_move", "create_trap", "move_self", "reaction_damage", "reaction_move_ally", "reaction_contest", "move_target_roll"): # Add all complex types
+                         handler(db, combat, npc_id, target_id, npc_context, target_context, log, effect)
+                     else:
+                         handler(target_id, log, effect)
         
         elif action_type == "move":
              # NPC movement logic (simplified)
