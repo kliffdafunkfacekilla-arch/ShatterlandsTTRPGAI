@@ -145,6 +145,7 @@ class CombatEncounter(BaseModel):
     turn_order: List[str]
     current_turn_index: int
     participants: List[CombatParticipantResponse] = []
+    active_zones: List[Dict[str, Any]] = []
     class Config:
         from_attributes = True # or orm_mode = True
 
@@ -165,3 +166,4 @@ class PlayerActionResponse(BaseModel):
     log: list[str]
     new_turn_index: int
     combat_over: bool = False
+    reaction_opportunity: Optional[Dict[str, Any]] = None # If present, UI shows popup

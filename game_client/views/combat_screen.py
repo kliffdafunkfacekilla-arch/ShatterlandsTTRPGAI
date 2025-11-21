@@ -389,6 +389,13 @@ class CombatScreen(Screen):
             if "hits" in log_entry.lower(): hit_occurred = True
             if "misses" in log_entry.lower(): miss_occurred = True
 
+        # --- NEW: CHECK FOR REACTION ---
+        reaction_opp = response.get("reaction_opportunity")
+        if reaction_opp:
+            self.show_reaction_popup(reaction_opp)
+            return
+        # -------------------------------
+
         # 2. Instant Flavor Update (Optimization)
         flavor_text = ""
         if hit_occurred:
@@ -556,6 +563,42 @@ class CombatScreen(Screen):
         scroll.add_widget(scroll_content)
         self.item_menu.add_widget(scroll)
         self.add_widget(self.item_menu)
+
+    def show_reaction_popup(self, data):
+        reactor = data.get('reactor_id')
+        trigger = data.get('trigger_id')
+        name = data.get('reaction_name')
+
+        content = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
+        content.add_widget(Label(text=f"{reactor}! {trigger} is moving past you.", font_size='16sp'))
+        content.add_widget(Label(text=f"Use {name}?", font_size='20sp', bold=True))
+
+        btns = BoxLayout(size_hint_y=0.4, spacing='10dp')
+
+        yes_btn = Button(text="Strike! (Yes)", background_color=(0, 1, 0, 1))
+        yes_btn.bind(on_release=lambda x: self.send_reaction_response("execute", data))
+
+        no_btn = Button(text="Ignore (No)", background_color=(1, 0, 0, 1))
+        no_btn.bind(on_release=lambda x: self.send_reaction_response("skip", data))
+
+        btns.add_widget(yes_btn)
+        btns.add_widget(no_btn)
+        content.add_widget(btns)
+
+        self.reaction_popup = Popup(title="Reaction Opportunity", content=content, size_hint=(0.6, 0.4), auto_dismiss=False)
+        self.reaction_popup.open()
+
+    def send_reaction_response(self, decision, data):
+        if hasattr(self, 'reaction_popup'):
+            self.reaction_popup.dismiss()
+
+        action = story_schemas.PlayerActionRequest(
+            action="resolve_reaction",
+            ready_action_details={"decision": decision}
+        )
+
+        reactor_id = data.get('reactor_id')
+        self.handle_player_action(reactor_id, action)
 
     def select_item(self, item_id: str, *args):
         self.close_item_menu()
