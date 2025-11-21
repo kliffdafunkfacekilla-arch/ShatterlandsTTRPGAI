@@ -252,17 +252,7 @@ def list_characters(
     return db.query(models.Character).offset(skip).limit(limit).all()
 
 
-def get_character_by_name(db: Session, name: str) -> models.Character | None:
-    """
-    Retrieves a single character by their name.
-
-    Args:
-        db (Session): The database session.
-        name (str): The name of the character.
-
-    Returns:
-        models.Character | None: The character object if found, else None.
-    """
+def get_character_by_name(db: Session, name: str):
     return db.query(models.Character).filter(models.Character.name == name).first()
 
 def apply_composure_healing(db: Session, character: models.Character, amount: int) -> models.Character:

@@ -321,7 +321,12 @@ def calculate_damage(damage_data: models.DamageRequest) -> models.DamageResponse
             final_damage=0,
         )
 
-    rolls, roll_total = _roll_dice(num_dice, die_type)
+    # Use internal logic to get individual rolls because _roll_dice only returns sum
+    rolls = []
+    roll_total = 0
+    if num_dice > 0:
+        rolls = [random.randint(1, die_type) for _ in range(num_dice)]
+        roll_total = sum(rolls)
 
     # --- 2. Calculate Stat Bonus ---
     stat_bonus = calculate_modifier(damage_data.relevant_stat_score)
