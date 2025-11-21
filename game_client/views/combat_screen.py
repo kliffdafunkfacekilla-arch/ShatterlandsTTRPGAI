@@ -607,12 +607,35 @@ class CombatScreen(Screen):
         if map_height == 0: return True
         tile_y = (map_height - 1) - int(local_pos[1] // TILE_SIZE)
 
-        # --- Move Action ---
+        # --- FIX: MOVE VALIDATION ---
         if self.current_action == "move":
             if not self.is_tile_passable(tile_x, tile_y):
-                self.add_to_log("You can't move there.")
+                self.add_to_log("You can't move there (Blocked).")
+                self.current_action = None
                 return True
 
+            # 1. Get current position
+            curr_x = self.active_combat_character.position_x
+            curr_y = self.active_combat_character.position_y
+
+            # 2. Calculate Distance (Chebyshev: Diagonals count as 1 for simplicity, or 1.5 if you're hardcore)
+            # Burt says: Keep it simple for the prototype. 1 square = 1 distance.
+            dist_x = abs(tile_x - curr_x)
+            dist_y = abs(tile_y - curr_y)
+            distance = max(dist_x, dist_y) # Chebyshev distance
+
+            # 3. Get Speed (Default to 6 if not in stats)
+            # We check the 'stats' dictionary directly
+            speed = self.active_combat_character.stats.get("Speed", 6)
+
+            # 4. The Check
+            if distance > speed:
+                self.add_to_log(f"Too far! Speed is {speed}m (Target is {distance}m away).")
+                self.current_action = None
+                return True
+
+            # If we pass, send the action
+            self.add_to_log(f"{self.active_combat_character.name} moves to ({tile_x}, {tile_y}).")
             action = story_schemas.PlayerActionRequest(
                 action="move", coordinates=[tile_x, tile_y]
             )
@@ -620,7 +643,10 @@ class CombatScreen(Screen):
             self.current_action = None
             return True
 
-        # --- Target Action (Attack/Item/Ability) ---
+            self.current_action = None
+            return True
+        # --- END FIX ---
+
         target = self.get_target_at_coord(tile_x, tile_y)
 
         # --- NEW: Smart Targeting Logic ---

@@ -73,6 +73,11 @@ def generate_npc_template_core(
             except ValueError:
                 print(f"Warning: Invalid modifier format '{mod_str}' for stat '{stat}'")
 
+    # Quick math for Speed: Base 5 + (Reflexes Mod)
+    reflexes = final_stats.get("Reflexes", 10)
+    ref_mod = calculate_modifier(reflexes)
+    final_stats["Speed"] = 5 + max(0, ref_mod)
+
     # 3. Calculate HP
     base_hp = final_stats.get("Endurance", 10) + final_stats.get("Vitality", 10) * 2
     hp_multiplier = generation_rules.get("hp_scaling_by_difficulty", {}).get(request.difficulty.lower(), 1.0)

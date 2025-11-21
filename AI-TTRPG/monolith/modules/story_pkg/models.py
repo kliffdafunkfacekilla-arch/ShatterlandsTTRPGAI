@@ -82,3 +82,6 @@ class CombatParticipant(Base):
     actor_type = Column(String)
 
     initiative_roll = Column(Integer)
+
+    # Stores a dictionary like: {"Minor Shove": 2, "Fireball": 1}
+    ability_usage = Column(JSON, default={})
