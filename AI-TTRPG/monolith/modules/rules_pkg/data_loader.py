@@ -87,3 +87,6 @@ def load_all_data():
     DEVOTION_CHOICES = load_list("devotion_choices.json")
     
     logger.info("--- Rules Data Load Complete ---")
+
+def get_item_template(template_id: str) -> Optional[Dict[str, Any]]:
+    return ITEM_TEMPLATES.get(template_id)

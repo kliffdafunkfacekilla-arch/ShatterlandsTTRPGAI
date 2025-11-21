@@ -2,9 +2,9 @@
 Services for the camp system.
 """
 from sqlalchemy.orm import Session
-from AI-TTRPG.monolith.modules.character_pkg import models as character_models
-from AI-TTRPG.monolith.modules.character_pkg import services as character_services
-from AI-TTRPG.monolith.modules.camp_pkg import schemas as camp_schemas
+from monolith.modules.character_pkg import models as character_models
+from monolith.modules.character_pkg import services as character_services
+from monolith.modules.camp_pkg import schemas as camp_schemas
 
 def rest_at_camp(db: Session, rest_request: camp_schemas.CampRestRequest):
     """

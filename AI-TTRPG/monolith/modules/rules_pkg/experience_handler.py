@@ -2,8 +2,8 @@
 Handles experience gain and character leveling.
 """
 from sqlalchemy.orm import Session
-from AI-TTRPG.monolith.modules.character_pkg import models as character_models
-from AI-TTRPG.monolith.modules.rules_pkg import data_loader
+from monolith.modules.character_pkg import models as character_models
+from monolith.modules.rules_pkg import data_loader
 
 def add_experience(db: Session, char_id: str, xp_amount: int):
     """

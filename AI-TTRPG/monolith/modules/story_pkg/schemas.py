@@ -131,3 +131,16 @@ class PlayerActionResponse(BaseModel):
     # --- BURT'S NEW FIELD ---
     reaction_opportunity: Optional[Dict[str, Any]] = None
     # ------------------------
+
+class InteractionRequest(BaseModel):
+    actor_id: str
+    target_object_id: str
+    location_id: int
+    interaction_type: str = "use"
+
+class InteractionResponse(BaseModel):
+    success: bool
+    message: str
+    updated_annotations: Optional[Dict[str, Any]] = None
+    items_added: Optional[List[Dict[str, Any]]] = None
+    items_removed: Optional[List[Dict[str, Any]]] = None

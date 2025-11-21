@@ -93,7 +93,17 @@ def get_ability_data(ability_name: str) -> Dict[str, Any]:
 
 def resolve_stat(context: dict, default: str, tags: list, check_type: str) -> str:
     # Wrapper for core logic
-    return rules_core.resolve_governing_stat(default, context, data_loader.TALENT_DATA, tags, check_type)
+    return core.resolve_governing_stat(default, context, data_loader.TALENT_DATA, tags, check_type)
 
 def calculate_talent_bonuses(context: dict, action: str, tags: list) -> dict:
     return talent_logic.calculate_talent_bonuses(context, action, tags)
+
+def register(orchestrator):
+    """
+    Registers the rules module with the orchestrator.
+    Since rules are mostly static data lookups, there might not be
+    many event subscriptions, but this function is required by the
+    module loader.
+    """
+    logger.info("Rules module registered.")
+    # Future: Subscribe to rule-change events if dynamic rules are implemented.
