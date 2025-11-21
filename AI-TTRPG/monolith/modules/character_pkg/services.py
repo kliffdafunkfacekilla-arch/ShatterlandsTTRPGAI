@@ -551,9 +551,9 @@ def create_character(
             try:
                 first_branch = branches[0]
                 first_tier = first_branch.get("tiers", [])[0]
-                description = first_tier.get("description", "Unknown Ability")
-                base_abilities.append(description)
-                logger.info(f"Added T1 ability: {description}")
+                ability_name = first_tier.get("name", "Unknown Ability")
+                base_abilities.append(ability_name)
+                logger.info(f"Added T1 ability: {ability_name}")
             except Exception as e:
                 logger.exception(f"Could not parse T1 ability from school '{character.ability_school}': {e}")
 

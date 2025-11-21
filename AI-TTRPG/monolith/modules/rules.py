@@ -292,6 +292,21 @@ def get_ability_school(school_name: str) -> Dict:
         "tiers": school.get("branches", [])
     }
 
+def get_ability_data(ability_name: str) -> Optional[Dict]:
+    """
+    Searches all schools and branches to find a specific ability definition.
+    """
+    all_data = _get_data("ability_data")
+    if not all_data: return None
+
+    for school, data in all_data.items():
+        for branch in data.get("branches", []):
+            for tier in branch.get("tiers", []):
+                if tier.get("name") == ability_name:
+                    # return a copy so we don't mutate the cache
+                    return tier.copy()
+    return None
+
 def get_status_effect_data(status_name: str) -> Dict:
     data = _get_data("status_effects").get(status_name)
     if not data:

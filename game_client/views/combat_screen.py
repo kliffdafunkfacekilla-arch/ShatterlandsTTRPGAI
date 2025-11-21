@@ -623,12 +623,50 @@ class CombatScreen(Screen):
         # --- Target Action (Attack/Item/Ability) ---
         target = self.get_target_at_coord(tile_x, tile_y)
 
-        # Determine if action is friendly
-        is_friendly_action = False
-        if self.current_action == "use_item" and "potion" in str(self.selected_item_id):
-            is_friendly_action = True
-        elif self.current_action == "use_ability" and "Heal" in str(self.selected_ability_id):
-            is_friendly_action = True
+        # --- NEW: Smart Targeting Logic ---
+        if target:
+            target_type, target_data = target
+
+            is_friendly_action = False
+
+            # Check for friendly item
+            if self.current_action == "use_item" and self.selected_item_id == "item_health_potion_small":
+                is_friendly_action = True
+
+            # --- FIX STARTS HERE ---
+            # Check for friendly ability using the new Rules API lookup
+            if self.current_action == "use_ability" and self.selected_ability_id and rules_api:
+                ability_data = rules_api.get_ability_data(self.selected_ability_id)
+                if ability_data:
+                    t_type = ability_data.get("target_type", "enemy")
+                    # If the target is an ally or self, flag it as friendly
+                    if t_type in ["ally", "self", "area_ally", "ally_multi", "ally_or_self", "self_or_ally"]:
+                        is_friendly_action = True
+            # --- FIX ENDS HERE ---
+
+            target_id = None # Initialize target_id
+
+            # --- Target Validation ---
+
+            # Case 1: Hostile action on an enemy (OK)
+            if target_type == "npc" and not is_friendly_action:
+                target_id = f"npc_{target_data.get('id')}"
+
+            # Case 2: Friendly action on an ally (OK)
+            elif target_type == "player" and is_friendly_action:
+                target_id = target_data.get('id') # Already in "player_UUID" format
+
+            # Case 3: Hostile action on an ally (BAD)
+            elif target_type == "player" and not is_friendly_action:
+                self.add_to_log("You can't attack an ally!")
+                self.current_action = None
+                return True # Consume touch
+
+            # Case 4: Friendly action on an enemy (BAD)
+            elif target_type == "npc" and is_friendly_action:
+                self.add_to_log("You can't use that on an enemy!")
+                self.current_action = None
+                return True # Consume touch
 
         target_id = None
         if target:
