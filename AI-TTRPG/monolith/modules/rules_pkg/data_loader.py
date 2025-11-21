@@ -62,17 +62,18 @@ def _process_kingdom_features() -> Dict[str, Any]:
     return feature_stats_map
 
 def _process_skills() -> (
-    tuple[List[str], Dict[str, Dict[str, str]], Dict[str, Dict[str, str]]]
+    tuple[List[str], Dict[str, Dict[str, str]], Dict[str, Dict[str, str]], Dict[str, Any]]
 ):
-    """Processes skills AND RETURNS stats list, categories dict, and all_skills dict."""
+    """Processes skills AND RETURNS stats list, categories dict, all_skills dict, AND techniques."""
     stats_data = _load_json("stats_and_skills.json")
     stats_list = stats_data.get("stats", [])
     skill_categories = stats_data.get("skill_categories", {})
+    techniques = stats_data.get("techniques", {})
     all_skills = {}
 
     if not stats_list:
         print("FATAL ERROR: 'stats' list not found or empty in stats_and_skills.json")
-        return [], {}, {}
+        return [], {}, {}, {}
 
     for category, skills_dict in skill_categories.items():
         if isinstance(skills_dict, dict):
@@ -90,7 +91,8 @@ def _process_skills() -> (
             )
 
     print(f"Processed {len(all_skills)} skills into master map.")
-    return stats_list, skill_categories, all_skills
+    print(f"Processed {len(techniques)} techniques.")
+    return stats_list, skill_categories, all_skills, techniques
 
 # --- ADD THIS NEW HELPER FUNCTION ---
 def _build_ability_map(ability_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -125,6 +127,7 @@ def _build_ability_map(ability_data: Dict[str, Any]) -> Dict[str, Any]:
 STATS_LIST: List[str] = []
 SKILL_CATEGORIES: Dict[str, List[str]] = {}
 ALL_SKILLS: Dict[str, Dict[str, str]] = {}
+TECHNIQUES: Dict[str, Any] = {} # <-- ADD THIS NEW GLOBAL
 ABILITY_DATA: Dict[str, Any] = {}
 ABILITY_MAP: Dict[str, Any] = {} # <-- ADD THIS NEW GLOBAL
 TALENT_DATA: Dict[str, Any] = {}
@@ -150,7 +153,7 @@ DEVOTION_CHOICES: List[Dict[str, Any]] = []
 
 def load_data() -> Dict[str, Any]:
     """Loads all rules data and returns it in a dictionary."""
-    global STATS_LIST, SKILL_CATEGORIES, ALL_SKILLS, ABILITY_DATA, ABILITY_MAP, TALENT_DATA, FEATURE_STATS_MAP, GENERATION_RULES
+    global STATS_LIST, SKILL_CATEGORIES, ALL_SKILLS, TECHNIQUES, ABILITY_DATA, ABILITY_MAP, TALENT_DATA, FEATURE_STATS_MAP, GENERATION_RULES
     global MELEE_WEAPONS, RANGED_WEAPONS, ARMOR, INJURY_EFFECTS, STATUS_EFFECTS, EQUIPMENT_CATEGORY_TO_SKILL_MAP, KINGDOM_FEATURES_DATA, NPC_TEMPLATES, ITEM_TEMPLATES
     global ORIGIN_CHOICES, CHILDHOOD_CHOICES, COMING_OF_AGE_CHOICES, TRAINING_CHOICES, DEVOTION_CHOICES
 
@@ -158,7 +161,7 @@ def load_data() -> Dict[str, Any]:
     loaded_data = {}
     try:
         # Load stats and skills
-        STATS_LIST, SKILL_CATEGORIES, ALL_SKILLS = _process_skills()
+        STATS_LIST, SKILL_CATEGORIES, ALL_SKILLS, TECHNIQUES = _process_skills()
 
         # Load abilities
         ABILITY_DATA = _load_json("abilities.json")
@@ -234,6 +237,7 @@ def load_data() -> Dict[str, Any]:
             "stats_list": STATS_LIST,
             "skill_categories": SKILL_CATEGORIES,
             "all_skills": ALL_SKILLS,
+            "techniques": TECHNIQUES,
             "ability_data": ABILITY_DATA, # The full structure for char creation
             "ability_map": ABILITY_MAP, # The fast map for combat
             "talent_data": TALENT_DATA,
