@@ -562,6 +562,7 @@ def create_character(
             try:
                 first_branch = branches[0]
                 first_tier = first_branch.get("tiers", [])[0]
+                # Fix: Save the NAME, not the description
                 ability_name = first_tier.get("name", "Unknown Ability")
                 base_abilities.append(ability_name)
                 logger.info(f"Added T1 ability: {ability_name}")

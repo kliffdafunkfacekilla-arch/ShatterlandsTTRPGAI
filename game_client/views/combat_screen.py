@@ -657,25 +657,17 @@ class CombatScreen(Screen):
                 self.current_action = None
                 return True
 
-            # 1. Get current position
+            # --- Distance Check ---
             curr_x = self.active_combat_character.position_x
             curr_y = self.active_combat_character.position_y
-
-            # 2. Calculate Distance (Chebyshev: Diagonals count as 1 for simplicity, or 1.5 if you're hardcore)
-            # Burt says: Keep it simple for the prototype. 1 square = 1 distance.
-            dist_x = abs(tile_x - curr_x)
-            dist_y = abs(tile_y - curr_y)
-            distance = max(dist_x, dist_y) # Chebyshev distance
-
-            # 3. Get Speed (Default to 6 if not in stats)
-            # We check the 'stats' dictionary directly
+            distance = max(abs(tile_x - curr_x), abs(tile_y - curr_y))
             speed = self.active_combat_character.stats.get("Speed", 6)
 
-            # 4. The Check
             if distance > speed:
-                self.add_to_log(f"Too far! Speed is {speed}m (Target is {distance}m away).")
+                self.add_to_log(f"Too far! {distance}m > {speed}m.")
                 self.current_action = None
                 return True
+            # ----------------------
 
             # If we pass, send the action
             self.add_to_log(f"{self.active_combat_character.name} moves to ({tile_x}, {tile_y}).")
@@ -683,9 +675,6 @@ class CombatScreen(Screen):
                 action="move", coordinates=[tile_x, tile_y]
             )
             self.handle_player_action(self.active_combat_character.id, action)
-            self.current_action = None
-            return True
-
             self.current_action = None
             return True
         # --- END FIX ---
