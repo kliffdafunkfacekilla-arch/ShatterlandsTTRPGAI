@@ -64,6 +64,14 @@ class CombatEncounter(Base):
     turn_order = Column(JSON, default=[])
     current_turn_index = Column(Integer, default=0)
 
+    # Stores list of active zones:
+    # [{"id": "zone_1", "name": "Fire Wall", "tiles": [[1,2], [1,3]], "effects": [...], "duration": 3, "owner": "player_1"}]
+    active_zones = Column(JSON, default=[])
+
+    # Stores the interrupt request:
+    # { "triggering_actor": "npc_1", "reacting_actor": "player_1", "reaction_name": "Opportunity Attack", "context_data": {...} }
+    pending_reaction = Column(JSON, nullable=True)
+
     # This links an Encounter to its many Participants
     participants = relationship("CombatParticipant", back_populates="encounter", cascade="all, delete-orphan")
 

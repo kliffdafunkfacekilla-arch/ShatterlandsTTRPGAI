@@ -634,29 +634,117 @@ def _handle_effect_move_self(
         log.append(f"Failed to move self: {e}")
         return False
 
-def _handle_effect_create_area(target_id: str, log: List[str], effect: Dict) -> bool:
+def _handle_effect_create_area(
+    db: Session,
+    combat: models.CombatEncounter,
+    actor_id: str,
+    target_id: str,
+    attacker_context: Dict,
+    defender_context: Dict,
+    log: List[str],
+    effect: Dict
+) -> bool:
     """
-    Creates a persistent area of effect at the target location.
-
-    Currently a placeholder that logs the event. Future implementation requires
-    a system for tracking persistent combat zones.
-
-    Args:
-        target_id: Target ID (center of area).
-        log: Combat log.
-        effect: Effect definition.
-
-    Returns:
-        bool: True.
+    Creates a persistent hazard zone.
+    Calculates the grid tiles affected and saves them to the combat state.
     """
-    area_id = effect.get("effect_id", "Unknown Area")
-    shape = effect.get("shape", "radius")
-    range_val = effect.get("range", 0)
-    duration = effect.get("duration", 1)
-    
-    log.append(f"{target_id} creates a {shape} area '{area_id}' (Range: {range_val}m) for {duration} rounds.")
-    # TODO: Implement actual area persistence in World Engine or Combat State
+    shape = effect.get("shape", "radius") # radius, line, cone
+    range_m = effect.get("range", 1)
+    duration = effect.get("duration", 3)
+    effect_id = effect.get("effect_id", "Unknown Zone")
+
+    # 1. Determine Center
+    center_coords = _get_actor_coords(defender_context) # Target is center
+    if not center_coords:
+        log.append("Zone creation failed: No center coordinates.")
+        return False
+
+    # 2. Calculate Affected Tiles (Simple Box/Radius Logic)
+    affected_tiles = []
+    cx, cy = center_coords
+
+    # Naive Radius (Chebyshev for grid simplicity)
+    for dx in range(-range_m, range_m + 1):
+        for dy in range(-range_m, range_m + 1):
+            if max(abs(dx), abs(dy)) <= range_m:
+                affected_tiles.append([cx + dx, cy + dy])
+
+    # 3. Define the Zone Payload
+    # We store the 'sub-effects' that happen when you enter/stay (e.g., damage)
+    # If not specified in 'effect', we assume a default based on the ID
+    zone_effects = effect.get("zone_effects", [])
+    if not zone_effects:
+        # Default fallback for simple definitions
+        if "damage" in str(effect).lower():
+            zone_effects.append({"trigger": "on_enter", "type": "direct_damage", "amount": "1d6", "damage_type": "elemental"})
+            zone_effects.append({"trigger": "on_start_turn", "type": "direct_damage", "amount": "1d6", "damage_type": "elemental"})
+
+    new_zone = {
+        "id": f"zone_{len(combat.active_zones) + 1}",
+        "name": effect_id,
+        "tiles": affected_tiles,
+        "effects": zone_effects,
+        "duration": duration,
+        "owner": actor_id,
+        "color": [1, 0, 0, 0.3] # Visual hint (Red)
+    }
+
+    # 4. Save to DB
+    # SQLAlchemy JSON requires reassignment to detect change
+    current_zones = list(combat.active_zones) if combat.active_zones else []
+    current_zones.append(new_zone)
+    combat.active_zones = current_zones
+
+    log.append(f"{actor_id} creates '{effect_id}' covering {len(affected_tiles)} tiles!")
     return True
+
+def _process_zone_triggers(
+    db: Session,
+    combat: models.CombatEncounter,
+    actor_id: str,
+    trigger: str, # "on_enter" or "on_start_turn"
+    coords: List[int],
+    log: List[str]
+) -> bool:
+    """
+    Checks if the actor's coordinates overlap with any active zones and fires effects.
+    """
+    triggered = False
+    
+    if not combat.active_zones: return False
+
+    for zone in combat.active_zones:
+        # Check overlap
+        if coords in zone["tiles"]:
+            for eff in zone["effects"]:
+                if eff.get("trigger") == trigger:
+                    log.append(f"{actor_id} triggers {zone['name']} ({trigger})!")
+
+                    # Resolve the specific effect (Reuse existing handlers!)
+                    # We construct a mock context since zones don't have stats
+                    handler = ABILITY_EFFECT_HANDLERS.get(eff["type"])
+                    if handler:
+                        # Zones hit automatically (no attack roll usually)
+                        if eff["type"] == "direct_damage":
+                            _handle_effect_direct_damage(actor_id, log, eff)
+                        elif eff["type"] == "apply_status":
+                            _handle_effect_apply_status(actor_id, log, eff)
+                        # Add more mappings as needed
+                    triggered = True
+    return triggered
+
+def _cleanup_expired_zones(combat: models.CombatEncounter, log: List[str]):
+    # Only run this at the end of a full round (when index loops to 0)
+    if combat.current_turn_index == 0 and combat.active_zones:
+        valid_zones = []
+        current_zones = list(combat.active_zones)
+        for zone in current_zones:
+            zone["duration"] -= 1
+            if zone["duration"] > 0:
+                valid_zones.append(zone)
+            else:
+                log.append(f"Zone '{zone['name']}' dissipates.")
+        combat.active_zones = valid_zones
 
 def _handle_effect_reaction_contest(target_id: str, log: List[str], effect: Dict) -> bool:
     """
@@ -1575,6 +1663,80 @@ ABILITY_EFFECT_HANDLERS: Dict[str, Callable] = {
 }
 
 # --- ADD THE NEW REACTION CHECKER FUNCTION ---
+def get_actor_context(actor_id: str) -> Tuple[str, Dict]:
+    """
+    Retrieves the full context (stats, status, etc.) for any actor (Player or NPC).
+    """
+    if actor_id.startswith("player_"):
+        try:
+            ctx = services.get_character_context(actor_id)
+            return "player", ctx
+        except Exception as e:
+            logger.error(f"Failed to get context for {actor_id}: {e}")
+            raise HTTPException(status_code=404, detail=f"Player {actor_id} not found")
+    elif actor_id.startswith("npc_"):
+        try:
+            npc_id = int(actor_id.split("_")[1])
+            ctx = services.get_npc_context(npc_id)
+            return "npc", ctx
+        except Exception as e:
+            logger.error(f"Failed to get context for {actor_id}: {e}")
+            raise HTTPException(status_code=404, detail=f"NPC {actor_id} not found")
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid actor ID format: {actor_id}")
+
+def _check_for_player_reaction(
+    db: Session,
+    combat: models.CombatEncounter,
+    trigger_event: str,
+    trigger_actor_id: str,
+    log: List[str],
+    event_data: Optional[Dict] = None) -> Optional[Dict]:
+    """
+    Checks if any PLAYER wants to react.
+    Returns the reaction details if a player interrupt occurs.
+    """
+    # We only care if NPCs do things that Players can react to
+    if trigger_actor_id.startswith("player_"):
+        return None
+
+    for p in combat.participants:
+        if not p.actor_id.startswith("player_"): continue
+
+        # 1. Check Status Effects (e.g. Threat Zone / Polearm Master)
+        # (This requires fetching context, simplified here for brevity)
+        try:
+            _, reactor_context = get_actor_context(p.actor_id)
+        except:
+            continue
+
+        reactor_statuses = reactor_context.get("status_effects", [])
+
+        if "Threat Zone" in reactor_statuses and trigger_event == "actor_move":
+            # Check Range (using event_data['old_coords'] vs 'new_coords')
+            threat_range = 3 # Hardcoded for prototype as per previous logic
+            old_coords = event_data.get("old_coords")
+            new_coords = event_data.get("new_coords") # We need to pass this!
+            reactor_coords = _get_actor_coords(reactor_context)
+
+            if not old_coords or not new_coords or not reactor_coords:
+                continue
+
+            old_dist = _calculate_distance(old_coords, reactor_coords)
+            new_dist = _calculate_distance(new_coords, reactor_coords)
+
+            # If moving out of range
+            if old_dist <= threat_range and new_dist > threat_range:
+                return {
+                    "reactor_id": p.actor_id,
+                    "trigger_id": trigger_actor_id,
+                    "reaction_name": "Opportunity Attack",
+                    "trigger_event": trigger_event,
+                    "event_data": event_data
+                }
+
+    return None
+
 def _check_and_trigger_reactions(
     db: Session,
     combat: models.CombatEncounter,
@@ -1851,6 +2013,7 @@ def _process_status_effects_on_turn_start(db: Session, combat: models.CombatEnco
     1. Applies Damage Over Time (DOT) effects.
     2. Decrements duration of temporary status effects.
     3. Removes expired statuses.
+    4. Triggers active zone effects (e.g., standing in fire).
 
     Args:
         db: Database session.
@@ -1862,6 +2025,14 @@ def _process_status_effects_on_turn_start(db: Session, combat: models.CombatEnco
         bool: True if any status expired or effect was applied.
     """
     actor_type, actor_context = get_actor_context(actor_id)
+
+    # --- NEW: ZONE CHECK (ON START TURN) ---
+    # Ensure this runs for BOTH Players and NPCs
+    coords = _get_actor_coords(actor_context)
+    if coords:
+        _process_zone_triggers(db, combat, actor_id, "on_start_turn", coords, log)
+    # ---------------------------------------
+
     current_statuses = actor_context.get("status_effects", [])
     statuses_to_remove = []
 
@@ -1934,9 +2105,14 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
     """
     log = []
 
-    current_actor_id = combat.turn_order[combat.current_turn_index]
-    if actor_id != current_actor_id:
-        raise HTTPException(status_code=403, detail=f"It is not {actor_id}'s turn.")
+    # --- SPECIAL CASE: REACTION RESOLUTION ---
+    # Reactions happen during *someone else's* turn, so we bypass the turn check.
+    if action.action == "resolve_reaction":
+        pass
+    else:
+        current_actor_id = combat.turn_order[combat.current_turn_index]
+        if actor_id != current_actor_id:
+            raise HTTPException(status_code=403, detail=f"It is not {actor_id}'s turn.")
 
     # --- CRITICAL: PROCESS CONTINUOUS STATUS EFFECTS ---
     _process_status_effects_on_turn_start(db, combat, actor_id, log)
@@ -1972,6 +2148,54 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
 
     if action.action == "wait":
         return handle_no_action(db, combat, actor_id)
+
+    if action.action == "resolve_reaction":
+        pending = combat.pending_reaction
+        if not pending:
+            return schemas.PlayerActionResponse(success=False, message="No reaction pending.", log=log, new_turn_index=combat.current_turn_index)
+
+        decision = action.ready_action_details.get("decision") # "execute" or "skip"
+
+        if decision == "execute":
+            log.append(f"{pending['reactor_id']} takes the reaction: {pending['reaction_name']}!")
+            # Execute the Attack
+            target_id = pending['trigger_id']
+            reactor_id = pending['reactor_id']
+
+            _, reactor_context = get_actor_context(reactor_id)
+            _, target_context = get_actor_context(target_id)
+
+            _handle_basic_attack(db, combat, reactor_id, target_id, reactor_context, target_context, log)
+        else:
+            log.append(f"{pending['reactor_id']} lets the moment pass.")
+
+        # RESUME NPC TURN
+        # We clear the pending flag
+        combat.pending_reaction = None
+
+        # Advance turn (Assuming reaction resolution ends the interruption phase)
+        # Note: The NPC's turn was interrupted. Depending on game rules, they might
+        # continue their turn or their turn might end. For this prototype,
+        # resolving the reaction ends the current turn sequence.
+        combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
+
+        # --- NEW: CLEANUP ZONES ---
+        # Since we are advancing the turn manually, we must also run cleanup if needed
+        _cleanup_expired_zones(combat, log)
+        # --------------------------
+
+        # Check if combat ended due to the reaction
+        combat_over = check_combat_end_condition(db, combat, log)
+        db.commit()
+        # db.refresh(combat) # Removed refresh as it might reset state in non-persistent environments (like tests)
+
+        return schemas.PlayerActionResponse(
+            success=True,
+            message="Reaction resolved.",
+            log=log,
+            new_turn_index=combat.current_turn_index,
+            combat_over=combat_over
+        )
 
     # --- ADD THIS NEW ACTION HANDLER ---
     if action.action == "ready":
@@ -2046,6 +2270,10 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
 
             log.append(f"{actor_id} moves to ({coords[0]}, {coords[1]}).")
 
+            # --- NEW: ZONE CHECK (ON ENTER) ---
+            _process_zone_triggers(db, combat, actor_id, "on_enter", coords, log)
+            # ----------------------------------
+
             # Check if this move triggered anyone's reaction
             _check_and_trigger_reactions(
                 db, combat, "actor_move", actor_id, log,
@@ -2057,6 +2285,11 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
 
         # Move action completes the turn
         combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
+
+        # --- NEW: CLEANUP ZONES ---
+        _cleanup_expired_zones(combat, log)
+        # --------------------------
+
         combat_over = check_combat_end_condition(db, combat, log)
         db.commit()
         db.refresh(combat)
@@ -2384,11 +2617,41 @@ def handle_npc_turn(
         elif action_type == "move":
              # NPC movement logic (simplified)
              log.append(f"{npc_id} moves.")
-             # Implement movement logic here using _handle_effect_move_self or similar
-             pass
+
+             # Simplified movement for prototype: just teleport to a random nearby tile
+             # Real logic would use A* here.
+             old_coords = _get_actor_coords(npc_context)
+             if old_coords:
+                 # Pick a random neighbor
+                 dx = random.choice([-1, 0, 1])
+                 dy = random.choice([-1, 0, 1])
+                 new_coords = [old_coords[0]+dx, old_coords[1]+dy]
+
+                 # Basic bounds/passability check omitted for brevity in prototype,
+                 # but we update DB.
+                 services.world_api.update_npc_state(int(npc_id.split('_')[1]), {"coordinates": new_coords})
+                 log.append(f"{npc_id} moves to {new_coords}.")
+
+                 # CHECK FOR INTERRUPT
+                 reaction_req = _check_for_player_reaction(
+                     db, combat, "actor_move", npc_id, log,
+                     {"old_coords": old_coords, "new_coords": new_coords}
+                 )
+
+                 if reaction_req:
+                    # PAUSE THE GAME
+                    combat.pending_reaction = reaction_req
+                    db.commit()
+                    log.append("Reaction Opportunity! Waiting for player...")
+                    return log # Stop the turn here!
 
         # 4. End Turn
         combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
+
+        # --- NEW: CLEANUP ZONES ---
+        _cleanup_expired_zones(combat, log)
+        # --------------------------
+
         check_combat_end_condition(db, combat, log)
         db.commit()
         db.refresh(combat)
