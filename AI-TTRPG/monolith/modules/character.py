@@ -9,6 +9,8 @@ with a local DB session.
 """
 from typing import Any, Dict, Optional, List
 import logging
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
 # Import from this module's own internal package
 from .character_pkg import crud as char_crud
@@ -16,8 +18,18 @@ from .character_pkg import services as char_services
 from .character_pkg import database as char_db
 from .character_pkg import schemas as char_schemas
 from .character_pkg.models import Character
+from .character_pkg import schemas
 
 logger = logging.getLogger("monolith.character")
+
+router = APIRouter(prefix="/characters", tags=["Characters"])
+
+def get_db():
+    db = char_db.SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 # --- Helper to get a character model ---
 def _get_character_db(db: char_db.SessionLocal, char_id: str) -> Character:
@@ -75,6 +87,98 @@ def get_character_context(char_id: str) -> Dict[str, Any]:
         raise
     finally:
         db.close()
+
+def award_xp(char_id: str, amount: int) -> Dict[str, Any]:
+    """
+    Awards XP to a character.
+    """
+    db = char_db.SessionLocal()
+    try:
+        db_char = _get_character_db(db, char_id)
+        updated_char = char_services.award_xp(db, db_char.id, amount)
+        schema_char = char_services.get_character_context(updated_char)
+        return schema_char.model_dump()
+    except Exception as e:
+        logger.exception(f"[character.award_xp] Error: {e}")
+        raise
+    finally:
+        db.close()
+
+# --- NEW: Progression Endpoints ---
+@router.post("/level-up", response_model=schemas.LevelUpResponse)
+def level_up_character_endpoint(
+    request: schemas.LevelUpRequest,
+    db: Session = Depends(get_db)):
+    """
+    Triggers a level up if XP threshold is met.
+    Recalculates Vitals and grants AP.
+    """
+    character = char_services.get_character(db, request.character_id)
+    if not character:
+        raise HTTPException(status_code=404, detail="Character not found")
+
+    # Check XP Threshold Logic (Move the check here or keep in service)
+    # We'll call a dedicated service wrapper
+    try:
+        # Re-using the service logic we built
+        updated_char = char_services.award_xp(db, character.id, 0) # 0 XP just triggers the check/level-up
+
+        if updated_char.level > character.level:
+            # It worked!
+            return schemas.LevelUpResponse(
+                success=True,
+                new_level=updated_char.level,
+                message=f"Leveled up to {updated_char.level}!",
+                character_summary={
+                    "max_hp": updated_char.max_hp,
+                    "ap": updated_char.available_ap
+                }
+            )
+        else:
+            return schemas.LevelUpResponse(
+                success=False,
+                new_level=character.level,
+                message="Not enough XP to level up.",
+                character_summary={}
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/purchase-ability", response_model=schemas.AbilityPurchaseResponse)
+def purchase_ability_endpoint(
+    request: schemas.AbilityPurchaseRequest,
+    db: Session = Depends(get_db)):
+    """
+    Attempts to unlock a specific ability node (School/Branch/Tier).
+    """
+    try:
+        result = char_services.purchase_ability(
+            db,
+            request.character_id,
+            request.school,
+            request.branch,
+            request.tier
+        )
+
+        if result["success"]:
+            return schemas.AbilityPurchaseResponse(
+                success=True,
+                message=result["message"],
+                remaining_ap=result["character"].available_ap,
+                unlocked_node_id=f"{request.school}_{request.branch}_T{request.tier}"
+            )
+        else:
+            # 200 OK but success=False allows client to handle "Insufficient Funds" gracefully
+            return schemas.AbilityPurchaseResponse(
+                success=False,
+                message=result["message"],
+                remaining_ap=0 # Placeholder, or query actual
+            )
+
+    except Exception as e:
+        # Log the error
+        raise HTTPException(status_code=500, detail=str(e))
 
 def unequip_item(char_id: str, slot: str) -> Dict[str, Any]:
     """

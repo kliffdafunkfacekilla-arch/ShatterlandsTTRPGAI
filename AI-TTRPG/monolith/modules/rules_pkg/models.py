@@ -192,6 +192,39 @@ class BackgroundChoice(BaseModel):
     skills: List[str]
 
 
+# --- NEW: Ability Logic Models ---
+class AbilityNode(BaseModel):
+    """
+    Represents a specific node in the ability tree.
+    Used for purchase validation.
+    """
+    school: str  # e.g., "Force"
+    branch: str  # e.g., "Offense"
+    tier: int = Field(ge=1, le=9)  # 1-9
+    name: Optional[str] = None
+
+    def to_id(self) -> str:
+        """Returns unique string ID: 'Force_Offense_T1'"""
+        return f"{self.school}_{self.branch}_T{self.tier}"
+
+    def get_prerequisite_id(self) -> Optional[str]:
+        """Returns the ID of the node strictly below this one."""
+        if self.tier == 1:
+            return None
+        return f"{self.school}_{self.branch}_T{self.tier - 1}"
+
+
+class AbilityPurchaseRequest(BaseModel):
+    target_ability: AbilityNode
+    current_unlocks: List[str]  # List of IDs e.g. ["Force_Offense_T1"]
+    available_ap: int
+
+
+class AbilityPurchaseResponse(BaseModel):
+    success: bool
+    message: str
+    remaining_ap: int
+    new_unlock: Optional[str] = None
 # --- END ADD ---
 
 
@@ -446,6 +479,7 @@ class BaseVitalsRequest(BaseModel):
     stats: Dict[str, int] = Field(
         ..., description="Dictionary of all 12 stats and their scores"
     )
+    level: int = Field(default=1, ge=1) # Added for scaling
 
     @field_validator("stats")
     def validate_stats(cls, v):
@@ -463,6 +497,7 @@ class BaseVitalsResponse(BaseModel):
     """
 
     max_hp: int
+    max_composure: int # Added
     resources: Dict[str, Dict[str, int]] = Field(
         description="Dictionary of all 6 resource pools with current/max values."
     )

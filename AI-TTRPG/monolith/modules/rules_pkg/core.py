@@ -838,40 +838,38 @@ def apply_passive_modifiers(
     return aggregated
 
 
-def calculate_base_vitals(stats: Dict[str, int]) -> models.BaseVitalsResponse:
+def calculate_base_vitals(request: models.BaseVitalsRequest) -> models.BaseVitalsResponse:
     """
-    Calculates Max HP and Base Resource Pools based on final stat scores.
-    The resource pool calculations now sum two stat modifiers as provided.
+    Calculates Max HP and Composure based on the specific 6-stat split.
+    Scale: Base + Level + Sum(Stat Mods).
     """
+    stats = request.stats
+    level = request.level
 
-    # --- 1. Calculate HP (Keeping existing simplified formula until new 12-stat formula is provided) ---
-    # Rule: Base 5 + Vitality Score + Endurance Modifier
-    vit_score = stats.get("Vitality", 10)
-    end_mod = calculate_modifier(stats.get("Endurance", 10))
-    max_hp = 5 + vit_score + end_mod
-    max_hp = max(1, max_hp) # Ensure HP is at least 1
+    # 1. Define Stat Groups
+    hp_stats = ["Endurance", "Vitality", "Reflexes", "Logic", "Awareness", "Willpower"]
+    composure_stats = ["Might", "Finesse", "Fortitude", "Knowledge", "Intuition", "Charm"]
 
-    # --- 2. Calculate Resources (Dual-Stat Modifiers) ---
+    # 2. Calculate HP
+    # Formula: 10 (Base) + Level + Sum(Modifiers of HP Stats)
+    hp_mod_sum = sum(calculate_modifier(stats.get(s, 10)) for s in hp_stats)
+    max_hp = 10 + level + hp_mod_sum
+    max_hp = max(5, max_hp) # Minimum floor
+
+    # 3. Calculate Composure
+    # Formula: 10 (Base) + Level + Sum(Modifiers of Composure Stats)
+    comp_mod_sum = sum(calculate_modifier(stats.get(s, 10)) for s in composure_stats)
+    max_composure = 10 + level + comp_mod_sum
+    max_composure = max(5, max_composure)
+
+    # 4. Calculate Resource Pools (Dual-Stat Modifiers)
     # Formula: 5 (Base) + (Stat1 Modifier + Stat2 Modifier)
-
-    # Chi: Finesse + Reflexes (used in place of Agility)
     chi_mod = calculate_modifier(stats.get("Finesse", 10)) + calculate_modifier(stats.get("Reflexes", 10))
-
-    # Stamina: Endurance + Vitality (used in place of Constitution)
     stamina_mod = calculate_modifier(stats.get("Endurance", 10)) + calculate_modifier(stats.get("Vitality", 10))
-
-    # Guile: Finesse + Knowledge
     guile_mod = calculate_modifier(stats.get("Finesse", 10)) + calculate_modifier(stats.get("Knowledge", 10))
-
-    # Presence: Might + Charm
     presence_mod = calculate_modifier(stats.get("Might", 10)) + calculate_modifier(stats.get("Charm", 10))
-
-    # Tactics: Awareness + Logic
     tactics_mod = calculate_modifier(stats.get("Awareness", 10)) + calculate_modifier(stats.get("Logic", 10))
-
-    # Instinct: Intuition + Willpower
     instinct_mod = calculate_modifier(stats.get("Intuition", 10)) + calculate_modifier(stats.get("Willpower", 10))
-
 
     resources = {
         "Chi": {"max": 5 + chi_mod},
@@ -882,12 +880,60 @@ def calculate_base_vitals(stats: Dict[str, int]) -> models.BaseVitalsResponse:
         "Instinct": {"max": 5 + instinct_mod},
     }
 
-    # NOTE: Removed the Composure resource pool added previously as it is not present in this new 6-pool schema.
-
     # Set current to max for initial creation, ensuring a minimum of 1
     for pool in resources.values():
         if pool["max"] < 1:
             pool["max"] = 1
         pool["current"] = pool["max"]
 
-    return models.BaseVitalsResponse(max_hp=max_hp, resources=resources)
+    return models.BaseVitalsResponse(
+        max_hp=max_hp,
+        max_composure=max_composure,
+        resources=resources
+    )
+
+
+def validate_ability_unlock(request: models.AbilityPurchaseRequest) -> models.AbilityPurchaseResponse:
+    """
+    The Gatekeeper Logic: Checks Economy, Duplicates, and Vertical Hierarchy.
+    """
+    target = request.target_ability
+    target_id = target.to_id()
+
+    # 1. Economy Check
+    if request.available_ap < 1:
+        return models.AbilityPurchaseResponse(
+            success=False,
+            message="Insufficient Funds (Need 1 AP)",
+            remaining_ap=request.available_ap
+        )
+
+    # 2. Duplicate Check
+    if target_id in request.current_unlocks:
+        return models.AbilityPurchaseResponse(
+            success=False,
+            message="Ability Node already unlocked",
+            remaining_ap=request.available_ap
+        )
+
+    # 3. Hierarchy Check (Vertical Ladder)
+    if target.tier == 1:
+        # Tier 1 is the root, always allowed if school is valid (assumed valid here)
+        pass
+    else:
+        # Recursive Check: Must own n-1
+        required_id = target.get_prerequisite_id()
+        if required_id not in request.current_unlocks:
+            return models.AbilityPurchaseResponse(
+                success=False,
+                message=f"Prerequisite missing: Must own {required_id} to unlock Tier {target.tier}",
+                remaining_ap=request.available_ap
+            )
+
+    # Success
+    return models.AbilityPurchaseResponse(
+        success=True,
+        message=f"Unlocked {target_id}",
+        remaining_ap=request.available_ap - 1,
+        new_unlock=target_id
+    )

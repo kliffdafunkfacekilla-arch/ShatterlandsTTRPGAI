@@ -57,6 +57,32 @@ class EquipmentSlots(BaseModel):
     equipped_gear: Optional[Dict[str, Any]] = None
     carried_gear: List[Dict[str, Any]] = Field(default_factory=list) # New Carried Gear slot (List of items)
 
+# --- NEW: Progression Schemas ---
+class LevelUpRequest(BaseModel):
+    character_id: str
+
+
+class LevelUpResponse(BaseModel):
+    success: bool
+    new_level: int
+    message: str
+    character_summary: Dict[str, Any]  # Snapshop of new HP/AP
+
+
+class AbilityPurchaseRequest(BaseModel):
+    character_id: str
+    school: str
+    branch: str
+    tier: int = Field(ge=1, le=9)
+
+
+class AbilityPurchaseResponse(BaseModel):
+    success: bool
+    message: str
+    remaining_ap: int
+    unlocked_node_id: Optional[str] = None
+
+
 class FeatureChoice(BaseModel):
     """Represents a single feature choice made by the user."""
 
@@ -107,8 +133,8 @@ class Character(CharacterBase):
 
 class CharacterContextResponse(CharacterBase):
     """
-    This is the full character sheet/context object returned
-    to the frontend. It is UNCHANGED.
+    The full state of the character sent to the client.
+    UPDATED to include Progression and new Vitals.
     """
 
     id: str
@@ -122,10 +148,16 @@ class CharacterContextResponse(CharacterBase):
     xp: int = Field(default=0, description="Current Experience Points")
     is_dead: bool = Field(default=False, description="Is the character dead?")
     # --- END ADD ---
+
+    # --- NEW FIELDS ---
+    available_ap: int
+    unlocked_abilities: List[str]
+    # ------------------
+
     max_composure: int
     current_composure: int
     resource_pools: Dict[str, Any]  # e.g., {"Stamina": {"current": 10, "max": 10}, ...}
-    talents: List[str]
+    talents: List[Any]  # Can be list of strings or dicts
     abilities: List[str]
     inventory: Dict[str, Any]
     equipment: EquipmentSlots
