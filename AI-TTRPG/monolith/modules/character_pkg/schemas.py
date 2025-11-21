@@ -131,6 +131,15 @@ class Character(CharacterBase):
         from_attributes = True
 
 
+class ResourcePool(BaseModel):
+    current: int
+    max: int
+    reserved: int = 0
+
+    @property
+    def available(self) -> int:
+        return self.current - self.reserved
+
 class CharacterContextResponse(CharacterBase):
     """
     The full state of the character sent to the client.
@@ -152,11 +161,12 @@ class CharacterContextResponse(CharacterBase):
     # --- NEW FIELDS ---
     available_ap: int
     unlocked_abilities: List[str]
+    active_techniques: List[str] = Field(default_factory=list)
     # ------------------
 
     max_composure: int
     current_composure: int
-    resource_pools: Dict[str, Any]  # e.g., {"Stamina": {"current": 10, "max": 10}, ...}
+    resource_pools: Dict[str, ResourcePool]  # e.g., {"Stamina": {"current": 10, "max": 10}, ...}
     talents: List[Any]  # Can be list of strings or dicts
     abilities: List[str]
     inventory: Dict[str, Any]

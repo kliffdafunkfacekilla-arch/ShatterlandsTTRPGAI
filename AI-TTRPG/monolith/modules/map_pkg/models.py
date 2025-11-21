@@ -11,10 +11,29 @@ class MapGenerationRequest(BaseModel):
     width: Optional[int] = None # Optional override
     height: Optional[int] = None # Optional override
 
+# --- New: Context Containers ---
+class MapFlavorContext(BaseModel):
+    """
+    Pre-generated text assets for this specific map.
+    Saved in the Location's ai_annotations or similar field.
+    """
+    # General Atmosphere
+    environment_description: str = "A generic area."
+    visuals: List[str] = [] # e.g., "Vines hanging from trees", "Broken pillars"
+    sounds: List[str] = [] # e.g., "Distant wolf howl", "Rustling leaves"
+    smells: List[str] = []
+
+    # Combat Flavor Banks (The optimization)
+    # The client will pick random entries from these lists during combat
+    combat_hits: List[str] = [] # e.g. "Your blade cuts through the thick vines to strike the foe."
+    combat_misses: List[str] = []
+    spell_casts: List[str] = []
+    enemy_intros: List[str] = [] # e.g. "A goblin bursts from the underbrush!"
+
 # --- API Response Model ---
 class MapGenerationResponse(BaseModel):
     """
-    The generated map data.
+    The generated map data, now enriched with AI context.
     """
     width: int
     height: int
@@ -22,3 +41,6 @@ class MapGenerationResponse(BaseModel):
     seed_used: str # The actual seed used (generated if none provided)
     algorithm_used: str # Name of the algorithm from the rules file
     spawn_points: Optional[Dict[str, List[List[int]]]] = None # e.g., {"player": [[5,5]], "enemy": [[10,10],[12,8]]}
+
+    # --- NEW FIELD ---
+    flavor_context: Optional[MapFlavorContext] = None

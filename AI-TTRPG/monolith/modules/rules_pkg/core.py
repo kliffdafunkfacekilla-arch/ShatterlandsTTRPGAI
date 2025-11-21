@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Any
 # Use relative import for models within the same package
 from . import models
 from .models import RollResult, TalentInfo, FeatureStatsResponse
+from . import data_loader # Import data_loader to access TECHNIQUES
 
 
 def calculate_modifier(score: int) -> int:
@@ -895,12 +896,79 @@ def calculate_base_vitals(request: models.BaseVitalsRequest) -> models.BaseVital
         if pool["max"] < 1:
             pool["max"] = 1
         pool["current"] = pool["max"]
+        pool["reserved"] = 0 # Initialize reserved to 0
 
     return models.BaseVitalsResponse(
         max_hp=max_hp,
         max_composure=max_composure,
         resources=resources
     )
+
+
+def toggle_technique(character_resources: Dict[str, Any], active_techniques: List[str], technique_id: str, active: bool) -> bool:
+    """
+    Turns a technique on or off, updating reserved resources.
+    """
+    # Load techniques if not already loaded
+    if not data_loader.TECHNIQUES:
+        data_loader.load_data()
+
+    tech_data = data_loader.TECHNIQUES.get(technique_id)
+    if not tech_data:
+        print(f"Technique not found: {technique_id}")
+        return False
+
+    maintenance = tech_data.get("maintenance_cost", {})
+    if not maintenance:
+        # No cost, just toggle
+        if active and technique_id not in active_techniques:
+            active_techniques.append(technique_id)
+            return True
+        elif not active and technique_id in active_techniques:
+            active_techniques.remove(technique_id)
+            return True
+        return True
+
+    # First, validate affordability for ALL costs before applying any
+    if active:
+        if technique_id in active_techniques:
+            return True  # Already active
+
+        for cost_type, cost_val in maintenance.items():
+            pool = character_resources.get(cost_type)
+            if not pool:
+                print(f"Resource pool not found: {cost_type}")
+                return False
+            if "reserved" not in pool:
+                pool["reserved"] = 0
+
+            if pool["max"] - pool["reserved"] < cost_val:
+                return False  # Not enough resources for at least one cost
+
+        # If we get here, all costs are affordable. Apply them.
+        for cost_type, cost_val in maintenance.items():
+            pool = character_resources.get(cost_type)
+            pool["reserved"] += cost_val
+
+        active_techniques.append(technique_id)
+        return True
+
+    else:
+        # Deactivate
+        if technique_id not in active_techniques:
+            return True  # Already inactive
+
+        for cost_type, cost_val in maintenance.items():
+            pool = character_resources.get(cost_type)
+            if not pool:
+                continue # Should not happen if data is consistent, but safe skip
+            if "reserved" not in pool:
+                pool["reserved"] = 0
+
+            pool["reserved"] = max(0, pool["reserved"] - cost_val)
+
+        active_techniques.remove(technique_id)
+        return True
 
 
 def validate_ability_unlock(request: models.AbilityPurchaseRequest) -> models.AbilityPurchaseResponse:
