@@ -25,125 +25,165 @@ except ImportError as e:
 class CharacterCreationScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # Store all user selections here
         self.selected_options = {
             "name": "",
             "kingdom": "",
             "ability_school": "",
-            "features": {} 
+            "origin": "",
+            "childhood": "",
+            "coming_of_age": "",
+            "training": "",
+            "devotion": "",
+            "features": {},  # feature_key -> selected value
         }
         self.feature_spinners = {}
         self.build_ui()
 
+    # ---------------------------------------------------------------------
+    # UI Construction
+    # ---------------------------------------------------------------------
     def build_ui(self):
         self.clear_widgets()
         root = BoxLayout(orientation='vertical', padding='20dp', spacing='10dp')
-        
-        # Header
-        root.add_widget(Label(text="Create New Character", font_size='24sp', size_hint_y=0.1, color=(1,1,1,1)))
+        root.add_widget(Label(text="Create New Character", font_size='24sp', size_hint_y=0.1, color=(1, 1, 1, 1)))
 
-        # Scrollable Form
         scroll = ScrollView(size_hint_y=0.8)
         form_layout = GridLayout(cols=1, spacing='15dp', size_hint_y=None, padding='10dp')
         form_layout.bind(minimum_height=form_layout.setter('height'))
+        self.form_layout = form_layout  # keep reference for dynamic feature spinners
 
-        # 1. Name
+        # ----- Basic fields -----
+        # Name
         form_layout.add_widget(Label(text="Name:", size_hint_y=None, height='30dp'))
         self.name_input = TextInput(multiline=False, size_hint_y=None, height='40dp')
         self.name_input.bind(text=self.on_name_change)
         form_layout.add_widget(self.name_input)
 
-        # 2. Kingdom
+        # Kingdom
         form_layout.add_widget(Label(text="Kingdom:", size_hint_y=None, height='30dp'))
         self.kingdom_spinner = Spinner(text='Loading...', values=('Loading...',), size_hint_y=None, height='44dp')
         self.kingdom_spinner.bind(text=self.on_kingdom_select)
         form_layout.add_widget(self.kingdom_spinner)
 
-        # 3. Ability School
+        # Ability School
         form_layout.add_widget(Label(text="Ability School:", size_hint_y=None, height='30dp'))
         self.school_spinner = Spinner(text='Loading...', values=('Loading...',), size_hint_y=None, height='44dp')
         self.school_spinner.bind(text=self.on_school_select)
         form_layout.add_widget(self.school_spinner)
-        
+
+        # Origin
+        form_layout.add_widget(Label(text="Origin:", size_hint_y=None, height='30dp'))
+        self.origin_spinner = Spinner(text='Loading...', values=('Loading...',), size_hint_y=None, height='44dp')
+        self.origin_spinner.bind(text=self.on_origin_select)
+        form_layout.add_widget(self.origin_spinner)
+
+        # Childhood
+        form_layout.add_widget(Label(text="Childhood:", size_hint_y=None, height='30dp'))
+        self.childhood_spinner = Spinner(text='Loading...', values=('Loading...',), size_hint_y=None, height='44dp')
+        self.childhood_spinner.bind(text=self.on_childhood_select)
+        form_layout.add_widget(self.childhood_spinner)
+
+        # Coming of Age
+        form_layout.add_widget(Label(text="Coming of Age:", size_hint_y=None, height='30dp'))
+        self.coming_of_age_spinner = Spinner(text='Loading...', values=('Loading...',), size_hint_y=None, height='44dp')
+        self.coming_of_age_spinner.bind(text=self.on_coming_of_age_select)
+        form_layout.add_widget(self.coming_of_age_spinner)
+
+        # Training
+        form_layout.add_widget(Label(text="Training:", size_hint_y=None, height='30dp'))
+        self.training_spinner = Spinner(text='Loading...', values=('Loading...',), size_hint_y=None, height='44dp')
+        self.training_spinner.bind(text=self.on_training_select)
+        form_layout.add_widget(self.training_spinner)
+
+        # Devotion
+        form_layout.add_widget(Label(text="Devotion:", size_hint_y=None, height='30dp'))
+        self.devotion_spinner = Spinner(text='Loading...', values=('Loading...',), size_hint_y=None, height='44dp')
+        self.devotion_spinner.bind(text=self.on_devotion_select)
+        form_layout.add_widget(self.devotion_spinner)
+
+        # Placeholder for dynamic feature spinners – they will be added to self.form_layout later
+        # Feature spinners will be loaded dynamically based on selected kingdom
+
+
         scroll.add_widget(form_layout)
         root.add_widget(scroll)
 
-        # Footer
+        # ----- Footer -----
         footer = BoxLayout(size_hint_y=0.1, spacing='10dp')
-        create_btn = Button(text="Create Character", background_color=(0.3, 0.8, 0.3, 1))
-        create_btn.bind(on_release=self.submit_character)
         back_btn = Button(text="Back")
         back_btn.bind(on_release=self.go_back)
-        
+        create_btn = Button(text="Create Character", background_color=(0.3, 0.8, 0.3, 1))
+        create_btn.bind(on_release=self.submit_character)
         footer.add_widget(back_btn)
         footer.add_widget(create_btn)
         root.add_widget(footer)
-        
+
         self.add_widget(root)
 
-    def on_enter(self):
-        """Load data from Rules API when screen opens."""
-        if not rules_api: return
-        
-        # Load Kingdoms
+    # ---------------------------------------------------------------------
+    # ---------------------------------------------------------------------
+    def load_feature_spinners(self, kingdom):
+        """Load spinners for each feature based on the selected kingdom."""
+        # Clear any existing feature spinners
+        for spinner in list(self.feature_spinners.values()):
+            # Remove associated label (assumed to be just before spinner in layout)
+            if spinner.parent:
+                idx = self.form_layout.children.index(spinner)
+                # Remove label if exists
+                if idx + 1 < len(self.form_layout.children):
+                    self.form_layout.remove_widget(self.form_layout.children[idx + 1])
+                self.form_layout.remove_widget(spinner)
+        self.feature_spinners.clear()
+        # Fetch features from rules API
         try:
-            kingdoms = rules_api.get_all_kingdoms()
-            if kingdoms:
-                self.kingdom_spinner.values = tuple(kingdoms)
-                self.kingdom_spinner.text = kingdoms[0]
-                self.selected_options["kingdom"] = kingdoms[0]
+            features = rules_api.get_features_for_kingdom(kingdom)
         except Exception as e:
-            print(f"Error loading kingdoms: {e}")
+            logging.error(f"Error fetching features for kingdom {kingdom}: {e}")
+            features = {}
+        # Create spinners for each feature
+        for f_key, options in sorted(features.items()):
+            # Label
+            self.form_layout.add_widget(Label(text=f"{f_key}:", size_hint_y=None, height='30dp'))
+            spinner = Spinner(text='Loading...', values=tuple(options) if options else ('None',), size_hint_y=None, height='44dp')
+            spinner.bind(text=lambda inst, val, key=f_key: self.on_feature_select(key, val))
+            self.form_layout.add_widget(spinner)
+            self.feature_spinners[f_key] = spinner
+            # Set default selection
+            if options:
+                self.selected_options["features"][f_key] = options[0]
+            else:
+                self.selected_options["features"][f_key] = None
 
-        # Load Schools
-        try:
-            schools = rules_api.get_all_ability_schools()
-            if schools:
-                self.school_spinner.values = tuple(schools)
-                self.school_spinner.text = schools[0]
-                self.selected_options["ability_school"] = schools[0]
-        except Exception as e:
-             print(f"Error loading schools: {e}")
-
-    def on_name_change(self, instance, value):
-        self.selected_options["name"] = value
-
-    def on_kingdom_select(self, instance, value):
-        self.selected_options["kingdom"] = value
-
-    def on_school_select(self, instance, value):
-        self.selected_options["ability_school"] = value
+    def on_feature_select(self, key, value):
+        self.selected_options["features"][key] = value
 
     def submit_character(self, instance):
         name = self.selected_options.get("name")
         if not name:
             print("Name is required!")
             return
-
         try:
-            # Construct valid schema
-            # Note: We use placeholders for the detailed history to get it working first
             new_char = char_schemas.CharacterCreate(
                 name=name,
-                kingdom=self.selected_options["kingdom"],
-                ability_school=self.selected_options["ability_school"],
-                feature_choices=[], 
-                origin_choice="Unknown",
-                childhood_choice="Unknown",
-                coming_of_age_choice="Unknown",
-                training_choice="Unknown",
-                devotion_choice="Unknown",
-                ability_talent="Basic Strike", # Default so combat works
-                portrait_id="character_1"
+                kingdom=self.selected_options.get("kingdom", "Unknown"),
+                ability_school=self.selected_options.get("ability_school", "Unknown"),
+                feature_choices=list(self.selected_options.get("features", {}).values()),
+                origin_choice=self.selected_options.get("origin", "Unknown"),
+                childhood_choice=self.selected_options.get("childhood", "Unknown"),
+                coming_of_age_choice=self.selected_options.get("coming_of_age", "Unknown"),
+                training_choice=self.selected_options.get("training", "Unknown"),
+                devotion_choice=self.selected_options.get("devotion", "Unknown"),
+                ability_talent=self.selected_options.get("ability_talent", "Basic Strike"),
+                portrait_id=self.selected_options.get("portrait_id", "character_1"),
             )
-            
             if CharSession and char_services:
                 with CharSession() as db:
                     res = char_services.create_character(db, new_char)
                     print(f"Character Created: {res.name} (ID: {res.id})")
-                    
-                    # Set as active party and go to game
                     app = App.get_running_app()
-                    if not app.game_settings: app.game_settings = {}
+                    if not hasattr(app, 'game_settings') or app.game_settings is None:
+                        app.game_settings = {}
                     app.game_settings['party_list'] = [res.name]
                     app.root.current = 'main_interface'
         except Exception as e:
