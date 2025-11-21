@@ -673,24 +673,44 @@ class CombatScreen(Screen):
 
         tile_y = (map_height - 1) - int(local_pos[1] // TILE_SIZE)
 
-        # --- NEW LOGIC FOR MOVE ACTION ---
+        # --- FIX: MOVE VALIDATION ---
         if self.current_action == "move":
             if not self.is_tile_passable(tile_x, tile_y):
-                self.add_to_log("You can't move there.")
-                self.current_action = None # Cancel targeting
+                self.add_to_log("You can't move there (Blocked).")
+                self.current_action = None
                 return True
 
-            self.add_to_log(f"{self.active_combat_character.name} moves to ({tile_x}, {tile_y}).")
+            # 1. Get current position
+            curr_x = self.active_combat_character.position_x
+            curr_y = self.active_combat_character.position_y
 
+            # 2. Calculate Distance (Chebyshev: Diagonals count as 1 for simplicity, or 1.5 if you're hardcore)
+            # Burt says: Keep it simple for the prototype. 1 square = 1 distance.
+            dist_x = abs(tile_x - curr_x)
+            dist_y = abs(tile_y - curr_y)
+            distance = max(dist_x, dist_y) # Chebyshev distance
+
+            # 3. Get Speed (Default to 6 if not in stats)
+            # We check the 'stats' dictionary directly
+            speed = self.active_combat_character.stats.get("Speed", 6)
+
+            # 4. The Check
+            if distance > speed:
+                self.add_to_log(f"Too far! Speed is {speed}m (Target is {distance}m away).")
+                self.current_action = None
+                return True
+
+            # If we pass, send the action
+            self.add_to_log(f"{self.active_combat_character.name} moves to ({tile_x}, {tile_y}).")
             action = story_schemas.PlayerActionRequest(
                 action="move",
                 coordinates=[tile_x, tile_y]
             )
             self.handle_player_action(self.active_combat_character.id, action)
 
-            self.current_action = None # Clear targeting mode
-            return True # Consumed the touch
-        # --- END NEW LOGIC ---
+            self.current_action = None
+            return True
+        # --- END FIX ---
 
         target = self.get_target_at_coord(tile_x, tile_y)
 
@@ -704,12 +724,16 @@ class CombatScreen(Screen):
             if self.current_action == "use_item" and self.selected_item_id == "item_health_potion_small":
                 is_friendly_action = True
 
-            # Check for friendly ability
-            # 3. CHANGED: Use rules_api, not story_services
+            # --- FIX STARTS HERE ---
+            # Check for friendly ability using the new Rules API lookup
             if self.current_action == "use_ability" and self.selected_ability_id and rules_api:
-                # Need to implement rules_api.get_ability_data or similar if not available
-                # For now assuming it exists or fallback logic
-                pass # (Logic placeholder)
+                ability_data = rules_api.get_ability_data(self.selected_ability_id)
+                if ability_data:
+                    t_type = ability_data.get("target_type", "enemy")
+                    # If the target is an ally or self, flag it as friendly
+                    if t_type in ["ally", "self", "area_ally", "ally_multi", "ally_or_self", "self_or_ally"]:
+                        is_friendly_action = True
+            # --- FIX ENDS HERE ---
 
             target_id = None # Initialize target_id
 
