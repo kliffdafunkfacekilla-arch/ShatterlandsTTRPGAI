@@ -704,12 +704,16 @@ class CombatScreen(Screen):
             if self.current_action == "use_item" and self.selected_item_id == "item_health_potion_small":
                 is_friendly_action = True
 
-            # Check for friendly ability
-            # 3. CHANGED: Use rules_api, not story_services
+            # --- FIX STARTS HERE ---
+            # Check for friendly ability using the new Rules API lookup
             if self.current_action == "use_ability" and self.selected_ability_id and rules_api:
-                # Need to implement rules_api.get_ability_data or similar if not available
-                # For now assuming it exists or fallback logic
-                pass # (Logic placeholder)
+                ability_data = rules_api.get_ability_data(self.selected_ability_id)
+                if ability_data:
+                    t_type = ability_data.get("target_type", "enemy")
+                    # If the target is an ally or self, flag it as friendly
+                    if t_type in ["ally", "self", "area_ally", "ally_multi", "ally_or_self", "self_or_ally"]:
+                        is_friendly_action = True
+            # --- FIX ENDS HERE ---
 
             target_id = None # Initialize target_id
 
