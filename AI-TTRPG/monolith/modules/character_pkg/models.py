@@ -30,6 +30,7 @@ class Character(Base):
     resource_pools = Column(JSON)
 
     unlocked_abilities = Column(JSON)  # <--- NEW: List of strings ["Force_Offense_T1", ...]
+    active_techniques = Column(JSON)   # List of active technique IDs
 
     talents = Column(JSON)
     abilities = Column(JSON)

@@ -71,5 +71,19 @@
     "type": "beneficial",
     "duration_type": "turns",
     "default_duration": 3
+  },
+"Grappled": {
+    "name": "Grappled",
+    "description": "Restrained by another. -5 penalty to Max Vigor (Stamina).",
+    "effects": ["resource_max_penalty:Stamina:5", "movement_incapable:all"],
+    "type": "detrimental",
+    "duration_type": "condition"
+  },
+"Broken Arm": {
+    "name": "Broken Arm",
+    "description": "Severe injury to the arm. Reduces Max Vigor (Stamina) by 5.",
+    "effects": ["resource_max_penalty:Stamina:5", "arm_disabled:true"],
+    "type": "detrimental",
+    "duration_type": "condition"
   }
 }

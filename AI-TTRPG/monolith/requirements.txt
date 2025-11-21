@@ -8,3 +8,4 @@ httpx
 numpy
 noise
 requests
+google-generativeai
