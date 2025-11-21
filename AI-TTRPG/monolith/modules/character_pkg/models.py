@@ -21,12 +21,16 @@ class Character(Base):
     # --- ADD THIS COLUMN ---
     temp_hp = Column(Integer, default=0)
     xp = Column(Integer, default=0)
+    available_ap = Column(Integer, default=3)  # <--- NEW: Ability Points
     is_dead = Column(Integer, default=0) # 0=False, 1=True (SQLite doesn't have native Bool)
     # --- END ADD ---
 
     max_composure = Column(Integer)
     current_composure = Column(Integer)
     resource_pools = Column(JSON)
+
+    unlocked_abilities = Column(JSON)  # <--- NEW: List of strings ["Force_Offense_T1", ...]
+
     talents = Column(JSON)
     abilities = Column(JSON)
     inventory = Column(JSON)

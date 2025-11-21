@@ -1231,30 +1231,19 @@ def _handle_effect_temp_hp(actor_id: str, target_id: str, attacker_context: Dict
     return True
 
 def _handle_effect_random_stat_debuff(target_id: str, log: List[str], effect: Dict) -> bool:
-    """
-    Applies a random penalty to one of the target's 12 Core Stats.
-    Used for Chaos magic effects.
-
-    Args:
-        target_id: Target ID.
-        log: Combat log.
-        effect: Effect definition with 'amount' and 'duration'.
-
-    Returns:
-        bool: True if applied.
-    """
+    """Applies a random penalty to one of the target's stats (e.g., Chaos T2)."""
     # A list of Core Stats (A-L)
     stats_to_debuff = ["Might", "Endurance", "Finesse", "Reflexes", "Vitality", "Fortitude", "Knowledge", "Logic", "Awareness", "Intuition", "Charm", "Willpower"]
     stat = random.choice(stats_to_debuff)
-    amount = effect.get("amount", -1)
-    duration = effect.get("duration", 1)
+    amount = effect.get("amount", -2) # Default to -2 if not specified
+    duration = effect.get("duration", 2) # Default 2 rounds
 
-    # Generate the dynamic status ID: TempDebuff_STATNAME_AMOUNT_DURATION
-    # Ensure amount is negative in the ID if it's a penalty, though logic might expect just the value
+    # Construct the dynamic status ID used by character services
+    # Format: TempDebuff_STATNAME_AMOUNT_DURATION
     status_id = f"TempDebuff_{stat}_{amount}_{duration}"
 
     services.apply_status_to_target(target_id, status_id)
-    log.append(f"Random Debuff: {target_id} suffers {amount} penalty to {stat} for {duration} round(s).")
+    log.append(f"Random Debuff: {target_id} suffers {amount} to {stat} for {duration} round(s).")
     return True
 
 def _handle_effect_reaction_damage(
@@ -1629,25 +1618,48 @@ def _check_and_trigger_reactions(
 
     return reaction_triggered
 
-# --- UPDATE FUNCTION SIGNATURE ---
 def _check_for_interrupt_reactions(db: Session, combat: models.CombatEncounter, attacker_id: str, target_id: str, attack_result: Dict, log: List[str]) -> bool:
     """
     Checks if a successful attack triggers any defensive reactions that could interrupt
-    the flow. Placeholder implementation relies on simple ability list check.
+    the flow. Dynamically checks defender's abilities for 'reaction_trigger' effects.
     """
     target_type, defender_context = get_actor_context(target_id)
 
-    if "Bastion_Reaction_T2" in defender_context.get("abilities", []):
-        if attack_result.get("outcome") in ["hit", "solid_hit", "critical_hit"]:
-            log.append("REACTION TRIGGERED: Bastion T2: Spiked Deflection (Placeholder)")
+    # 1. Get all abilities possessed by the defender
+    abilities = defender_context.get("abilities", [])
 
-            # Execute the reaction's generic effect (self-damage to attacker)
-            effect = {"type": "direct_damage", "amount": "1d4", "damage_type": "physical"}
-            _handle_effect_direct_damage(attacker_id, log, effect)
+    is_interrupted = False
 
-            return False # Does NOT interrupt the original attack damage flow (Structural decision)
+    for ability_name in abilities:
+        # Fetch full ability data to check for reaction properties
+        ability_data = services.get_ability_data(ability_name)
+        if not ability_data:
+            continue
 
-    return False # No interruption
+        # Check for 'reaction' type effects inside the ability
+        for effect in ability_data.get("effects", []):
+            if effect.get("type") == "reaction_damage":
+                trigger_condition = effect.get("trigger", "on_hit")
+
+                # Check if condition matches the current outcome
+                if trigger_condition == "on_hit" and attack_result.get("outcome") in ["hit", "solid_hit", "critical_hit"]:
+                    log.append(f"REACTION TRIGGERED: {ability_name} by {target_id}")
+
+                    # Execute the reaction effect (e.g., damage back to attacker)
+                    # We map the reaction's internal effect to a direct_damage handler
+                    reaction_effect = {
+                        "type": "direct_damage",
+                        "amount": effect.get("amount", "1d4"),
+                        "damage_type": effect.get("damage_type", "physical")
+                    }
+                    _handle_effect_direct_damage(attacker_id, log, reaction_effect)
+
+                    # Check if this reaction specifically cancels the attack (rare)
+                    if effect.get("cancels_attack"):
+                        log.append(f" -> The attack was INTERRUPTED by {ability_name}!")
+                        is_interrupted = True
+
+    return is_interrupted
 
 def _handle_basic_attack(
     db: Session,
@@ -1659,27 +1671,7 @@ def _handle_basic_attack(
     log: List[str],
     ability_mod: Optional[Dict] = None) -> bool:
     """
-    Executes the full resolution chain for a basic attack.
-
-    Steps:
-    1. Determine weapon and armor stats.
-    2. Calculate modifiers (talents, skills, stats).
-    3. Roll Contested Attack (Attacker vs Defender).
-    4. If hit, roll Damage (accounting for DR and bonuses).
-    5. Apply final damage to target's HP.
-
-    Args:
-        db: Database session.
-        combat: Combat encounter model.
-        actor_id: Attacker ID.
-        target_id: Target ID.
-        attacker_context: Attacker's full context.
-        defender_context: Defender's full context.
-        log: Combat log.
-        ability_mod: Optional dictionary of modifiers from an ability used to attack.
-
-    Returns:
-        bool: True if the attack hit, False if it missed.
+    Performs the core attack roll, damage, and HP update logic.
     """
     ability_mod = ability_mod or {}
     target_type = "player" if target_id.startswith("player_") else "npc"
@@ -1687,30 +1679,40 @@ def _handle_basic_attack(
     weapon_category, weapon_type = get_equipped_weapon(attacker_context)
     armor_category = get_equipped_armor(defender_context)
 
+    # Retrieve data with defaults if missing
     weapon_data = services.get_weapon_data(weapon_category, weapon_type)
+    if not weapon_data:
+        weapon_data = {"damage": "1d4", "skill_stat": "Might", "skill": "Brawling", "penalty": 0}
+
     armor_data = services.get_armor_data(armor_category) if armor_category else {"dr": 0, "skill_stat": "Reflexes", "skill": "Natural/Unarmored"}
+
     # --- TALENT BONUSES ---
-    # Calculate bonuses from talents for both attacker and defender
     attacker_talent_bonuses = services.rules_api.calculate_talent_bonuses(
         attacker_context,
         "attack_roll",
         tags=[weapon_category, weapon_type, "Melee" if weapon_type == "melee" else "Ranged", weapon_data["skill_stat"]]
     )
+
+    # Need separate calculation for damage tags? Usually the same tags apply.
+    attacker_damage_bonuses = services.rules_api.calculate_talent_bonuses(
+        attacker_context,
+        "damage",
+        tags=[weapon_category, weapon_type, "Melee" if weapon_type == "melee" else "Ranged", weapon_data["skill_stat"]]
+    )
+
     defender_talent_bonuses = services.rules_api.calculate_talent_bonuses(
         defender_context,
         "defense_roll",
         tags=[armor_category, armor_data["skill_stat"]]
     )
 
-    # Add talent bonuses to the base modifiers
-    # Note: We are adding to the 'misc' bonus fields in the request
-    # Attacker
     attack_bonus_val = attacker_talent_bonuses.get("attack_roll_bonus", 0)
-
-    # Defender
     defense_bonus_val = defender_talent_bonuses.get("defense_roll_bonus", 0)
 
-    # Pre-calculate scores for clarity and reuse
+    # Get Talent Damage Bonus
+    talent_damage_bonus = attacker_damage_bonuses.get("damage_bonus", 0)
+
+    # Pre-calculate scores
     attacker_stat_score = get_stat_score(attacker_context, weapon_data["skill_stat"])
     attacker_skill_rank = get_skill_rank(attacker_context, weapon_data["skill"])
     defender_stat_score = get_stat_score(defender_context, armor_data["skill_stat"])
@@ -1720,20 +1722,19 @@ def _handle_basic_attack(
     attack_params = {
         "attacker_attacking_stat_score": attacker_stat_score,
         "attacker_skill_rank": attacker_skill_rank,
-        "attacker_attack_roll_bonus": ability_mod.get("attack_bonus", 0) + attack_bonus_val, # Add talent bonus here
+        "attacker_attack_roll_bonus": ability_mod.get("attack_bonus", 0) + attack_bonus_val,
         "attacker_attack_roll_penalty": 0,
-        "attacker_weapon_penalty": weapon_data.get("penalty", 0), # New field
-        "defender_defending_stat_score": defender_stat_score,
-        "defender_skill_rank": defender_skill_rank,
-        "defender_defense_roll_bonus": defense_bonus_val, # Add talent bonus here
+        "defender_armor_stat_score": defender_stat_score, # Fixed field name from previous version mismatch
+        "defender_armor_skill_rank": defender_skill_rank, # Fixed field name
+        "defender_weapon_penalty": weapon_data.get("penalty", 0),
+        "defender_defense_roll_bonus": defense_bonus_val,
         "defender_defense_roll_penalty": 0,
-        "defender_weapon_penalty": 0 # This is usually 0 unless specific mechanics apply
     }
 
     # Check for Nausea status
     if "Nausea" in attacker_context.get("status_effects", []):
         log.append(f"{actor_id} is Nauseous, attack is penalized!")
-        attack_params["attacker_attack_roll_penalty"] += 2 # Add penalty
+        attack_params["attacker_attack_roll_penalty"] += 2
 
     attack_result = services.roll_contested_attack(attack_params)
     log.append(f"Attack Roll: Attacker ({attack_result['attacker_final_total']}) vs Defender ({attack_result['defender_final_total']}). Margin: {attack_result['margin']}.")
@@ -1742,14 +1743,12 @@ def _handle_basic_attack(
     if outcome in ["hit", "solid_hit", "critical_hit"]:
         log.append(f"Result: {actor_id} hits {target_id}!")
 
-        # --- NEW: INTERRUPT REACTION CHECK (Mid-action) ---
+        # Check Interrupts
         is_interrupted = _check_for_interrupt_reactions(db, combat, actor_id, target_id, attack_result, log)
-
         if is_interrupted:
-            return True # Action was interrupted, stop damage calculation
-        # --- END INTERRUPT CHECK ---
+            return True
 
-        # Apply status effects from hit
+        # Apply Hit Statuses
         if outcome == "solid_hit":
             services.apply_status_to_target(target_id, "Staggered")
             log.append(f"{target_id} is Staggered!")
@@ -1757,47 +1756,43 @@ def _handle_basic_attack(
             services.apply_status_to_target(target_id, "Bleeding")
             log.append(f"{target_id} is Bleeding!")
 
-        # Check for damage boost from ability
-        damage_bonus = 0
+        # Calculate Damage
+        ability_damage_bonus = 0
         dr_pierce = 0
 
         if ability_mod.get("damage_boost"):
-            damage_bonus = _roll_dice_string(ability_mod["damage_boost"])
-            log.append(f"Ability adds +{damage_bonus} damage!")
+            ability_damage_bonus = _roll_dice_string(ability_mod["damage_boost"])
+            log.append(f"Ability adds +{ability_damage_bonus} damage!")
 
         if ability_mod.get("armor_pierce"):
-             dr_pierce = ability_mod.get("armor_pierce")
-             log.append(f"Ability grants {dr_pierce} Armor Pierce.")
-
+            dr_pierce = ability_mod.get("armor_pierce")
+            log.append(f"Ability grants {dr_pierce} Armor Pierce.")
 
         damage_params = {
             "base_damage_dice": weapon_data["damage"],
             "relevant_stat_score": get_stat_score(attacker_context, weapon_data["skill_stat"]),
-            "attacker_damage_bonus": damage_bonus, # Pass in the bonus
+            # Sum talent bonus AND ability bonus
+            "attacker_damage_bonus": talent_damage_bonus + ability_damage_bonus,
             "attacker_damage_penalty": 0,
-            "attacker_dr_modifier": dr_pierce, # Pass in the pierce
+            "attacker_dr_modifier": dr_pierce,
             "defender_base_dr": armor_data["dr"]
         }
         damage_result = services.calculate_damage(damage_params)
         final_damage = damage_result.get("final_damage", 0)
-        log.append(f"Damage: {final_damage}")
+        log.append(f"Damage: {final_damage} (Talent Bonus: {talent_damage_bonus})")
 
         if final_damage > 0:
             if target_type == "player":
                 services.apply_damage_to_character(target_id, final_damage)
             else:
                 npc_instance_id = int(target_id.split("_")[1])
+                # Use correct field for NPC hp update
                 new_hp = defender_context.get("current_hp", 0) - final_damage
                 services.apply_damage_to_npc(npc_instance_id, new_hp)
         return True
     else:
         log.append(f"Result: {actor_id} misses {target_id}.")
-
-        # --- REACTION CALL (2) ---
-        # Check for reactions to the *miss* (target_id is the one missed)
         _check_and_trigger_reactions(db, combat, "attack_miss", actor_id, log, event_data={"target_id": target_id})
-        # --- END REACTION CALL ---
-
         return False
 
 def _process_status_effects_on_turn_start(db: Session, combat: models.CombatEncounter, actor_id: str, log: List[str]) -> bool:

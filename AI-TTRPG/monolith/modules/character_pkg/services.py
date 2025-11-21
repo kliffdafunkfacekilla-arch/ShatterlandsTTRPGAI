@@ -69,6 +69,7 @@ def get_character_context(
     def_equip = {}
     def_status = []
     def_injuries = []
+    def_unlocks = []
 
     # Apply passive modifiers from talents and equipment
     final_stats, total_dr = apply_passive_modifiers(db_character)
@@ -110,6 +111,16 @@ def get_character_context(
         is_dead=bool(getattr(db_character, "is_dead", 0)),
         dr=total_dr,
         # --- END ADD ---
+
+        # --- NEW FIELDS ---
+        available_ap=getattr(db_character, "available_ap", 0),
+        unlocked_abilities=(
+            db_character.unlocked_abilities
+            if isinstance(db_character.unlocked_abilities, list)
+            else def_unlocks
+        ),
+        # ------------------
+
         max_composure=getattr(db_character, "max_composure", 10),
         current_composure=getattr(db_character, "current_composure", 10),
         resource_pools=(
@@ -460,19 +471,35 @@ def create_character(
 
     logger.info(f"Final calculated stats: {base_stats}")
     logger.info("Calculating vitals...")
-    try:
-        vitals_payload = {"stats": base_stats}
-        vitals_data_dict = rules_api.calculate_base_vitals_api(vitals_payload)
 
-        max_hp = vitals_data_dict.get("max_hp", 1)
-        resource_pools = vitals_data_dict.get("resources", {})
-        logger.info(f"Vitals calculated: MaxHP={max_hp}")
+    # --- UPDATE: Use New Vitals Logic ---
+    try:
+        # We use the internal rules function directly for safety in service layer
+        vitals_req = rules_api.models.BaseVitalsRequest(stats=base_stats, level=1)
+        vitals = rules_api.core.calculate_base_vitals(vitals_req)
+
+        max_hp = vitals.max_hp
+        max_composure = vitals.max_composure
+        resource_pools = vitals.resources
+        logger.info(f"Vitals calculated: MaxHP={max_hp}, MaxComposure={max_composure}")
     except Exception as e:
         logger.error(f"FATAL: Failed to calculate vitals from rules_engine: {e}")
         raise e
+    # --- END UPDATE ---
 
     base_abilities = []
     school_data = rules.get("all_abilities_map", {}).get(character.ability_school)
+
+    # --- NEW: Initial Unlocks ---
+    # "One Ability school unlocked and can use the first tier abilities"
+    initial_unlocks = []
+    school = character.ability_school # e.g., "Force"
+
+    # Assuming standard branches: Offense, Defense, Utility
+    initial_unlocks.append(f"{school}_Offense_T1")
+    initial_unlocks.append(f"{school}_Defense_T1")
+    initial_unlocks.append(f"{school}_Utility_T1")
+    # --- END NEW ---
 
     if not school_data:
         logger.warning(f"No ability school data found for '{character.ability_school}'. No base ability added.")
@@ -504,11 +531,16 @@ def create_character(
         # --- ADD THIS LINE ---
         temp_hp=0,
         xp=0,
+        available_ap=3, # Starting Grant
         is_dead=0,
         # --- END ADD ---
-        max_composure=10,
-        current_composure=10,
+
+        max_composure=max_composure,
+        current_composure=max_composure,
         resource_pools=resource_pools,
+
+        unlocked_abilities=initial_unlocks, # New Field
+
         talents=[character.ability_talent],
         abilities=base_abilities,
         inventory={"item_iron_sword": 1, "item_leather_jerkin": 1},
@@ -725,6 +757,34 @@ def get_passive_modifiers(character: models.Character) -> List[PassiveModifier]:
 
     return modifiers
 
+def _recalculate_character_vitals(db: Session, character: models.Character):
+    """Internal helper to update Max HP/Composure after stats/level change."""
+    try:
+        req = rules_api.models.BaseVitalsRequest(stats=character.stats, level=character.level)
+        vitals = rules_api.core.calculate_base_vitals(req)
+        character.max_hp = vitals.max_hp
+        character.max_composure = vitals.max_composure
+        # Note: We generally don't auto-fill current HP here unless it's a full rest or level up event
+    except Exception as e:
+        logger.error(f"Failed to recalculate vitals: {e}")
+
+def level_up_character(db: Session, character: models.Character):
+    """Internal logic applied when XP threshold is met."""
+    if character.level >= 20:
+        return
+
+    character.level += 1
+    character.available_ap += 2 # Drip rate
+
+    # Recalculate Vitals with new level scaling
+    _recalculate_character_vitals(db, character)
+
+    # Full Heal
+    character.current_hp = character.max_hp
+    character.current_composure = character.max_composure
+
+    logger.info(f"{character.name} leveled up to {character.level}!")
+
 def award_xp(db: Session, character_id: str, amount: int) -> Optional[models.Character]:
     """Awards XP and handles leveling up."""
     character = get_character(db, character_id)
@@ -739,9 +799,7 @@ def award_xp(db: Session, character_id: str, amount: int) -> Optional[models.Cha
     # This is a placeholder for the real curve.
     next_level_threshold = character.level * 1000
     if character.xp >= next_level_threshold:
-        character.level += 1
-        logger.info(f"{character.name} leveled up to {character.level}!")
-        # TODO: Trigger level up event/bonuses
+        level_up_character(db, character)
 
     try:
         db.commit()
@@ -751,6 +809,45 @@ def award_xp(db: Session, character_id: str, amount: int) -> Optional[models.Cha
         db.rollback()
         logger.error(f"Failed to award XP: {e}")
         raise
+
+def purchase_ability(db: Session, character_id: str, school: str, branch: str, tier: int):
+    """
+    Attempts to buy an ability node.
+    """
+    char = get_character(db, character_id)
+    if not char: raise Exception("Character not found")
+
+    # 1. Construct Request
+    target_node = rules_api.models.AbilityNode(school=school, branch=branch, tier=tier)
+
+    req = rules_api.models.AbilityPurchaseRequest(
+        target_ability=target_node,
+        current_unlocks=char.unlocked_abilities or [],
+        available_ap=char.available_ap
+    )
+
+    # 2. Validate via Rules Engine
+    result = rules_api.core.validate_ability_unlock(req)
+
+    if not result.success:
+        return {"success": False, "message": result.message}
+
+    # 3. Commit Transaction
+    # Update AP
+    char.available_ap = result.remaining_ap
+
+    # Append new node ID safely
+    current_list = list(char.unlocked_abilities) if char.unlocked_abilities else []
+    current_list.append(result.new_unlock)
+    char.unlocked_abilities = current_list
+
+    try:
+        db.commit()
+        db.refresh(char)
+        return {"success": True, "message": result.message, "character": char}
+    except Exception as e:
+        db.rollback()
+        raise e
 
 def handle_death(db: Session, character_id: str) -> Optional[models.Character]:
     """Sets the character status to dead/downed."""
