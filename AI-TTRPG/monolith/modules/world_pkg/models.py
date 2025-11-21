@@ -15,7 +15,7 @@ class Map(Base):
     grid_height = Column(Integer, default=100)
     layers = Column(Integer, default=1)
     description = Column(Text, nullable=True)
-    tiles = relationship("Tile", back_populates="map")
+    tiles = relationship("Tile", back_populates="map", foreign_keys="Tile.map_id")
     parent_map = relationship("Map", remote_side=[id])
 
 class Tile(Base):

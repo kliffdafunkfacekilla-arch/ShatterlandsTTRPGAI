@@ -1079,7 +1079,7 @@ ABILITY_EFFECT_HANDLERS: Dict[str, Callable] = {
     # AoE
     "aoe_damage": _handle_effect_aoe_damage,
     "aoe_status": _handle_effect_aoe_status_apply,
-    "aoe_status_roll": _handle_effect_aoe_status_roll,
+    "aoe_status_roll": _handle_effect_apply_status_roll,
     "aoe_composure_damage_roll": _handle_effect_aoe_composure_damage_roll,
     "aoe_heal": _handle_effect_aoe_heal,
 

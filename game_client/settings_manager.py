@@ -23,7 +23,8 @@ DEFAULT_SETTINGS = {
     "music_volume": 80,
     "sfx_volume": 100,
     "colorblind_mode": False,
-    "reduce_flashing": False
+    "reduce_flashing": False,
+    "google_api_key": ""
 }
 
 def load_settings() -> Dict[str, Any]:

@@ -46,12 +46,12 @@ except ImportError as e:
 try:
     from game_client import asset_loader
     from game_client.views.map_view_widget import MapViewWidget
-    from game_client.config import TILE_SIZE
 except ImportError as e:
     logging.error(f"MAIN_INTERFACE: Failed to import client modules: {e}")
     asset_loader = None
     MapViewWidget = None
-    TILE_SIZE = 64
+
+TILE_SIZE = 64
 
 
 MAIN_INTERFACE_KV = """
@@ -444,11 +444,22 @@ class MainInterfaceScreen(Screen):
                 char_id, loc_id, new_coords
             )
 
-            # Update the context in our list
-            self.active_character_context.position_x = updated_context_dict.get('position_x', tile_x)
-            self.active_character_context.position_y = updated_context_dict.get('position_y', tile_y)
+            # --- Refresh the specific character in the master list ---
+            # Create a new CharacterContextResponse object from the updated dict
+            # This ensures Kivy properties are updated correctly
+            updated_char_context = CharacterContextResponse(**updated_context_dict)
 
-            # --- MODIFIED: Call the new move function ---
+            # Update the active_character_context
+            self.active_character_context = updated_char_context
+
+            # Update the context in our list (self.party_contexts)
+            for i, ctx in enumerate(self.party_contexts):
+                if ctx.id == char_id: # Use char_id to match the character being moved
+                    self.party_contexts[i] = updated_char_context
+                    break
+            self.party_list = list(self.party_contexts) # Trigger UI refresh
+
+            # --- Call the new move function on the map_view_widget ---
             self.map_view_widget.move_active_player_sprite(
                 char_id, tile_x, tile_y, self.get_map_height()
             )
@@ -463,25 +474,6 @@ class MainInterfaceScreen(Screen):
 
     def show_save_popup(self):
         pass
-
-            # --- Refresh the specific character in the master list ---
-            for i, ctx in enumerate(self.party_contexts):
-                if ctx.id == self.active_character_context.id:
-                    # Create a new object for Kivy to detect the change
-                    self.party_contexts[i] = CharacterContextResponse(**updated_context_dict)
-                    break
-            self.party_list = list(self.party_contexts) # Trigger UI refresh
-            # --- End Refresh ---
-
-            # --- MODIFIED: Call the new move function ---
-            self.map_view_widget.move_active_player_sprite(
-                char_id, tile_x, tile_y, self.get_map_height()
-            )
-            self.update_log(f"{self.active_character_context.name} moved to ({tile_x}, {tile_y})")
-
-        except Exception as e:
-            logging.exception(f"Failed to move player: {e}")
-            self.update_log(f"Error: Could not move player.")
 
     def on_submit_narration(self, instance):
         """Called when the user presses Enter in the DM input box."""

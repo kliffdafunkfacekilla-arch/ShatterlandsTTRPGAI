@@ -12,6 +12,7 @@ import traceback
 from typing import Optional
 import os
 import logging
+import importlib
 
 # --- Setup Logging ---
 # Configure basic logging to see startup messages
@@ -42,10 +43,10 @@ def _run_migrations_for_module(module_name: str, root_path: Path, mode: str):
     Generic function to find and run Alembic migrations for a module.
 
     A module is expected to have its package at:
-    .../modules/<module_name>/<module_name>_pkg/
+    .../modules/<module_name>_pkg/
 
     And its alembic.ini at:
-    .../modules/<module_name>/<module_name>_pkg/alembic.ini
+    .../modules/<module_name>_pkg/alembic.ini
     """
     if not AlembicConfig or not alembic_command:
         logger.warning(f"Skipping migrations for '{module_name}' (Alembic not loaded).")
@@ -58,12 +59,24 @@ def _run_migrations_for_module(module_name: str, root_path: Path, mode: str):
         return
 
     try:
-        pkg_path = root_path / "monolith" / "modules" / module_name / f"{module_name}_pkg"
+        pkg_path = root_path / "monolith" / "modules" / f"{module_name}_pkg"
         alembic_ini_path = pkg_path / "alembic.ini"
         alembic_script_location = pkg_path / "alembic"
 
         if not alembic_ini_path.exists():
             logger.warning(f"alembic.ini not found for '{module_name}' at: {alembic_ini_path}. Skipping migrations.")
+            # Fallback to create_all()
+            if mode == "auto":
+                try:
+                    logger.warning(f"Falling back to create_all() for '{module_name}'...")
+                    db_module = importlib.import_module(f"monolith.modules.{module_name}_pkg.database")
+                    engine = getattr(db_module, "engine")
+                    Base = getattr(db_module, "Base")
+                    Base.metadata.create_all(bind=engine)
+                    logger.info(f"create_all() successful for '{module_name}'.")
+                except Exception as create_e:
+                    logger.exception(f"Fallback create_all() ALSO FAILED for '{module_name}': {create_e}")
+                    raise
             return
 
         if not alembic_script_location.exists():
@@ -95,7 +108,7 @@ def _run_migrations_for_module(module_name: str, root_path: Path, mode: str):
         logger.exception(f"Alembic migration failed for '{module_name}': {e}")
         if mode == "migrate":
             raise RuntimeError(f"Migration failed for {module_name} in 'migrate' mode.")
-
+        
         # Fallback to create_all()
         if mode == "auto":
             try:
@@ -109,14 +122,17 @@ def _run_migrations_for_module(module_name: str, root_path: Path, mode: str):
                 logger.exception(f"Fallback create_all() ALSO FAILED for '{module_name}': {create_e}")
                 raise
 
+
 # --- Main Startup Function ---
 async def _main():
     orch = get_orchestrator()
     bus = orch.bus
 
-    # 1. Run Migrations for all stateful modules
-    import importlib # Move import to top-level
+    # 1. Register all modules (this loads their data, etc.)
+    logger.info("Registering all monolith modules...")
+    register_all(orch)
 
+    # 2. Run Migrations for all stateful modules
     # Get migration mode from environment, default to 'auto'
     # 'auto': Try Alembic, fallback to create_all()
     # 'migrate': Force Alembic, fail on error
@@ -126,10 +142,6 @@ async def _main():
     _run_migrations_for_module("character", ROOT, migration_mode)
     _run_migrations_for_module("world", ROOT, migration_mode)
     _run_migrations_for_module("story", ROOT, migration_mode)
-
-    # 2. Register all modules (this loads their data, etc.)
-    logger.info("Registering all monolith modules...")
-    register_all(orch)
 
     # 3. Start the orchestrator
     await orch.start()
