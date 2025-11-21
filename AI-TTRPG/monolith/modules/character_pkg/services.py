@@ -51,6 +51,40 @@ def apply_passive_modifiers(character: models.Character) -> (Dict[str, Any], int
 
     return base_stats, total_dr
 
+def toggle_technique_state(db: Session, character_id: str, technique_id: str, active: bool) -> Optional[models.Character]:
+    """
+    Toggles a technique on or off for a character, updating reserved resources.
+    """
+    character = get_character(db, character_id)
+    if not character:
+        logger.error(f"Toggle technique failed: Character {character_id} not found.")
+        return None
+
+    # Ensure resource pools are in the correct format (dict of dicts)
+    resource_pools = deepcopy(character.resource_pools) if character.resource_pools else {}
+
+    # Ensure active_techniques is initialized
+    active_techniques = list(character.active_techniques) if character.active_techniques else []
+
+    # Call core logic
+    success = rules_api.core.toggle_technique(resource_pools, active_techniques, technique_id, active)
+
+    if success:
+        character.resource_pools = resource_pools
+        character.active_techniques = active_techniques
+        try:
+            db.commit()
+            db.refresh(character)
+            logger.info(f"Technique '{technique_id}' toggled to {active}. New resources: {resource_pools}")
+            return character
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Database error toggling technique: {e}")
+            raise
+    else:
+        logger.warning(f"Failed to toggle technique '{technique_id}' (Active={active}) for {character.name}")
+        return None
+
 def get_character_context(
     db_character: models.Character,
 ) -> schemas.CharacterContextResponse:
@@ -70,6 +104,7 @@ def get_character_context(
     def_status = []
     def_injuries = []
     def_unlocks = []
+    def_techniques = []
 
     # Apply passive modifiers from talents and equipment
     final_stats, total_dr = apply_passive_modifiers(db_character)
@@ -118,6 +153,11 @@ def get_character_context(
             db_character.unlocked_abilities
             if isinstance(db_character.unlocked_abilities, list)
             else def_unlocks
+        ),
+        active_techniques=(
+            db_character.active_techniques
+            if isinstance(db_character.active_techniques, list)
+            else def_techniques
         ),
         # ------------------
 
@@ -764,6 +804,91 @@ def _recalculate_character_vitals(db: Session, character: models.Character):
         vitals = rules_api.core.calculate_base_vitals(req)
         character.max_hp = vitals.max_hp
         character.max_composure = vitals.max_composure
+
+        # Preserve existing reserved amounts if possible, or reset if not
+        current_pools = character.resource_pools or {}
+        new_pools = vitals.resources
+
+        for pool_name, pool_data in new_pools.items():
+            if pool_name in current_pools and "reserved" in current_pools[pool_name]:
+                 pool_data["reserved"] = current_pools[pool_name]["reserved"]
+            else:
+                 pool_data["reserved"] = 0
+
+        character.resource_pools = new_pools
+
+        # Apply passive modifiers to max resources (e.g. Grappled effect)
+        _, _ = apply_passive_modifiers(character)
+        # Wait, apply_passive_modifiers only calculates stats and returns them.
+        # It does not update the character model directly for resources.
+        # I need to handle resource max modifiers here.
+
+        # Get modifiers again to apply resource max changes
+        equipment_modifiers = get_passive_modifiers(character)
+        talent_modifiers = get_talent_modifiers(character.talents or [])
+        all_modifiers = equipment_modifiers + talent_modifiers
+
+        # Status effects also need to be checked for resource max penalties (Grappled)
+
+        if rules_api.data_loader.STATUS_EFFECTS:
+             for status_id in (character.status_effects or []):
+                  # Handle both simple ID "Grappled" and complex "TempDebuff_..."
+                  # Status effects in JSON are keys like "Grappled"
+                  status_def = rules_api.core.get_status_effect(status_id, rules_api.data_loader.STATUS_EFFECTS)
+                  # StatusEffectResponse has 'effects' list
+                  for effect_str in status_def.effects:
+                       # "resource_max_penalty:Stamina:5"
+                       parts = effect_str.split(":")
+                       if parts[0] == "resource_max_penalty" and len(parts) == 3:
+                            res_target = parts[1]
+                            val = int(parts[2])
+                            if res_target in character.resource_pools:
+                                 character.resource_pools[res_target]["max"] = max(1, character.resource_pools[res_target]["max"] - val)
+                                 logger.info(f"Applied resource max penalty from status {status_id}: {res_target} -{val}")
+
+        # CHECK FOR OVER-RESERVATION
+        # If Reserved > Max, we must disable techniques until we are under budget.
+        if character.active_techniques:
+            if not rules_api.data_loader.TECHNIQUES:
+                rules_api.data_loader.load_data()
+
+            techniques_to_remove = []
+
+            # Iterate pools to check for violation
+            for pool_name, pool_data in character.resource_pools.items():
+                if pool_data["reserved"] > pool_data["max"]:
+                    logger.info(f"Resource Overdraft in {pool_name}: Reserved {pool_data['reserved']} > Max {pool_data['max']}. Disabling techniques...")
+
+                    # Iterate active techniques to find ones using this resource
+                    # We iterate in reverse or just repeatedly until solved?
+                    # Simple approach: find techniques using this resource and turn them off one by one.
+
+                    # Make a copy to iterate safely
+                    active_copy = list(character.active_techniques)
+                    for tech_id in active_copy:
+                        if pool_data["reserved"] <= pool_data["max"]:
+                            break # Solved
+
+                        tech_data = rules_api.data_loader.TECHNIQUES.get(tech_id)
+                        if not tech_data: continue
+
+                        cost = tech_data.get("maintenance_cost", {}).get(pool_name)
+                        if cost:
+                            # Found a culprit
+                            logger.info(f"Force disabling technique '{tech_id}' to free {cost} {pool_name}")
+                            pool_data["reserved"] -= cost
+                            techniques_to_remove.append(tech_id)
+
+                            # Remove from our local copy so we don't double count if using multiple resources?
+                            # Actually just flagging for removal is safer.
+                            # But we need to update 'reserved' locally to know if we are done.
+
+            # Apply removals
+            if techniques_to_remove:
+                new_active = [t for t in character.active_techniques if t not in techniques_to_remove]
+                character.active_techniques = new_active
+                logger.info(f"Updated active techniques after overdraft check: {character.active_techniques}")
+
         # Note: We generally don't auto-fill current HP here unless it's a full rest or level up event
     except Exception as e:
         logger.error(f"Failed to recalculate vitals: {e}")
