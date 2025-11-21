@@ -1,48 +1,266 @@
 {
-"item_iron_sword": {
-"name": "Iron Sword",
-"type": "melee",
-"category": "Double/dual wield"
-},
-"item_iron_axe": {
-"name": "Iron Axe",
-"type": "melee",
-"category": "Great Weapons"
-},
-"item_short_bow": {
-"name": "Short Bow",
-"type": "ranged",
-"category": "Bows and Firearms"
-},
-"item_leather_jerkin": {
-"name": "Leather Jerkin",
-"type": "armor",
-"category": "Leather/Hides"
-},
-"item_iron_plate": {
-"name": "Iron Plate",
-"type": "armor",
-"category": "Plate Armor"
-},
-"item_brawling_gloves": {
-"name": "Brawling Gloves",
-"type": "melee",
-"category": "Unarmed/Fist Weapons"
-},
-"item_iron_key": {
-"name": "Iron Key",
-"type": "key",
-"category": "quest"
-},
-"item_health_potion_small": {
-"name": "Small Health Potion",
-"type": "healing",
-"category": "potion",
-"potency": 15
-},
-"item_scrap_metal": {
-"name": "Scrap Metal",
-"type": "crafting",
-"category": "material"
-}
+    "item_iron_sword": {
+        "name": "Iron Sword",
+        "type": "weapon",
+        "category": "Double/dual wield",
+        "weight": 3.0,
+        "slots": [
+            "main_hand",
+            "off_hand"
+        ],
+        "damage_dice": "1d8",
+        "icon": "icon_iron_sword",
+        "sprite_ref": "sprite_iron_sword"
+    },
+    "item_iron_axe": {
+        "name": "Iron Axe",
+        "type": "weapon",
+        "category": "Great Weapons",
+        "weight": 6.0,
+        "slots": [
+            "main_hand"
+        ],
+        "damage_dice": "1d12",
+        "icon": "icon_iron_axe",
+        "sprite_ref": "sprite_iron_axe"
+    },
+    "item_short_bow": {
+        "name": "Short Bow",
+        "type": "weapon",
+        "category": "Bows and Firearms",
+        "weight": 2.0,
+        "slots": [
+            "main_hand",
+            "off_hand"
+        ],
+        "damage_dice": "1d6",
+        "range_type": "ranged",
+        "icon": "icon_short_bow",
+        "sprite_ref": "sprite_short_bow"
+    },
+    "item_leather_jerkin": {
+        "name": "Leather Jerkin",
+        "type": "armor",
+        "category": "Leather/Hides",
+        "weight": 5.0,
+        "slots": [
+            "chest"
+        ],
+        "dr": 1,
+        "icon": "icon_leather_jerkin",
+        "sprite_ref": "sprite_leather_jerkin"
+    },
+    "item_iron_plate": {
+        "name": "Iron Plate",
+        "type": "armor",
+        "category": "Plate Armor",
+        "weight": 25.0,
+        "slots": [
+            "chest"
+        ],
+        "dr": 3,
+        "icon": "icon_iron_plate",
+        "sprite_ref": "sprite_iron_plate"
+    },
+    "item_brawling_gloves": {
+        "name": "Brawling Gloves",
+        "type": "weapon",
+        "category": "Unarmed/Fist Weapons",
+        "weight": 1.0,
+        "slots": [
+            "hands"
+        ],
+        "damage_dice": "1d4",
+        "icon": "icon_brawling_gloves",
+        "sprite_ref": "sprite_brawling_gloves"
+    },
+    "item_iron_key": {
+        "name": "Iron Key",
+        "type": "quest",
+        "category": "quest",
+        "weight": 0.1,
+        "slots": [],
+        "icon": "icon_iron_key",
+        "sprite_ref": "sprite_iron_key"
+    },
+    "item_health_potion_small": {
+        "name": "Small Health Potion",
+        "type": "consumable",
+        "category": "potion",
+        "weight": 0.5,
+        "slots": [],
+        "effects": [
+            {
+                "type": "heal",
+                "value": 15,
+                "description": "Restores 15 HP"
+            }
+        ],
+        "quantity": 1,
+        "max_stack": 5,
+        "icon": "icon_health_potion_small",
+        "sprite_ref": "sprite_health_potion_small"
+    },
+    "item_apple": {
+        "name": "Apple",
+        "type": "consumable",
+        "category": "food",
+        "weight": 0.2,
+        "slots": [],
+        "effects": [
+            {
+                "type": "heal",
+                "value": 2,
+                "description": "Restores 2 HP"
+            }
+        ],
+        "quantity": 1,
+        "max_stack": 10,
+        "icon": "icon_apple",
+        "sprite_ref": "sprite_apple"
+    },
+    "item_scrap_metal": {
+        "name": "Scrap Metal",
+        "type": "material",
+        "category": "material",
+        "weight": 0.5,
+        "slots": [],
+        "quantity": 1,
+        "max_stack": 20,
+        "icon": "icon_scrap_metal",
+        "sprite_ref": "sprite_scrap_metal"
+    },
+    "item_rope": {
+        "name": "Rope (50ft)",
+        "type": "tool",
+        "category": "utility",
+        "weight": 5.0,
+        "slots": [
+            "carried_gear"
+        ],
+        "effects": [
+            {
+                "type": "utility",
+                "value": 0,
+                "description": "Used for climbing or binding."
+            }
+        ],
+        "icon": "icon_rope",
+        "sprite_ref": "sprite_rope"
+    },
+    "item_torch": {
+        "name": "Torch",
+        "type": "tool",
+        "category": "utility",
+        "weight": 1.0,
+        "slots": [
+            "off_hand",
+            "equipped_gear",
+            "carried_gear"
+        ],
+        "effects": [
+            {
+                "type": "utility",
+                "value": 0,
+                "description": "Provides light."
+            }
+        ],
+        "icon": "icon_torch",
+        "sprite_ref": "sprite_torch"
+    },
+    "item_gold_ring": {
+        "name": "Gold Ring",
+        "type": "accessory",
+        "category": "jewelry",
+        "weight": 0.1,
+        "slots": [
+            "ring_l1", "ring_l2", "ring_l3", "ring_l4",
+            "ring_r1", "ring_r2", "ring_r3", "ring_r4"
+        ],
+        "value": 50,
+        "icon": "icon_gold_ring",
+        "sprite_ref": "sprite_gold_ring"
+    },
+    "item_silver_necklace": {
+        "name": "Silver Necklace",
+        "type": "accessory",
+        "category": "jewelry",
+        "weight": 0.2,
+        "slots": [
+            "neck"
+        ],
+        "value": 30,
+        "icon": "icon_silver_necklace",
+        "sprite_ref": "sprite_silver_necklace"
+    },
+    "item_leather_belt": {
+        "name": "Leather Belt",
+        "type": "accessory",
+        "category": "clothing",
+        "weight": 0.5,
+        "slots": [
+            "belt"
+        ],
+        "value": 5,
+        "icon": "icon_leather_belt",
+        "sprite_ref": "sprite_leather_belt"
+    },
+    "item_ancient_tome": {
+        "name": "Ancient Tome",
+        "type": "book",
+        "category": "lore",
+        "weight": 2.0,
+        "slots": [],
+        "value": 100,
+        "icon": "icon_ancient_tome",
+        "sprite_ref": "sprite_ancient_tome"
+    },
+    "item_ruby_gem": {
+        "name": "Ruby Gem",
+        "type": "treasure",
+        "category": "gem",
+        "weight": 0.1,
+        "slots": [],
+        "value": 200,
+        "icon": "icon_ruby_gem",
+        "sprite_ref": "sprite_ruby_gem"
+    },
+    "item_lucky_charm": {
+        "name": "Lucky Charm",
+        "type": "charm",
+        "category": "charm",
+        "weight": 0.1,
+        "slots": [
+            "neck",
+            "wrist_l1", "wrist_l2", "wrist_r1", "wrist_r2"
+        ],
+        "effects": [
+            {
+                "type": "buff",
+                "target_stat": "Luck",
+                "value": 1,
+                "description": "+1 Luck"
+            }
+        ],
+        "icon": "icon_lucky_charm",
+        "sprite_ref": "sprite_lucky_charm"
+    },
+    "item_fireball_scroll": {
+        "name": "Scroll of Fireball",
+        "type": "charm",
+        "category": "scroll",
+        "weight": 0.1,
+        "slots": [
+            "equipped_gear"
+        ],
+        "effects": [
+            {
+                "type": "damage",
+                "value": 20,
+                "description": "Casts Fireball"
+            }
+        ],
+        "icon": "icon_scroll_fire",
+        "sprite_ref": "sprite_scroll_fire"
+    }
 }

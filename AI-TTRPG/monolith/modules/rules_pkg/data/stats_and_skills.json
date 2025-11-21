@@ -98,5 +98,25 @@
 "Scatter/Repeater Bows/Firearms": "Charm",
 "Concentration/Focus Launchers  ": "Willpower"
 }
+},
+"techniques": {
+"Geometry of War": {
+"description": "You calculate the trajectory of incoming blows. (Logic replaces Endurance for Defense)",
+"type": "stance",
+"governing_stat": "Logic",
+"maintenance_cost": { "Tactics": 2 }
+},
+"Calculated Strike": {
+"description": "You strike at structural weak points. (Logic replaces Might for Attacks)",
+"type": "stance",
+"governing_stat": "Logic",
+"maintenance_cost": { "Tactics": 3 }
+},
+"Titan's Grip": {
+"description": "You wield a two-handed weapon with one hand. (Requires massive muscle tension)",
+"type": "stance",
+"governing_stat": "Might",
+"maintenance_cost": { "Stamina": 4 }
+}
 }
 }

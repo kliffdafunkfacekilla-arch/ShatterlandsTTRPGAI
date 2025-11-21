@@ -32,6 +32,7 @@ try:
     from monolith.modules import save_api
     from monolith.modules.story_pkg import schemas as story_schemas
     from monolith.modules.character_pkg.schemas import CharacterContextResponse
+    from monolith.modules.camp_pkg import schemas as camp_schemas
 except ImportError as e:
     logging.error(f"MAIN_INTERFACE: Failed to import monolith modules: {e}")
     # ... (all set to None)
@@ -190,12 +191,9 @@ MAIN_INTERFACE_KV = """
                         size: self.size
                 Button:
                     text: 'Menu'
-                    on_release: app.root.current = 'main_menu'
-                    # --- MODIFIED THIS ---
                     on_release:
                         app.root.get_screen('settings').previous_screen = 'main_interface'
                         app.root.current = 'settings'
-                    # --- END MODIFIED ---
                 Button:
                     text: 'Save Game'
                     on_release: root.show_save_popup()
@@ -208,10 +206,22 @@ MAIN_INTERFACE_KV = """
                 Button:
                     text: 'Quests'
                     on_release: app.root.current = 'quest_log'
+                Button:
+                    text: 'Rest'
+                    on_release: root.on_rest()
+                Button:
+                    text: 'Shop'
+                    on_release: app.root.current = 'shop_screen'
 """
 Builder.load_string(MAIN_INTERFACE_KV)
 
 class MainInterfaceScreen(Screen):
+    """
+    The primary gameplay screen for exploration.
+
+    Displays the map, party status, chat/log, and action buttons.
+    Handles movement, resting, saving, and transitioning to other screens (Combat, Shop, etc.).
+    """
     # ... (all existing ObjectProperty references) ...
     log_label = ObjectProperty(None)
     narration_label = ObjectProperty(None)
@@ -224,13 +234,9 @@ class MainInterfaceScreen(Screen):
     map_view_anchor = ObjectProperty(None)
 
     # --- MODIFIED: State Properties ---
-    active_character_context = ObjectProperty(None, force_dispatch=True)
-    location_context = ObjectProperty(None, force_dispatch=True)
-    save_popup = ObjectProperty(None, allownone=True)
-
-    # --- MODIFIED: State Properties ---
     active_character_context = ObjectProperty(None, force_dispatch=True, allownone=True)
     location_context = ObjectProperty(None, force_dispatch=True, allownone=True)
+    save_popup = ObjectProperty(None, allownone=True)
 
     # This holds the full context for ALL party members
     party_contexts = ListProperty([])
@@ -238,6 +244,9 @@ class MainInterfaceScreen(Screen):
     party_list = ListProperty([])
 
     def __init__(self, **kwargs):
+        """
+        Initializes the screen layout and widget bindings.
+        """
         super().__init__(**kwargs)
         if MapViewWidget:
             self.map_view_widget = MapViewWidget()
@@ -261,6 +270,9 @@ class MainInterfaceScreen(Screen):
             logging.error("Failed to bind dm_input, widget not found.")
 
     def center_layout(self, instance, width, height):
+        """
+        Centers the map view within the screen.
+        """
         if self.map_view_anchor:
             self.map_view_anchor.pos = (
                 (width - self.map_view_anchor.width) / 2,
@@ -269,7 +281,8 @@ class MainInterfaceScreen(Screen):
 
     def on_enter(self, *args):
         """
-        MODIFIED: Loads the *entire party* and the location.
+        Called when the screen becomes active.
+        Loads the full game state (party, location) and renders the scene.
         """
         logging.info("Entering Main Interface Screen. Loading game state...")
         if self.map_view_anchor and self.map_view_widget:
@@ -306,7 +319,7 @@ class MainInterfaceScreen(Screen):
                 if not db_char:
                     raise Exception(f"Character '{char_name}' not found in database.")
 
-                context = char_services.get_character_context(db_char)
+                context = char_services.get_character_context(db, db_char.id)
                 self.party_contexts.append(context)
                 loaded_contexts.append(context)
 
@@ -315,7 +328,8 @@ class MainInterfaceScreen(Screen):
             # --- END FIX ---
 
             # Set the first character as active by default
-            self.active_character_context = self.party_contexts[0]
+            if self.party_contexts:
+                self.active_character_context = self.party_contexts[0]
             # Set the party_list to trigger the UI update
             self.party_list = self.party_contexts
 
@@ -333,12 +347,13 @@ class MainInterfaceScreen(Screen):
         # ... (Location loading is unchanged) ...
         world_db = None
         try:
-            loc_id = self.active_character_context.current_location_id # Use active char's location
-            world_db = WorldSession()
-            self.location_context = world_crud.get_location_context(world_db, loc_id)
-            if not self.location_context:
-                raise Exception(f"Location ID '{loc_id}' not found in database.")
-            logging.info(f"Loaded context for location: {self.location_context.get('name')}")
+            if self.active_character_context:
+                loc_id = self.active_character_context.current_location_id # Use active char's location
+                world_db = WorldSession()
+                self.location_context = world_crud.get_location_context(world_db, loc_id)
+                if not self.location_context:
+                    raise Exception(f"Location ID '{loc_id}' not found in database.")
+                logging.info(f"Loaded context for location: {self.location_context.get('name')}")
         except Exception as e:
             logging.error(f"Failed to load location context: {e}")
             if world_db: world_db.close()
@@ -384,8 +399,6 @@ class MainInterfaceScreen(Screen):
             )
 
             # Highlight the active character
-            if char_context.id == self.active_character_context.id:
-                party_member_button.background_color = (0.5, 0.5, 1, 1) # Blueish tint
             if self.active_character_context and (char_context.id == self.active_character_context.id):
                 party_member_button.background_color = (0.5, 0.5, 1, 1) # Blueish tint
             else:
@@ -410,7 +423,7 @@ class MainInterfaceScreen(Screen):
         self.ids.narration_label.text = message
 
     def get_map_height(self):
-        tile_map = self.location_context.get('generated_map_data', [])
+        tile_map = self.location_context.get('generated_map_data', []) if self.location_context else []
         return len(tile_map)
 
     def is_tile_passable(self, tile_x: int, tile_y: int) -> bool:
@@ -439,7 +452,6 @@ class MainInterfaceScreen(Screen):
             loc_id = self.active_character_context.current_location_id
             new_coords = [tile_x, tile_y]
 
-            # This API call is correct, it updates the specific char
             updated_context_dict = character_api.update_character_location(
                 char_id, loc_id, new_coords
             )
@@ -480,21 +492,16 @@ class MainInterfaceScreen(Screen):
         prompt_text = instance.text
         if not prompt_text:
             return
-
         instance.text = ""
-
         if not self.active_character_context:
             logging.error("Cannot submit prompt, no active character.")
             return
-
         if not story_api:
             logging.error("Cannot submit prompt, story_api not loaded.")
             self.update_narration("Error: Story module not loaded.")
             return
-
         actor_id = self.active_character_context.id
         self.update_log(f"You: {prompt_text}")
-
         try:
             response = story_api.handle_narrative_prompt(actor_id, prompt_text)
             self.update_narration(response.get("message", "An error occurred."))
@@ -502,57 +509,56 @@ class MainInterfaceScreen(Screen):
             logging.exception(f"Error handling narrative prompt: {e}")
             self.update_narration(f"Error: {e}")
 
+    def on_rest(self):
+        """Called when the 'Rest' button is pressed."""
+        if not self.active_character_context or not story_api:
+            self.update_log("Cannot rest right now.")
+            return
+        try:
+            char_id = self.active_character_context.id
+            rest_request = camp_schemas.CampRestRequest(char_id=char_id, duration=8) # Rest for 8 hours
+            self.update_log("You rest for 8 hours...")
+            updated_context_dict = story_api.rest_at_camp(rest_request)
+            new_context = CharacterContextResponse(**updated_context_dict)
+            for i, ctx in enumerate(self.party_contexts):
+                if ctx.id == char_id:
+                    self.party_contexts[i] = new_context
+                    break
+            self.active_character_context = new_context
+            self.party_list = list(self.party_contexts)
+            self.update_log("You feel refreshed. HP and Composure restored.")
+        except Exception as e:
+            logging.exception(f"Error during rest: {e}")
+            self.update_log(f"Rest failed: {e}")
+
     def show_save_popup(self):
         """Displays a popup to get a save game name."""
         if self.save_popup:
             self.save_popup.dismiss()
-
         char_name = self.active_character_context.name if self.active_character_context else "save"
         default_save_name = f"{char_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}"
-
         content = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
-
         content.add_widget(Label(text='Enter a name for your save file:'))
-
-        text_input = TextInput(
-            text=default_save_name,
-            size_hint_y=None,
-            height='44dp',
-            multiline=False
-        )
+        text_input = TextInput(text=default_save_name, size_hint_y=None, height='44dp', multiline=False)
         content.add_widget(text_input)
-
         button_layout = BoxLayout(size_hint_y=None, height='44dp', spacing='10dp')
-
         save_btn = Button(text='Save')
         cancel_btn = Button(text='Cancel')
-
         button_layout.add_widget(save_btn)
         button_layout.add_widget(cancel_btn)
         content.add_widget(button_layout)
-
-        self.save_popup = Popup(
-            title='Save Game',
-            content=content,
-            size_hint=(0.5, 0.4),
-            auto_dismiss=False
-        )
-
+        self.save_popup = Popup(title='Save Game', content=content, size_hint=(0.5, 0.4), auto_dismiss=False)
         save_btn.bind(on_release=lambda x: self.do_save_game(text_input.text))
         cancel_btn.bind(on_release=self.save_popup.dismiss)
-
         self.save_popup.open()
 
     def do_save_game(self, slot_name: str):
         """Calls the save_api and closes the popup."""
-        if not slot_name:
-            return
-
+        if not slot_name: return
         if not save_api:
             logging.error("Save API not loaded. Cannot save.")
             self.save_popup.dismiss()
             return
-
         try:
             result = save_api.save_game(slot_name)
             if result.get("success"):
@@ -562,55 +568,38 @@ class MainInterfaceScreen(Screen):
         except Exception as e:
             logging.exception(f"Error calling save_game: {e}")
             self.update_log(f"Save failed: {e}")
-
         self.save_popup.dismiss()
 
     def on_touch_down(self, touch):
         """Handle clicks on the map for movement."""
-        # Check if the click is on the map
         if not self.map_view_widget or not self.map_view_widget.collide_point(*touch.pos):
             return super().on_touch_down(touch)
-
-        # Check if we're in "move" mode (i.e., no combat action selected)
         if self.active_character_context and self.location_context:
-            # Convert touch position to map coordinates
             local_pos = self.map_view_widget.to_local(*touch.pos)
             tile_x = int(local_pos[0] // TILE_SIZE)
-
             map_height = self.get_map_height()
             if map_height == 0: return True
-
             tile_y = (map_height - 1) - int(local_pos[1] // TILE_SIZE)
-
-            # --- Check for Combat Start ---
-            # We need to get the "context" of what's at that tile
-            # This logic is now handled in MainInterfaceScreen's on_touch_down
-            # Let's add a simplified version here for combat initiation
-
             target_npc = None
             for npc in self.location_context.get('npcs', []):
                 coords = npc.get('coordinates')
                 if coords and coords[0] == tile_x and coords[1] == tile_y:
                     target_npc = npc
                     break
-
             if target_npc:
-                # Clicked on an NPC, initiate combat
-                self.update_log(f"You clicked on {target_npc.get('template_id')}! Initiating combat.")
-
-                # Store combat participants in game_settings
+                self.update_log(f"You start a conversation with {target_npc.get('template_id')}.")
                 app = App.get_running_app()
-                app.game_settings['pending_combat_npcs'] = [npc.get('template_id') for npc in self.location_context.get('npcs', []) if npc.get('current_hp', 0) > 0]
-
-                app.root.current = 'combat_screen'
-                return True # Consume the touch
-
-            # --- Check for Movement ---
+                dialogue_id = "old_man_willow"
+                app.game_settings['pending_dialogue'] = {
+                    'dialogue_id': dialogue_id,
+                    'start_node_id': 'intro'
+                }
+                app.root.current = 'dialogue_screen'
+                return True
             if self.is_tile_passable(tile_x, tile_y):
                 self.move_player_to(tile_x, tile_y)
-                return True # Consume the touch
+                return True
             else:
                 self.update_log("You can't move there.")
-                return True # Consume the touch
-
+                return True
         return super().on_touch_down(touch)

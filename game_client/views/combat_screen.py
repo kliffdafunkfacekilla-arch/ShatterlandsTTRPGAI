@@ -1,17 +1,20 @@
 """
 Functional Combat Screen
 Handles the turn-based combat loop, displays the map,
-and provides player actions.
+and provides player actions with AI-Optimized Flavor Text.
 """
 import logging
+import random
 from kivy.app import App
 from kivy.uix.screenmanager import Screen
 from kivy.properties import ObjectProperty, ListProperty, StringProperty
 from typing import Optional, List
 
+
 # --- Monolith Imports ---
 try:
     from monolith.modules import story as story_api
+    from monolith.modules import rules as rules_api
     from monolith.modules import rules as rules_api
     from monolith.modules.story_pkg import schemas as story_schemas
     from monolith.modules.character_pkg import crud as char_crud
@@ -25,6 +28,7 @@ except ImportError as e:
     CharacterContextResponse = None
     story_api, story_schemas = None, None
     char_crud, char_services, CharSession = None, None, None
+    rules_api = None
     rules_api = None
     world_crud, WorldSession = None, None
 
@@ -54,6 +58,7 @@ TILE_SIZE = 64
 
 class CombatScreen(Screen):
     # --- UI References ---
+    # --- UI References ---
     turn_order_label = ObjectProperty(None)
     combat_log_label = ObjectProperty(None)
     action_bar = ObjectProperty(None)
@@ -65,6 +70,7 @@ class CombatScreen(Screen):
     combat_state = ObjectProperty(None)
     location_context = ObjectProperty(None)
 
+    # --- Party-based state ---
     # --- Party-based state ---
     party_contexts_list = ListProperty([])
     active_combat_character = ObjectProperty(None, allownone=True) 
@@ -106,6 +112,7 @@ class CombatScreen(Screen):
         self.turn_order_label = Label(
             text='Turn Order:\n[loading...]',
             font_size='14sp',
+            font_size='14sp',
             size_hint_x=0.3
         )
 
@@ -114,7 +121,10 @@ class CombatScreen(Screen):
 
         # 3. Combat Log
         log_scroll = ScrollView(size_hint_y=0.1)
+        # 3. Combat Log
+        log_scroll = ScrollView(size_hint_y=0.1)
         self.combat_log_label = Label(
+            text=self.log_text, font_size='12sp', size_hint_y=None,
             text=self.log_text, font_size='12sp', size_hint_y=None,
             padding='5dp'
         )
@@ -126,8 +136,10 @@ class CombatScreen(Screen):
         log_scroll.add_widget(self.combat_log_label)
 
         # 4. Action Bar
+        # 4. Action Bar
         self.action_bar = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing='10dp')
 
+        layout.add_widget(self.narrative_label)
         layout.add_widget(self.narrative_label)
         layout.add_widget(center_layout)
         layout.add_widget(log_scroll)
@@ -135,6 +147,9 @@ class CombatScreen(Screen):
 
         self.add_widget(layout)
         Window.bind(on_resize=self.center_layout)
+
+    def _update_text_size(self, instance, value):
+        instance.text_size = (instance.width - 20, None)
 
     def _update_text_size(self, instance, value):
         instance.text_size = (instance.width - 20, None)
@@ -151,6 +166,7 @@ class CombatScreen(Screen):
                  return
 
             player_ids = [p.id for p in main_screen.party_contexts]
+            npc_ids = app.game_settings.get('pending_combat_npcs', ['goblin_scout'])
             npc_ids = app.game_settings.get('pending_combat_npcs', ['goblin_scout'])
             loc_id = main_screen.active_character_context.current_location_id
 
@@ -180,6 +196,7 @@ class CombatScreen(Screen):
             return
 
         # Load Contexts
+        # Load Contexts
         try:
             loc_id = self.combat_state.get('location_id')
             main_screen = app.root.get_screen('main_interface')
@@ -187,12 +204,19 @@ class CombatScreen(Screen):
             with CharSession() as char_db:
                 for char_ctx in main_screen.party_contexts:
                     char_uuid = char_ctx.id.split('_')[-1]
+                    char_uuid = char_ctx.id.split('_')[-1]
                     db_char = char_crud.get_character(char_db, char_uuid)
                     if db_char:
                         self.party_contexts_list.append(char_services.get_character_context(db_char))
 
             with WorldSession() as world_db:
                 self.location_context = world_crud.get_location_context(world_db, loc_id)
+                # Try to set initial narrative description from map context
+                if self.location_context:
+                    # If 'flavor_context' was saved in ai_annotations or map data
+                    flavor = self.location_context.get('ai_annotations', {}).get('flavor_context')
+                    if flavor and 'environment_description' in flavor:
+                        self.narrative_label.text = flavor['environment_description']
 
         except Exception as e:
             logging.exception(f"Failed to load context for combat scene: {e}")
@@ -201,6 +225,7 @@ class CombatScreen(Screen):
 
         self.map_view_widget.build_scene(self.location_context, self.party_contexts_list)
         self.map_view_anchor.size = self.map_view_widget.size
+        self.center_layout(None, self.width, self.height)
         self.center_layout(None, self.width, self.height)
 
         self.check_turn()
@@ -213,6 +238,7 @@ class CombatScreen(Screen):
             )
 
     def check_turn(self):
+        """The core combat loop."""
         """The core combat loop."""
         if not self.combat_state or self.combat_state.get('status') != 'active':
             return
@@ -260,6 +286,7 @@ class CombatScreen(Screen):
                 self.build_player_actions(current_actor_id)
             else:
                 logging.error(f"Error: Could not find active player {current_actor_id}")
+                logging.error(f"Error: Could not find active player {current_actor_id}")
                 Clock.schedule_once(lambda dt: self.handle_player_action(
                     current_actor_id,
                     story_schemas.PlayerActionRequest(action="wait")
@@ -303,8 +330,10 @@ class CombatScreen(Screen):
 
         self.action_bar.add_widget(attack_btn)
         self.action_bar.add_widget(move_btn)
+        self.action_bar.add_widget(move_btn)
         self.action_bar.add_widget(ability_btn)
         self.action_bar.add_widget(item_btn)
+        self.action_bar.add_widget(ready_btn)
         self.action_bar.add_widget(ready_btn)
         self.action_bar.add_widget(wait_btn)
 
@@ -334,6 +363,41 @@ class CombatScreen(Screen):
             logging.exception(f"Failed to handle player action: {e}")
             self.add_to_log(f"Error: {e}")
 
+    # --- NEW: Flavor Text Optimization ---
+    def get_flavor_text(self, action_type: str) -> str:
+        """
+        Returns instant flavor text from the pre-baked MapFlavorContext.
+        action_type options: 'hit', 'miss', 'spell', 'enemy_intro'
+        """
+        # 1. Try to get flavor context from location data
+        flavor = None
+        if self.location_context and self.location_context.get('flavor_context'):
+             # If flavor_context is a dict (from JSON) or object
+             flavor = self.location_context.get('flavor_context')
+        elif self.location_context and self.location_context.get('ai_annotations'):
+             flavor = self.location_context.get('ai_annotations', {}).get('flavor_context')
+
+        if not flavor:
+            return "" # Fallback to nothing if no flavor
+
+        # 2. Pick a random string from the correct list
+        # Handle flavor being either a dict or Pydantic model
+        options = []
+        if isinstance(flavor, dict):
+            if action_type == "hit": options = flavor.get('combat_hits', [])
+            elif action_type == "miss": options = flavor.get('combat_misses', [])
+            elif action_type == "spell": options = flavor.get('spell_casts', [])
+            elif action_type == "enemy_intro": options = flavor.get('enemy_intros', [])
+        else: # Pydantic model
+            if action_type == "hit": options = flavor.combat_hits
+            elif action_type == "miss": options = flavor.combat_misses
+            elif action_type == "spell": options = flavor.spell_casts
+            elif action_type == "enemy_intro": options = flavor.enemy_intros
+
+        if options:
+            return random.choice(options)
+        return ""
+
     def process_action_response(self, response: dict):
         # 1. Log Update
         recent_logs = []
@@ -352,6 +416,7 @@ class CombatScreen(Screen):
                 pass
 
         if response.get('combat_over', False):
+            self.narrative_label.text = "Silence falls as the battle ends..."
             self.narrative_label.text = "Silence falls as the battle ends..."
             self.add_to_log("Combat has ended!")
             self.action_bar.clear_widgets()
@@ -391,7 +456,10 @@ class CombatScreen(Screen):
         main_screen = app.root.get_screen('main_interface')
         if main_screen and self.party_contexts_list:
             main_screen.party_contexts = self.party_contexts_list
+        if main_screen and self.party_contexts_list:
+            main_screen.party_contexts = self.party_contexts_list
             main_screen.active_character_context = self.party_contexts_list[0]
+            main_screen.party_list = self.party_contexts_list
             main_screen.party_list = self.party_contexts_list
 
         logging.info("Leaving combat screen.")
@@ -405,6 +473,7 @@ class CombatScreen(Screen):
                 )
 
             with CharSession() as char_db:
+                new_contexts = []
                 new_contexts = []
                 for char_context in self.party_contexts_list:
                     char_uuid = char_context.id.split('_')[-1]
@@ -444,6 +513,7 @@ class CombatScreen(Screen):
     def open_ability_menu(self, *args):
         self.close_ability_menu()
         if not self.active_combat_character: return
+        if not self.active_combat_character: return
 
         abilities = self.active_combat_character.abilities
         if not abilities:
@@ -459,6 +529,8 @@ class CombatScreen(Screen):
         )
 
         for ability_name in abilities:
+            # Simple button for now
+            btn = Button(text=ability_name, size_hint_y=None, height='44dp')
             # Simple button for now
             btn = Button(text=ability_name, size_hint_y=None, height='44dp')
             btn.bind(on_release=partial(self.select_ability, ability_name))
@@ -480,6 +552,7 @@ class CombatScreen(Screen):
         self.close_ability_menu()
         self.close_item_menu()
         if not self.active_combat_character: return
+        if not self.active_combat_character: return
 
         inventory = self.active_combat_character.inventory
         if not inventory:
@@ -491,6 +564,7 @@ class CombatScreen(Screen):
             size_hint=(None, None),
             width='200dp',
             height=f"{min(len(inventory) * 44, 220)}dp",
+            height=f"{min(len(inventory) * 44, 220)}dp",
             pos_hint={'center_x': 0.5, 'top': 2.5}
         )
 
@@ -500,12 +574,49 @@ class CombatScreen(Screen):
 
         for item_id, quantity in inventory.items():
             btn = Button(text=f"{item_id} (x{quantity})", size_hint_y=None, height='44dp')
+            btn = Button(text=f"{item_id} (x{quantity})", size_hint_y=None, height='44dp')
             btn.bind(on_release=partial(self.select_item, item_id))
             scroll_content.add_widget(btn)
 
         scroll.add_widget(scroll_content)
         self.item_menu.add_widget(scroll)
         self.add_widget(self.item_menu)
+
+    def show_reaction_popup(self, data):
+        reactor = data.get('reactor_id')
+        trigger = data.get('trigger_id')
+        name = data.get('reaction_name')
+
+        content = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
+        content.add_widget(Label(text=f"{reactor}! {trigger} is moving past you.", font_size='16sp'))
+        content.add_widget(Label(text=f"Use {name}?", font_size='20sp', bold=True))
+
+        btns = BoxLayout(size_hint_y=0.4, spacing='10dp')
+
+        yes_btn = Button(text="Strike! (Yes)", background_color=(0, 1, 0, 1))
+        yes_btn.bind(on_release=lambda x: self.send_reaction_response("execute", data))
+
+        no_btn = Button(text="Ignore (No)", background_color=(1, 0, 0, 1))
+        no_btn.bind(on_release=lambda x: self.send_reaction_response("skip", data))
+
+        btns.add_widget(yes_btn)
+        btns.add_widget(no_btn)
+        content.add_widget(btns)
+
+        self.reaction_popup = Popup(title="Reaction Opportunity", content=content, size_hint=(0.6, 0.4), auto_dismiss=False)
+        self.reaction_popup.open()
+
+    def send_reaction_response(self, decision, data):
+        if hasattr(self, 'reaction_popup'):
+            self.reaction_popup.dismiss()
+
+        action = story_schemas.PlayerActionRequest(
+            action="resolve_reaction",
+            ready_action_details={"decision": decision}
+        )
+
+        reactor_id = data.get('reactor_id')
+        self.handle_player_action(reactor_id, action)
 
     def select_item(self, item_id: str, *args):
         self.close_item_menu()
@@ -534,6 +645,7 @@ class CombatScreen(Screen):
 
     def on_touch_down(self, touch):
         # Check Popups first
+        # Check Popups first
         if self.ability_menu:
             if not self.ability_menu.collide_point(*touch.pos):
                 self.close_ability_menu()
@@ -547,6 +659,7 @@ class CombatScreen(Screen):
             return super().on_touch_down(touch)
 
         if not self.map_view_widget or not self.map_view_widget.collide_point(*touch.pos):
+            self.add_to_log("Targeting cancelled.")
             self.add_to_log("Targeting cancelled.")
             self.current_action = None
             return super().on_touch_down(touch)
@@ -564,6 +677,7 @@ class CombatScreen(Screen):
                 return True
             
             action = story_schemas.PlayerActionRequest(
+                action="move", coordinates=[tile_x, tile_y]
                 action="move", coordinates=[tile_x, tile_y]
             )
             self.handle_player_action(self.active_combat_character.id, action)
@@ -603,6 +717,7 @@ class CombatScreen(Screen):
             item_id = self.selected_item_id if self.current_action == "use_item" else None
             
             action = story_schemas.PlayerActionRequest(
+                action=self.current_action,
                 action=self.current_action,
                 target_id=target_id,
                 ability_id=ability_id,

@@ -21,8 +21,19 @@ logger = logging.getLogger("monolith.story.combat")
 
 def _find_next_step(start_coords: List[int], end_coords: List[int], location_id: int, log: List[str]) -> Optional[List[int]]:
     """
-    Finds the next single step towards a target using A* pathfinding.
-    Returns the coordinates of the next step, or None if no path is found.
+    Calculates the next movement step towards a destination using A* pathfinding.
+
+    This function computes the shortest path on the grid, considering obstacles and map
+    boundaries, and returns the coordinates of the very first step along that path.
+
+    Args:
+        start_coords (List[int]): The [x, y] starting coordinates.
+        end_coords (List[int]): The [x, y] destination coordinates.
+        location_id (int): The ID of the location (for map data lookup).
+        log (List[str]): A log list to append error or debug messages to.
+
+    Returns:
+        Optional[List[int]]: The [x, y] coordinates of the next step, or None if no path exists.
     """
     try:
         width, height, map_data, impassable_ids = _get_map_dimensions_and_data(location_id)
@@ -89,7 +100,18 @@ def _find_next_step(start_coords: List[int], end_coords: List[int], location_id:
     return None # No path found
 
 def _get_actor_coords(actor_context: Dict) -> Optional[List[int]]:
-    """Helper to get coordinates for any actor context."""
+    """
+    Extracts the [x, y] coordinates from an actor's context dictionary.
+
+    Handles differences in schema between Players ('position_x', 'position_y') and
+    NPCs ('coordinates' list).
+
+    Args:
+        actor_context (Dict): The full context dictionary of the actor.
+
+    Returns:
+        Optional[List[int]]: The coordinates [x, y], or None if not found.
+    """
     if "coordinates" in actor_context: # For NPCs
         return actor_context.get("coordinates")
     if "position_x" in actor_context: # For Players
@@ -99,8 +121,67 @@ def _get_actor_coords(actor_context: Dict) -> Optional[List[int]]:
 
 # --- Resource Management ---
 
+def _check_and_update_usage(
+    db: Session,
+    combat: models.CombatEncounter,
+    actor_id: str,
+    ability_name: str,
+    limit_str: Optional[str],
+    log: List[str]) -> bool:
+    """
+    Checks if an ability is within its usage limits.
+    If valid, it increments the counter.
+    Returns True if the action can proceed.
+    """
+    if not limit_str:
+        return True # No limits defined
+
+    # Parse the limit string (e.g., "once_per_encounter", "3_per_encounter")
+    max_uses = 999
+    if limit_str == "once_per_encounter":
+        max_uses = 1
+    elif "_per_encounter" in limit_str:
+        try:
+            max_uses = int(limit_str.split("_")[0])
+        except:
+            pass # Default to unlimited if parsing fails
+
+    # Find the participant record
+    participant = None
+    for p in combat.participants:
+        if p.actor_id == actor_id:
+            participant = p
+            break
+
+    if not participant:
+        return True # Should not happen
+
+    # Get current usage dict (ensure it's a dict)
+    usage = dict(participant.ability_usage) if participant.ability_usage else {}
+    current_count = usage.get(ability_name, 0)
+
+    if current_count >= max_uses:
+        log.append(f"Cannot use {ability_name}: Limit reached ({current_count}/{max_uses}).")
+        return False
+
+    # Increment and save
+    usage[ability_name] = current_count + 1
+    participant.ability_usage = usage
+    # Note: We don't commit here; the main handler commits the transaction.
+    return True
+
 def _handle_effect_composure_damage(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles effects that deal damage directly to the Composure pool (e.g., Spirit T1)."""
+    """
+    Applies direct damage to a target's Composure pool.
+
+    Args:
+        target_id (str): The ID of the target actor.
+        log (List[str]): The combat log.
+        effect (Dict): The effect definition containing 'amount' (dice string).
+
+    Returns:
+        bool: True if executed successfully.
+    """
     amount_str = effect.get("amount", "1d6")
     damage_amount = _roll_dice_string(amount_str)
 
@@ -114,7 +195,17 @@ def _handle_effect_composure_damage(target_id: str, log: List[str], effect: Dict
     return True
 
 def _handle_effect_composure_damage_roll(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles effects that deal Composure damage with a save for half damage (e.g., Psionics T4)."""
+    """
+    Applies Composure damage, allowing a saving throw for half damage.
+
+    Args:
+        target_id (str): The ID of the target actor.
+        log (List[str]): The combat log.
+        effect (Dict): The effect definition containing 'amount', 'save_stat', and 'dc'.
+
+    Returns:
+        bool: True if executed (regardless of save outcome).
+    """
     amount_str = effect.get("amount", "3d6")
     save_stat = effect.get("save_stat")
     dc = effect.get("dc", 14)
@@ -147,7 +238,17 @@ def _handle_effect_composure_damage_roll(target_id: str, log: List[str], effect:
     return True
 
 def _handle_effect_composure_heal(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles effects that restore Composure to a target (e.g., Spirit T1)."""
+    """
+    Restores points to a target's Composure pool.
+
+    Args:
+        target_id (str): The ID of the target actor.
+        log (List[str]): The combat log.
+        effect (Dict): The effect definition containing 'amount'.
+
+    Returns:
+        bool: True if executed successfully.
+    """
     amount_str = effect.get("amount", "1d6")
     heal_amount = _roll_dice_string(amount_str)
 
@@ -160,7 +261,19 @@ def _handle_effect_composure_heal(target_id: str, log: List[str], effect: Dict) 
     return True
 
 def _handle_effect_resource_damage(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles effects that drain a character's resource pool (e.g., Cosmos T5, Spirit T3)."""
+    """
+    Drains a specific resource pool (e.g., Chi, Stamina) from the target.
+
+    Optionally supports a saving throw to negate the effect.
+
+    Args:
+        target_id (str): The ID of the target actor.
+        log (List[str]): The combat log.
+        effect (Dict): The effect definition containing 'resource', 'amount', and optional save params.
+
+    Returns:
+        bool: True if damage was applied, False if resisted or failed.
+    """
     resource_id = effect.get("resource")
     amount_str = effect.get("amount", "1d4")
     damage_amount = _roll_dice_string(amount_str)
@@ -211,14 +324,41 @@ def _handle_effect_modify_attack(
     defender_context: Dict,
     log: List[str],
     effect: Dict) -> bool:
-    """Handles abilities that modify a basic attack (e.g., "Concussive Strike")."""
+    """
+    Executes a basic attack modified by an ability's parameters.
+
+    This wrapper calls `_handle_basic_attack` passing the effect dictionary as `ability_mod`.
+
+    Args:
+        db: Database session.
+        combat: Combat encounter model.
+        actor_id: Attacker ID.
+        target_id: Target ID.
+        attacker_context: Attacker's data.
+        defender_context: Defender's data.
+        log: Combat log.
+        effect: The ability effect definition.
+
+    Returns:
+        bool: The result of `_handle_basic_attack`.
+    """
     return _handle_basic_attack(db, combat, actor_id, target_id, attacker_context, defender_context, log, ability_mod=effect)
 
 def _handle_effect_direct_damage(
     target_id: str,
     log: List[str],
     effect: Dict) -> bool:
-    """Handles effects that deal direct damage without an attack roll (e.g., Biomancy T2)."""
+    """
+    Applies direct HP damage to a target without an attack roll.
+
+    Args:
+        target_id: The target ID.
+        log: Combat log.
+        effect: Effect definition with 'amount' and 'damage_type'.
+
+    Returns:
+        bool: True if applied successfully.
+    """
     amount_str = effect.get("amount", "1d4")
     damage_type = effect.get("damage_type", "physical")
     damage_amount = _roll_dice_string(amount_str)
@@ -240,7 +380,17 @@ def _handle_effect_direct_damage(
     return True
 
 def _handle_effect_heal(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles effects that restore HP (e.g., Biomancy T2)."""
+    """
+    Restores HP to the target.
+
+    Args:
+        target_id: Target ID.
+        log: Combat log.
+        effect: Effect definition with 'amount'.
+
+    Returns:
+        bool: True if applied successfully.
+    """
     amount_str = effect.get("amount", "1d8")
     heal_amount = _roll_dice_string(amount_str)
 
@@ -263,7 +413,17 @@ def _handle_effect_heal(target_id: str, log: List[str], effect: Dict) -> bool:
     return True
 
 def _handle_effect_apply_status(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles effects that apply a status, no save (e.g., Force T1)."""
+    """
+    Applies a status effect to the target automatically (no saving throw).
+
+    Args:
+        target_id: Target ID.
+        log: Combat log.
+        effect: Effect definition with 'status_id'.
+
+    Returns:
+        bool: True if applied.
+    """
     status_id = effect.get("status_id")
     if not status_id: return False
     services.apply_status_to_target(target_id, status_id)
@@ -271,7 +431,17 @@ def _handle_effect_apply_status(target_id: str, log: List[str], effect: Dict) ->
     return True
 
 def _handle_effect_apply_status_roll(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles effects that apply a status, WITH a save (e.g., Biomancy T1)."""
+    """
+    Applies a status effect if the target fails a saving throw.
+
+    Args:
+        target_id: Target ID.
+        log: Combat log.
+        effect: Effect definition with 'status_id', 'save_stat', and 'dc'.
+
+    Returns:
+        bool: True if status applied, False if saved.
+    """
     status_id = effect.get("status_id")
     save_stat = effect.get("save_stat")
     dc = effect.get("dc", 12)
@@ -294,7 +464,17 @@ def _handle_effect_apply_status_roll(target_id: str, log: List[str], effect: Dic
         return True
 
 def _handle_effect_remove_status(target_id: str, log: List[str], effect: Dict) -> bool:
-    """Handles removing a specific status (e.g., Biomancy T1)."""
+    """
+    Removes a specific status effect from the target.
+
+    Args:
+        target_id: Target ID.
+        log: Combat log.
+        effect: Effect definition with 'status_id'.
+
+    Returns:
+        bool: True if removal attempted.
+    """
     status_id = effect.get("status_id")
 
     if not status_id:
@@ -317,7 +497,22 @@ def _handle_effect_move_target_roll(
     defender_context: Dict,
     log: List[str],
     effect: Dict) -> bool:
-    """Handles effects that move a target, WITH a save (e.g., Force T1)."""
+    """
+    Attempts to forcibly move a target, allowing a saving throw to resist.
+
+    If the save fails, calls `_handle_effect_move_target`.
+
+    Args:
+        actor_id: Attacker ID.
+        target_id: Target ID.
+        attacker_context: Attacker's data.
+        defender_context: Defender's data.
+        log: Combat log.
+        effect: Effect definition.
+
+    Returns:
+        bool: True if moved, False if resisted.
+    """
     save_stat = effect.get("save_stat")
     dc = effect.get("dc", 12)
 
@@ -342,7 +537,19 @@ def _handle_effect_move_target(
     target_id: str,
     log: List[str],
     effect: Dict) -> bool:
-    """Handles effects that move a target (used by _handle_effect_move_target_roll when save fails)."""
+    """
+    Forcibly moves a target a specified distance.
+
+    Note: Currently assumes a push directly along the Y-axis for simplicity (needs vector logic).
+
+    Args:
+        target_id: Target ID.
+        log: Combat log.
+        effect: Effect definition with 'distance'.
+
+    Returns:
+        bool: True if moved.
+    """
     if target_id.startswith("npc_"):
         try:
             distance = effect.get("distance", 1)
@@ -374,7 +581,22 @@ def _handle_effect_move_self(
     defender_context: Dict,
     log: List[str],
     effect: Dict) -> bool:
-    """Handles effects that move the caster (e.g., Force T2: Repel Step)."""
+    """
+    Moves the caster (actor) a specified distance.
+
+    Used for abilities like 'Repel Step' or 'Dash'.
+
+    Args:
+        actor_id: Attacker ID.
+        target_id: Target ID (unused).
+        attacker_context: Attacker's data.
+        defender_context: Defender's data (unused).
+        log: Combat log.
+        effect: Effect definition with 'distance'.
+
+    Returns:
+        bool: True if moved.
+    """
     distance = effect.get("distance", 2)
     direction = "up"
 
@@ -412,6 +634,149 @@ def _handle_effect_move_self(
         log.append(f"Failed to move self: {e}")
         return False
 
+def _handle_effect_create_area(
+    db: Session,
+    combat: models.CombatEncounter,
+    actor_id: str,
+    target_id: str,
+    attacker_context: Dict,
+    defender_context: Dict,
+    log: List[str],
+    effect: Dict
+) -> bool:
+    """
+    Creates a persistent hazard zone.
+    Calculates the grid tiles affected and saves them to the combat state.
+    """
+    shape = effect.get("shape", "radius") # radius, line, cone
+    range_m = effect.get("range", 1)
+    duration = effect.get("duration", 3)
+    effect_id = effect.get("effect_id", "Unknown Zone")
+
+    # 1. Determine Center
+    center_coords = _get_actor_coords(defender_context) # Target is center
+    if not center_coords:
+        log.append("Zone creation failed: No center coordinates.")
+        return False
+
+    # 2. Calculate Affected Tiles (Simple Box/Radius Logic)
+    affected_tiles = []
+    cx, cy = center_coords
+
+    # Naive Radius (Chebyshev for grid simplicity)
+    for dx in range(-range_m, range_m + 1):
+        for dy in range(-range_m, range_m + 1):
+            if max(abs(dx), abs(dy)) <= range_m:
+                affected_tiles.append([cx + dx, cy + dy])
+
+    # 3. Define the Zone Payload
+    # We store the 'sub-effects' that happen when you enter/stay (e.g., damage)
+    # If not specified in 'effect', we assume a default based on the ID
+    zone_effects = effect.get("zone_effects", [])
+    if not zone_effects:
+        # Default fallback for simple definitions
+        if "damage" in str(effect).lower():
+            zone_effects.append({"trigger": "on_enter", "type": "direct_damage", "amount": "1d6", "damage_type": "elemental"})
+            zone_effects.append({"trigger": "on_start_turn", "type": "direct_damage", "amount": "1d6", "damage_type": "elemental"})
+
+    new_zone = {
+        "id": f"zone_{len(combat.active_zones) + 1}",
+        "name": effect_id,
+        "tiles": affected_tiles,
+        "effects": zone_effects,
+        "duration": duration,
+        "owner": actor_id,
+        "color": [1, 0, 0, 0.3] # Visual hint (Red)
+    }
+
+    # 4. Save to DB
+    # SQLAlchemy JSON requires reassignment to detect change
+    current_zones = list(combat.active_zones) if combat.active_zones else []
+    current_zones.append(new_zone)
+    combat.active_zones = current_zones
+
+    log.append(f"{actor_id} creates '{effect_id}' covering {len(affected_tiles)} tiles!")
+    return True
+
+def _process_zone_triggers(
+    db: Session,
+    combat: models.CombatEncounter,
+    actor_id: str,
+    trigger: str, # "on_enter" or "on_start_turn"
+    coords: List[int],
+    log: List[str]
+) -> bool:
+    """
+    Checks if the actor's coordinates overlap with any active zones and fires effects.
+    """
+    triggered = False
+    
+    if not combat.active_zones: return False
+
+    for zone in combat.active_zones:
+        # Check overlap
+        if coords in zone["tiles"]:
+            for eff in zone["effects"]:
+                if eff.get("trigger") == trigger:
+                    log.append(f"{actor_id} triggers {zone['name']} ({trigger})!")
+
+                    # Resolve the specific effect (Reuse existing handlers!)
+                    # We construct a mock context since zones don't have stats
+                    handler = ABILITY_EFFECT_HANDLERS.get(eff["type"])
+                    if handler:
+                        # Zones hit automatically (no attack roll usually)
+                        if eff["type"] == "direct_damage":
+                            _handle_effect_direct_damage(actor_id, log, eff)
+                        elif eff["type"] == "apply_status":
+                            _handle_effect_apply_status(actor_id, log, eff)
+                        # Add more mappings as needed
+                    triggered = True
+    return triggered
+
+def _cleanup_expired_zones(combat: models.CombatEncounter, log: List[str]):
+    # Only run this at the end of a full round (when index loops to 0)
+    if combat.current_turn_index == 0 and combat.active_zones:
+        valid_zones = []
+        current_zones = list(combat.active_zones)
+        for zone in current_zones:
+            zone["duration"] -= 1
+            if zone["duration"] > 0:
+                valid_zones.append(zone)
+            else:
+                log.append(f"Zone '{zone['name']}' dissipates.")
+        combat.active_zones = valid_zones
+
+def _handle_effect_reaction_contest(target_id: str, log: List[str], effect: Dict) -> bool:
+    """
+    Resolves a reaction via a contested roll (e.g., trying to counter an action).
+
+    Args:
+        target_id: The reactor's ID.
+        log: Combat log.
+        effect: Effect definition with 'contest_stat' and 'dc'.
+
+    Returns:
+        bool: True if contest succeeded.
+    """
+    contest_stat = effect.get("contest_stat", "Willpower")
+    dc = effect.get("dc", 15)
+    
+    log.append(f"{target_id} triggers a reaction contest using {contest_stat} vs DC {dc}!")
+    
+    _, target_context = get_actor_context(target_id)
+    stat_score = get_stat_score(target_context, contest_stat)
+    stat_mod = rules_core.calculate_modifier(stat_score)
+    
+    roll = random.randint(1, 20)
+    total = roll + stat_mod
+    
+    if total >= dc:
+        log.append(f"Success! ({total} vs {dc})")
+        return True
+    else:
+        log.append(f"Failure! ({total} vs {dc})")
+        return False
+
 # --- AoE Handlers ---
 
 def _get_targets_in_aoe(
@@ -422,8 +787,20 @@ def _get_targets_in_aoe(
     target_type: str = "all" # "all", "enemy", "ally", "ally_or_self"
 ) -> List[Tuple[str, Dict]]:
     """
-    Helper to find all actors within a certain radius of a target actor.
-    Returns a list of (actor_id, actor_context).
+    Identifies all combat participants within a specified area of effect.
+
+    Calculates distance from a center target and filters potential targets by faction
+    (enemy/ally) based on the `target_type`.
+
+    Args:
+        combat: The combat encounter model.
+        center_target_id: The ID of the actor at the center of the AoE.
+        shape: The shape of the AoE (currently only 'radius' logic is implemented).
+        radius: The radius in grid units/meters.
+        target_type: Filter for targets ('all', 'enemy', 'ally', 'ally_or_self').
+
+    Returns:
+        List[Tuple[str, Dict]]: A list of tuples containing (actor_id, actor_context) for all valid targets.
     """
     targets = []
     try:
@@ -470,7 +847,20 @@ def _calculate_distance(coords1: List[int], coords2: List[int]) -> float:
     return max(abs(coords1[0] - coords2[0]), abs(coords1[1] - coords2[1]))
 
 def check_combat_end_condition(db: Session, combat: models.CombatEncounter, log: List[str]) -> bool:
-    """Checks if all NPCs or all Players are defeated."""
+    """
+    Determines if the combat encounter has ended.
+
+    Checks if all members of one side (Players or NPCs) are defeated (0 HP or Downed).
+    Updates the combat status and grants rewards if players win.
+
+    Args:
+        db: Database session.
+        combat: Combat encounter model.
+        log: Combat log.
+
+    Returns:
+        bool: True if combat has ended, False otherwise.
+    """
     players_alive, npcs_alive = False, False
 
     for p in combat.participants:
@@ -502,7 +892,17 @@ def check_combat_end_condition(db: Session, combat: models.CombatEncounter, log:
     return False
 
 def _grant_combat_rewards(db: Session, combat: models.CombatEncounter, log: List[str]):
-    """Calculates and grants rewards (items, XP, etc.) upon combat victory."""
+    """
+    Distributes loot and experience points to players after a victory.
+
+    Loot is generated based on the 'loot_table_ref' of defeated NPCs.
+    XP is currently a fixed placeholder amount.
+
+    Args:
+        db: Database session.
+        combat: Combat encounter model.
+        log: Combat log.
+    """
     logger.info(f"Granting rewards for combat {combat.id}")
 
     player_ids = [p.actor_id for p in combat.participants if p.actor_type == "player" and p.actor_id]
@@ -551,7 +951,18 @@ def _handle_effect_aoe_status_apply(
     db: Session,
     combat: models.CombatEncounter,
     actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Handles AoE application of a status (no roll) (e.g., Cunning T4)."""
+    """
+    Applies a status effect to all valid targets in an area (no save).
+    Typically used for buffs like 'Inspire'.
+
+    Args:
+        db, combat, actor_id, target_id, attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition with 'status_id', 'shape', 'range'.
+
+    Returns:
+        bool: True if applied.
+    """
     status_id = effect.get("status_id")
     shape = effect.get("shape", "radius")
     range_m = effect.get("range", 5)
@@ -572,7 +983,17 @@ def _handle_effect_aoe_composure_damage_roll(
     db: Session,
     combat: models.CombatEncounter,
     actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Handles AoE Composure damage with individual saves for half damage (e.g., Spirit T4)."""
+    """
+    Deals Composure damage to all enemies in an area, with a save for half damage.
+
+    Args:
+        db, combat, actor_id, target_id, attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition.
+
+    Returns:
+        bool: True if executed.
+    """
     amount_str = effect.get("amount", "1d6")
     shape = effect.get("shape", "radius")
     range_m = effect.get("range", 5)
@@ -611,7 +1032,17 @@ def _handle_effect_aoe_heal(
     db: Session,
     combat: models.CombatEncounter,
     actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Handles AoE healing for HP (e.g., Biomancy T8)."""
+    """
+    Heals all allies within an area.
+
+    Args:
+        db, combat, actor_id, target_id, attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition.
+
+    Returns:
+        bool: True if executed.
+    """
     amount_str = effect.get("amount", "1d6")
     shape = effect.get("shape", "radius")
     range_m = effect.get("range", 5)
@@ -652,7 +1083,17 @@ def _handle_effect_aoe_damage(
     effect: Dict
 ) -> bool:
     """
-    Handles effects that deal AoE damage.
+    Deals direct damage to all targets within a specified area.
+
+    The damage is rolled once and applied to all valid targets.
+
+    Args:
+        db, combat, actor_id, target_id, attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition including 'damage', 'range', 'shape', 'target_faction'.
+
+    Returns:
+        bool: True if executed.
     """
     damage_str = effect.get("damage", "1d8")
     damage_type = effect.get("damage_type", "elemental")
@@ -720,6 +1161,81 @@ def _handle_effect_aoe_damage(
 
     return True
 
+def _handle_effect_aoe_status_roll(
+    db: Session,
+    combat: models.CombatEncounter,
+    actor_id: str,
+    target_id: str,
+    attacker_context: Dict,
+    defender_context: Dict,
+    log: List[str],
+    effect: Dict
+) -> bool:
+    """
+    Applies a status effect to targets in an area who fail a saving throw.
+
+    Args:
+        db, combat, actor_id, target_id, attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition.
+
+    Returns:
+        bool: True if executed.
+    """
+    status_id = effect.get("status_id")
+    shape = effect.get("shape", "radius")
+    aoe_range = effect.get("range", 2)
+    save_stat = effect.get("save_stat")
+    dc = effect.get("dc", 12)
+
+    if not status_id or not save_stat:
+        return False
+
+    log.append(f"{actor_id} unleashes an AoE {shape} to apply {status_id} around {target_id}!")
+
+    # 1. Get epicenter coordinates
+    epicenter_coords = _get_actor_coords(defender_context)
+    if not epicenter_coords:
+        return False
+
+    # 2. Find targets
+    all_targets = []
+    # Default to hitting everyone (or filter by faction if needed)
+    for p in combat.participants:
+         try:
+            _, p_context = get_actor_context(p.actor_id)
+            if p_context.get("current_hp", 0) > 0:
+                all_targets.append(p_context)
+         except:
+            continue
+
+    # 3. Apply to targets in range
+    targets_hit = 0
+    for target_ctx in all_targets:
+        target_coords = _get_actor_coords(target_ctx)
+        distance = _calculate_distance(epicenter_coords, target_coords)
+
+        if distance <= aoe_range:
+            targets_hit += 1
+            target_hit_id = target_ctx.get("id")
+            
+            # Roll Save
+            stat_score = get_stat_score(target_ctx, save_stat)
+            stat_mod = rules_core.calculate_modifier(stat_score)
+            roll = random.randint(1, 20)
+            total = roll + stat_mod
+
+            if total >= dc:
+                log.append(f"{target_hit_id} SAVED ({total} vs DC {dc}) against {status_id}.")
+            else:
+                log.append(f"{target_hit_id} FAILED to save ({total}) and is {status_id}!")
+                services.apply_status_to_target(target_hit_id, status_id)
+
+    if targets_hit == 0:
+        log.append("...but nothing was in range!")
+
+    return True
+
 # --- Utility / Special Handlers ---
 
 def _handle_effect_summon_creature(
@@ -733,8 +1249,18 @@ def _handle_effect_summon_creature(
     effect: Dict
 ) -> bool:
     """
-    Handles abilities that spawn a new NPC into the combat encounter.
-    The summoned creature is immediately added to the turn order.
+    Spawns a new NPC into the combat encounter.
+
+    The new creature is generated using the rules engine, added to the world database,
+    and inserted into the combat turn order.
+
+    Args:
+        db, combat, actor_id, target_id, attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition with 'npc_template_id'.
+
+    Returns:
+        bool: True if successful.
     """
     npc_template_id = effect.get("npc_template_id")
     if not npc_template_id:
@@ -807,7 +1333,17 @@ def _handle_effect_summon_creature(
         return False
 
 def _handle_effect_temp_hp(actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Grants Temporary HP to a target (e.g., Psionics T2)."""
+    """
+    Grants Temporary HP to a target.
+
+    Args:
+        actor_id, target_id, attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition with 'amount'.
+
+    Returns:
+        bool: True if applied.
+    """
     amount_str = effect.get("amount", "1d8")
     amount = _roll_dice_string(amount_str)
 
@@ -836,11 +1372,15 @@ def _handle_effect_random_stat_debuff(target_id: str, log: List[str], effect: Di
     # A list of Core Stats (A-L)
     stats_to_debuff = ["Might", "Endurance", "Finesse", "Reflexes", "Vitality", "Fortitude", "Knowledge", "Logic", "Awareness", "Intuition", "Charm", "Willpower"]
     stat = random.choice(stats_to_debuff)
-    amount = effect.get("amount", -1)
-    duration = effect.get("duration", 1)
+    amount = effect.get("amount", -2) # Default to -2 if not specified
+    duration = effect.get("duration", 2) # Default 2 rounds
 
-    log.append(f"Random Debuff: {target_id} suffers {amount} penalty to {stat} for {duration} round(s). [STUB]")
-    # TODO: Implement temporary stat modification via status effect logic
+    # Construct the dynamic status ID used by character services
+    # Format: TempDebuff_STATNAME_AMOUNT_DURATION
+    status_id = f"TempDebuff_{stat}_{amount}_{duration}"
+
+    services.apply_status_to_target(target_id, status_id)
+    log.append(f"Random Debuff: {target_id} suffers {amount} to {stat} for {duration} round(s).")
     return True
 
 def _handle_effect_reaction_damage(
@@ -866,6 +1406,19 @@ def _handle_effect_create_trap(
     defender_context: Dict, # This is the context of the targeted position
     log: List[str],
     effect: Dict) -> bool:
+    """
+    Creates a hidden trap at the target location.
+
+    Args:
+        actor_id: Actor creating the trap.
+        target_id: Target ID (location reference).
+        attacker_context, defender_context: Context data.
+        log: Combat log.
+        effect: Effect definition with 'trap_template_id'.
+
+    Returns:
+        bool: True if created.
+    """
 
     trap_template_id = effect.get("trap_template_id")
     if not trap_template_id:
@@ -1085,6 +1638,8 @@ ABILITY_EFFECT_HANDLERS: Dict[str, Callable] = {
 
     # Utility / Special
     "create_trap": _handle_effect_create_trap,
+    "create_area": _handle_effect_create_area, # Added
+    "reaction_contest": _handle_effect_reaction_contest, # Added
     "temp_hp": _handle_effect_temp_hp,
     # "random_status": _handle_effect_random_status,
     "random_stat_debuff": _handle_effect_random_stat_debuff,
@@ -1108,6 +1663,80 @@ ABILITY_EFFECT_HANDLERS: Dict[str, Callable] = {
 }
 
 # --- ADD THE NEW REACTION CHECKER FUNCTION ---
+def get_actor_context(actor_id: str) -> Tuple[str, Dict]:
+    """
+    Retrieves the full context (stats, status, etc.) for any actor (Player or NPC).
+    """
+    if actor_id.startswith("player_"):
+        try:
+            ctx = services.get_character_context(actor_id)
+            return "player", ctx
+        except Exception as e:
+            logger.error(f"Failed to get context for {actor_id}: {e}")
+            raise HTTPException(status_code=404, detail=f"Player {actor_id} not found")
+    elif actor_id.startswith("npc_"):
+        try:
+            npc_id = int(actor_id.split("_")[1])
+            ctx = services.get_npc_context(npc_id)
+            return "npc", ctx
+        except Exception as e:
+            logger.error(f"Failed to get context for {actor_id}: {e}")
+            raise HTTPException(status_code=404, detail=f"NPC {actor_id} not found")
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid actor ID format: {actor_id}")
+
+def _check_for_player_reaction(
+    db: Session,
+    combat: models.CombatEncounter,
+    trigger_event: str,
+    trigger_actor_id: str,
+    log: List[str],
+    event_data: Optional[Dict] = None) -> Optional[Dict]:
+    """
+    Checks if any PLAYER wants to react.
+    Returns the reaction details if a player interrupt occurs.
+    """
+    # We only care if NPCs do things that Players can react to
+    if trigger_actor_id.startswith("player_"):
+        return None
+
+    for p in combat.participants:
+        if not p.actor_id.startswith("player_"): continue
+
+        # 1. Check Status Effects (e.g. Threat Zone / Polearm Master)
+        # (This requires fetching context, simplified here for brevity)
+        try:
+            _, reactor_context = get_actor_context(p.actor_id)
+        except:
+            continue
+
+        reactor_statuses = reactor_context.get("status_effects", [])
+
+        if "Threat Zone" in reactor_statuses and trigger_event == "actor_move":
+            # Check Range (using event_data['old_coords'] vs 'new_coords')
+            threat_range = 3 # Hardcoded for prototype as per previous logic
+            old_coords = event_data.get("old_coords")
+            new_coords = event_data.get("new_coords") # We need to pass this!
+            reactor_coords = _get_actor_coords(reactor_context)
+
+            if not old_coords or not new_coords or not reactor_coords:
+                continue
+
+            old_dist = _calculate_distance(old_coords, reactor_coords)
+            new_dist = _calculate_distance(new_coords, reactor_coords)
+
+            # If moving out of range
+            if old_dist <= threat_range and new_dist > threat_range:
+                return {
+                    "reactor_id": p.actor_id,
+                    "trigger_id": trigger_actor_id,
+                    "reaction_name": "Opportunity Attack",
+                    "trigger_event": trigger_event,
+                    "event_data": event_data
+                }
+
+    return None
+
 def _check_and_trigger_reactions(
     db: Session,
     combat: models.CombatEncounter,
@@ -1116,8 +1745,22 @@ def _check_and_trigger_reactions(
     log: List[str],
     event_data: Optional[Dict[str, Any]] = None) -> bool:
     """
-    Checks all participants for readied or innate reactions to an event.
-    Returns True if a reaction was triggered, False otherwise.
+    Evaluates whether any combat participant reacts to a specific event.
+
+    Iterates through all other participants to check for:
+    1. Innate Status Effect triggers (e.g., 'Threat Zone').
+    2. Readied Actions set by players.
+
+    Args:
+        db: Database session.
+        combat: Combat encounter model.
+        trigger_event: The event name (e.g., 'actor_move', 'attack_miss').
+        trigger_actor_id: The ID of the actor causing the event.
+        log: Combat log.
+        event_data: Optional data context (e.g., old coordinates).
+
+    Returns:
+        bool: True if any reaction was triggered and executed.
     """
     logger.info(f"Checking reactions for event: {trigger_event} (Actor: {trigger_actor_id})")
     event_data = event_data or {}
@@ -1186,25 +1829,48 @@ def _check_and_trigger_reactions(
 
     return reaction_triggered
 
-# --- UPDATE FUNCTION SIGNATURE ---
 def _check_for_interrupt_reactions(db: Session, combat: models.CombatEncounter, attacker_id: str, target_id: str, attack_result: Dict, log: List[str]) -> bool:
     """
     Checks if a successful attack triggers any defensive reactions that could interrupt
-    the flow. Placeholder implementation relies on simple ability list check.
+    the flow. Dynamically checks defender's abilities for 'reaction_trigger' effects.
     """
     target_type, defender_context = get_actor_context(target_id)
 
-    if "Bastion_Reaction_T2" in defender_context.get("abilities", []):
-        if attack_result.get("outcome") in ["hit", "solid_hit", "critical_hit"]:
-            log.append("REACTION TRIGGERED: Bastion T2: Spiked Deflection (Placeholder)")
+    # 1. Get all abilities possessed by the defender
+    abilities = defender_context.get("abilities", [])
 
-            # Execute the reaction's generic effect (self-damage to attacker)
-            effect = {"type": "direct_damage", "amount": "1d4", "damage_type": "physical"}
-            _handle_effect_direct_damage(attacker_id, log, effect)
+    is_interrupted = False
 
-            return False # Does NOT interrupt the original attack damage flow (Structural decision)
+    for ability_name in abilities:
+        # Fetch full ability data to check for reaction properties
+        ability_data = services.get_ability_data(ability_name)
+        if not ability_data:
+            continue
 
-    return False # No interruption
+        # Check for 'reaction' type effects inside the ability
+        for effect in ability_data.get("effects", []):
+            if effect.get("type") == "reaction_damage":
+                trigger_condition = effect.get("trigger", "on_hit")
+
+                # Check if condition matches the current outcome
+                if trigger_condition == "on_hit" and attack_result.get("outcome") in ["hit", "solid_hit", "critical_hit"]:
+                    log.append(f"REACTION TRIGGERED: {ability_name} by {target_id}")
+
+                    # Execute the reaction effect (e.g., damage back to attacker)
+                    # We map the reaction's internal effect to a direct_damage handler
+                    reaction_effect = {
+                        "type": "direct_damage",
+                        "amount": effect.get("amount", "1d4"),
+                        "damage_type": effect.get("damage_type", "physical")
+                    }
+                    _handle_effect_direct_damage(attacker_id, log, reaction_effect)
+
+                    # Check if this reaction specifically cancels the attack (rare)
+                    if effect.get("cancels_attack"):
+                        log.append(f" -> The attack was INTERRUPTED by {ability_name}!")
+                        is_interrupted = True
+
+    return is_interrupted
 
 def _handle_basic_attack(
     db: Session,
@@ -1217,7 +1883,6 @@ def _handle_basic_attack(
     ability_mod: Optional[Dict] = None) -> bool:
     """
     Performs the core attack roll, damage, and HP update logic.
-    Returns True if the target was hit, False otherwise.
     """
     ability_mod = ability_mod or {}
     target_type = "player" if target_id.startswith("player_") else "npc"
@@ -1225,25 +1890,62 @@ def _handle_basic_attack(
     weapon_category, weapon_type = get_equipped_weapon(attacker_context)
     armor_category = get_equipped_armor(defender_context)
 
+    # Retrieve data with defaults if missing
     weapon_data = services.get_weapon_data(weapon_category, weapon_type)
+    if not weapon_data:
+        weapon_data = {"damage": "1d4", "skill_stat": "Might", "skill": "Brawling", "penalty": 0}
+
     armor_data = services.get_armor_data(armor_category) if armor_category else {"dr": 0, "skill_stat": "Reflexes", "skill": "Natural/Unarmored"}
 
+    # --- TALENT BONUSES ---
+    attacker_talent_bonuses = services.rules_api.calculate_talent_bonuses(
+        attacker_context,
+        "attack_roll",
+        tags=[weapon_category, weapon_type, "Melee" if weapon_type == "melee" else "Ranged", weapon_data["skill_stat"]]
+    )
+
+    # Need separate calculation for damage tags? Usually the same tags apply.
+    attacker_damage_bonuses = services.rules_api.calculate_talent_bonuses(
+        attacker_context,
+        "damage",
+        tags=[weapon_category, weapon_type, "Melee" if weapon_type == "melee" else "Ranged", weapon_data["skill_stat"]]
+    )
+
+    defender_talent_bonuses = services.rules_api.calculate_talent_bonuses(
+        defender_context,
+        "defense_roll",
+        tags=[armor_category, armor_data["skill_stat"]]
+    )
+
+    attack_bonus_val = attacker_talent_bonuses.get("attack_roll_bonus", 0)
+    defense_bonus_val = defender_talent_bonuses.get("defense_roll_bonus", 0)
+
+    # Get Talent Damage Bonus
+    talent_damage_bonus = attacker_damage_bonuses.get("damage_bonus", 0)
+
+    # Pre-calculate scores
+    attacker_stat_score = get_stat_score(attacker_context, weapon_data["skill_stat"])
+    attacker_skill_rank = get_skill_rank(attacker_context, weapon_data["skill"])
+    defender_stat_score = get_stat_score(defender_context, armor_data["skill_stat"])
+    defender_skill_rank = get_skill_rank(defender_context, armor_data["skill"])
+
+    # 4. Roll Attack
     attack_params = {
-        "attacker_attacking_stat_score": get_stat_score(attacker_context, weapon_data["skill_stat"]),
-        "attacker_skill_rank": get_skill_rank(attacker_context, weapon_data["skill"]),
-        "defender_armor_stat_score": get_stat_score(defender_context, armor_data["skill_stat"]),
-        "defender_armor_skill_rank": get_skill_rank(defender_context, armor_data["skill"]),
-        "attacker_attack_roll_bonus": 0,
+        "attacker_attacking_stat_score": attacker_stat_score,
+        "attacker_skill_rank": attacker_skill_rank,
+        "attacker_attack_roll_bonus": ability_mod.get("attack_bonus", 0) + attack_bonus_val,
         "attacker_attack_roll_penalty": 0,
-        "defender_defense_roll_bonus": 0,
+        "defender_armor_stat_score": defender_stat_score, # Fixed field name from previous version mismatch
+        "defender_armor_skill_rank": defender_skill_rank, # Fixed field name
+        "defender_weapon_penalty": weapon_data.get("penalty", 0),
+        "defender_defense_roll_bonus": defense_bonus_val,
         "defender_defense_roll_penalty": 0,
-        "defender_weapon_penalty": weapon_data.get("penalty", 0)
     }
 
     # Check for Nausea status
     if "Nausea" in attacker_context.get("status_effects", []):
         log.append(f"{actor_id} is Nauseous, attack is penalized!")
-        attack_params["attacker_attack_roll_penalty"] += 2 # Add penalty
+        attack_params["attacker_attack_roll_penalty"] += 2
 
     attack_result = services.roll_contested_attack(attack_params)
     log.append(f"Attack Roll: Attacker ({attack_result['attacker_final_total']}) vs Defender ({attack_result['defender_final_total']}). Margin: {attack_result['margin']}.")
@@ -1252,14 +1954,12 @@ def _handle_basic_attack(
     if outcome in ["hit", "solid_hit", "critical_hit"]:
         log.append(f"Result: {actor_id} hits {target_id}!")
 
-        # --- NEW: INTERRUPT REACTION CHECK (Mid-action) ---
+        # Check Interrupts
         is_interrupted = _check_for_interrupt_reactions(db, combat, actor_id, target_id, attack_result, log)
-
         if is_interrupted:
-            return True # Action was interrupted, stop damage calculation
-        # --- END INTERRUPT CHECK ---
+            return True
 
-        # Apply status effects from hit
+        # Apply Hit Statuses
         if outcome == "solid_hit":
             services.apply_status_to_target(target_id, "Staggered")
             log.append(f"{target_id} is Staggered!")
@@ -1267,52 +1967,72 @@ def _handle_basic_attack(
             services.apply_status_to_target(target_id, "Bleeding")
             log.append(f"{target_id} is Bleeding!")
 
-        # Check for damage boost from ability
-        damage_bonus = 0
+        # Calculate Damage
+        ability_damage_bonus = 0
         dr_pierce = 0
 
         if ability_mod.get("damage_boost"):
-            damage_bonus = _roll_dice_string(ability_mod["damage_boost"])
-            log.append(f"Ability adds +{damage_bonus} damage!")
+            ability_damage_bonus = _roll_dice_string(ability_mod["damage_boost"])
+            log.append(f"Ability adds +{ability_damage_bonus} damage!")
 
         if ability_mod.get("armor_pierce"):
-             dr_pierce = ability_mod.get("armor_pierce")
-             log.append(f"Ability grants {dr_pierce} Armor Pierce.")
-
+            dr_pierce = ability_mod.get("armor_pierce")
+            log.append(f"Ability grants {dr_pierce} Armor Pierce.")
 
         damage_params = {
             "base_damage_dice": weapon_data["damage"],
             "relevant_stat_score": get_stat_score(attacker_context, weapon_data["skill_stat"]),
-            "attacker_damage_bonus": damage_bonus, # Pass in the bonus
+            # Sum talent bonus AND ability bonus
+            "attacker_damage_bonus": talent_damage_bonus + ability_damage_bonus,
             "attacker_damage_penalty": 0,
-            "attacker_dr_modifier": dr_pierce, # Pass in the pierce
+            "attacker_dr_modifier": dr_pierce,
             "defender_base_dr": armor_data["dr"]
         }
         damage_result = services.calculate_damage(damage_params)
         final_damage = damage_result.get("final_damage", 0)
-        log.append(f"Damage: {final_damage}")
+        log.append(f"Damage: {final_damage} (Talent Bonus: {talent_damage_bonus})")
 
         if final_damage > 0:
             if target_type == "player":
                 services.apply_damage_to_character(target_id, final_damage)
             else:
                 npc_instance_id = int(target_id.split("_")[1])
+                # Use correct field for NPC hp update
                 new_hp = defender_context.get("current_hp", 0) - final_damage
                 services.apply_damage_to_npc(npc_instance_id, new_hp)
         return True
     else:
         log.append(f"Result: {actor_id} misses {target_id}.")
-
-        # --- REACTION CALL (2) ---
-        # Check for reactions to the *miss* (target_id is the one missed)
         _check_and_trigger_reactions(db, combat, "attack_miss", actor_id, log, event_data={"target_id": target_id})
-        # --- END REACTION CALL ---
-
         return False
 
 def _process_status_effects_on_turn_start(db: Session, combat: models.CombatEncounter, actor_id: str, log: List[str]) -> bool:
-    """Applies continuous effects (like DOT) and handles turn-based duration."""
+    """
+    Processes effects that occur at the start of a participant's turn.
+
+    1. Applies Damage Over Time (DOT) effects.
+    2. Decrements duration of temporary status effects.
+    3. Removes expired statuses.
+    4. Triggers active zone effects (e.g., standing in fire).
+
+    Args:
+        db: Database session.
+        combat: Combat encounter model.
+        actor_id: The ID of the active actor.
+        log: Combat log.
+
+    Returns:
+        bool: True if any status expired or effect was applied.
+    """
     actor_type, actor_context = get_actor_context(actor_id)
+
+    # --- NEW: ZONE CHECK (ON START TURN) ---
+    # Ensure this runs for BOTH Players and NPCs
+    coords = _get_actor_coords(actor_context)
+    if coords:
+        _process_zone_triggers(db, combat, actor_id, "on_start_turn", coords, log)
+    # ---------------------------------------
+
     current_statuses = actor_context.get("status_effects", [])
     statuses_to_remove = []
 
@@ -1367,11 +2087,32 @@ def _process_status_effects_on_turn_start(db: Session, combat: models.CombatEnco
 
 # --- Main Action Handler (Original/Core) ---
 def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: str, action: schemas.PlayerActionRequest) -> schemas.PlayerActionResponse:
+    """
+    The central entry point for processing a player's turn in combat.
+
+    Validates turn order, processes start-of-turn effects, and routes the requested action
+    (attack, move, ability, item, ready, etc.) to the appropriate handler logic.
+    Advances the turn counter upon completion.
+
+    Args:
+        db: Database session.
+        combat: Combat encounter model.
+        actor_id: The ID of the player acting.
+        action: The action request object.
+
+    Returns:
+        schemas.PlayerActionResponse: The result of the turn, including logs and new state.
+    """
     log = []
 
-    current_actor_id = combat.turn_order[combat.current_turn_index]
-    if actor_id != current_actor_id:
-        raise HTTPException(status_code=403, detail=f"It is not {actor_id}'s turn.")
+    # --- SPECIAL CASE: REACTION RESOLUTION ---
+    # Reactions happen during *someone else's* turn, so we bypass the turn check.
+    if action.action == "resolve_reaction":
+        pass
+    else:
+        current_actor_id = combat.turn_order[combat.current_turn_index]
+        if actor_id != current_actor_id:
+            raise HTTPException(status_code=403, detail=f"It is not {actor_id}'s turn.")
 
     # --- CRITICAL: PROCESS CONTINUOUS STATUS EFFECTS ---
     _process_status_effects_on_turn_start(db, combat, actor_id, log)
@@ -1408,6 +2149,54 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
     if action.action == "wait":
         return handle_no_action(db, combat, actor_id)
 
+    if action.action == "resolve_reaction":
+        pending = combat.pending_reaction
+        if not pending:
+            return schemas.PlayerActionResponse(success=False, message="No reaction pending.", log=log, new_turn_index=combat.current_turn_index)
+
+        decision = action.ready_action_details.get("decision") # "execute" or "skip"
+
+        if decision == "execute":
+            log.append(f"{pending['reactor_id']} takes the reaction: {pending['reaction_name']}!")
+            # Execute the Attack
+            target_id = pending['trigger_id']
+            reactor_id = pending['reactor_id']
+
+            _, reactor_context = get_actor_context(reactor_id)
+            _, target_context = get_actor_context(target_id)
+
+            _handle_basic_attack(db, combat, reactor_id, target_id, reactor_context, target_context, log)
+        else:
+            log.append(f"{pending['reactor_id']} lets the moment pass.")
+
+        # RESUME NPC TURN
+        # We clear the pending flag
+        combat.pending_reaction = None
+
+        # Advance turn (Assuming reaction resolution ends the interruption phase)
+        # Note: The NPC's turn was interrupted. Depending on game rules, they might
+        # continue their turn or their turn might end. For this prototype,
+        # resolving the reaction ends the current turn sequence.
+        combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
+
+        # --- NEW: CLEANUP ZONES ---
+        # Since we are advancing the turn manually, we must also run cleanup if needed
+        _cleanup_expired_zones(combat, log)
+        # --------------------------
+
+        # Check if combat ended due to the reaction
+        combat_over = check_combat_end_condition(db, combat, log)
+        db.commit()
+        # db.refresh(combat) # Removed refresh as it might reset state in non-persistent environments (like tests)
+
+        return schemas.PlayerActionResponse(
+            success=True,
+            message="Reaction resolved.",
+            log=log,
+            new_turn_index=combat.current_turn_index,
+            combat_over=combat_over
+        )
+
     # --- ADD THIS NEW ACTION HANDLER ---
     if action.action == "ready":
         # This is a simple version. We'll expand it to let the user
@@ -1443,6 +2232,31 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
             log.append(f"Move failed. Waiting instead.")
             return handle_no_action(db, combat, actor_id)
 
+        # --- FIX: DISTANCE VALIDATION ---
+        # 1. Get Start Position
+        old_coords = _get_actor_coords(attacker_context)
+        if not old_coords:
+            log.append("Move failed: Could not locate actor.")
+            return handle_no_action(db, combat, actor_id)
+
+        # 2. Calculate Distance
+        dist_x = abs(coords[0] - old_coords[0])
+        dist_y = abs(coords[1] - old_coords[1])
+        distance = max(dist_x, dist_y) # Match client logic (Chebyshev)
+
+        # 3. Get Speed Limit
+        # Look for 'Speed' in stats, otherwise default to 6
+        speed_limit = attacker_context.get("stats", {}).get("Speed", 6)
+
+        # 4. Check for Status Effects (e.g., Slowed)
+        if "Slowed" in attacker_context.get("status_effects", []):
+            speed_limit = speed_limit // 2
+
+        if distance > speed_limit:
+            log.append(f"Move failed: Distance {distance}m exceeds Speed {speed_limit}m.")
+            return handle_no_action(db, combat, actor_id)
+        # --- END FIX ---
+
         try:
             # --- REACTION CALL (3) ---
             # Get old coordinates *before* updating the actor's position
@@ -1456,6 +2270,10 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
 
             log.append(f"{actor_id} moves to ({coords[0]}, {coords[1]}).")
 
+            # --- NEW: ZONE CHECK (ON ENTER) ---
+            _process_zone_triggers(db, combat, actor_id, "on_enter", coords, log)
+            # ----------------------------------
+
             # Check if this move triggered anyone's reaction
             _check_and_trigger_reactions(
                 db, combat, "actor_move", actor_id, log,
@@ -1467,6 +2285,11 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
 
         # Move action completes the turn
         combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
+
+        # --- NEW: CLEANUP ZONES ---
+        _cleanup_expired_zones(combat, log)
+        # --------------------------
+
         combat_over = check_combat_end_condition(db, combat, log)
         db.commit()
         db.refresh(combat)
@@ -1500,6 +2323,21 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
             if not ability_data:
                 log.append(f"Unknown ability: {ability_name}. Action failed.")
             else:
+                # --- NEW CHECK START ---
+                limit_tag = ability_data.get("limit")
+                if not _check_and_update_usage(db, combat, actor_id, ability_name, limit_tag, log):
+                    # Limit reached! Return success=False but keep the turn
+                    # or return success=True with a log message and NO turn advancement?
+                    # Burt says: Fail the action, let them pick something else.
+                    return schemas.PlayerActionResponse(
+                        success=False,
+                        message="Ability limit reached.",
+                        log=log,
+                        new_turn_index=combat.current_turn_index,
+                        combat_over=False
+                    )
+                # --- NEW CHECK END ---
+
                 cost = ability_data.get("cost")
                 if cost:
                     log.append(f"Paid {cost['amount']} {cost['resource']}.")
@@ -1590,14 +2428,9 @@ def determine_npc_action(
     npc_context: Dict
 ) -> Dict:
     """
-    Determines the best action for an NPC based on its AI tag and current state.
-    Returns a dictionary representing the action (similar to PlayerActionRequest).
+    The 'Burt Reynolds' AI: Evaluates all valid moves and picks the highest scoring one.
     """
-    ai_tag = npc_context.get("ai_tag", "basic_melee")
-    # Default fallback
-    action = {"action": "pass_turn", "target_id": None}
-
-    # Identify potential targets (players)
+    # 1. Identify Enemies (Players)
     enemies = []
     for p in combat.participants:
         if p.actor_id.startswith("player_"):
@@ -1609,24 +2442,95 @@ def determine_npc_action(
                 continue
 
     if not enemies:
-        return action
+        return {"action": "pass_turn"}
 
-    # Simple targeting logic: closest or random
-    target_id = random.choice(enemies)
+    # 2. Get Self State
+    my_resources = npc_context.get("resource_pools", {})
+    my_hp = npc_context.get("current_hp", 0)
+    max_hp = npc_context.get("max_hp", 10)
+    hp_percent = my_hp / max_hp
     
-    # AI Logic
-    if ai_tag == "aggressive":
-        # Try to attack
-        # Check if has melee attack
-        action = {"action": "attack", "target_id": target_id, "ability_id": "Basic Melee"}
-    elif ai_tag == "caster":
-        # Try to cast a spell if available, else attack
-        action = {"action": "attack", "target_id": target_id, "ability_id": "Basic Ranged"}
-    else:
-        # Basic behavior
-        action = {"action": "attack", "target_id": target_id, "ability_id": "Basic Melee"}
+    # 3. Get Usage History (for limits)
+    participant = next((p for p in combat.participants if p.actor_id == npc_id), None)
+    usage_history = participant.ability_usage if participant else {}
 
-    return action
+    best_action = {"action": "attack", "target_id": random.choice(enemies), "ability_id": "Basic Melee"}
+    best_score = 0
+
+    # 4. Evaluate Available Abilities
+    # (Ensure 'abilities' is a list of names in your NPC context)
+    known_abilities = npc_context.get("abilities", [])
+
+    # Add "Basic Melee" as a fallback option to check
+    candidates = known_abilities + ["Basic Melee"]
+
+    for ability_name in candidates:
+        if ability_name == "Basic Melee":
+            # Default attack score
+            score = 10
+            target = random.choice(enemies)
+            if score > best_score:
+                best_score = score
+                best_action = {"action": "attack", "target_id": target, "ability_id": "Basic Melee"}
+            continue
+
+        # Lookup Data
+        data = services.rules_api.get_ability_data(ability_name)
+        if not data: continue
+
+        # A. Check Limits
+        limit = data.get("limit")
+        if limit == "once_per_encounter" and usage_history.get(ability_name, 0) >= 1:
+            continue
+
+        # B. Check Resources
+        cost = data.get("cost")
+        if cost:
+            res_name = cost.get("resource")
+            amount = cost.get("amount", 0)
+            current_val = my_resources.get(res_name, {}).get("current", 0)
+            if current_val < amount:
+                continue # Can't afford it
+
+        # C. Scoring Logic (The Brain)
+        score = 0
+        target = None
+
+        # Heuristic: Healing
+        if "heal" in str(data.get("effects", [])).lower():
+            if hp_percent < 0.5:
+                score += 50 # Panic heal!
+                target = npc_id # Self heal
+            else:
+                score -= 10 # Don't heal if healthy
+
+        # Heuristic: AoE
+        elif "aoe" in str(data.get("effects", [])).lower():
+            score += 20
+            target = enemies[0] # Simplified targeting for AoE
+
+        # Heuristic: Debuffs
+        elif "status" in str(data.get("effects", [])).lower():
+            score += 15
+            target = random.choice(enemies)
+
+        # Heuristic: Big Damage
+        elif "damage" in str(data.get("effects", [])).lower():
+            score += 10 + int(data.get("tier", "T1").replace("T","")) * 5
+            target = random.choice(enemies)
+
+        # Update Best
+        if score > best_score:
+            best_score = score
+            # Determine action type based on ability data
+            action_type = "use_ability"
+            best_action = {
+                "action": action_type,
+                "target_id": target,
+                "ability_id": ability_name
+            }
+
+    return best_action
 
 def handle_npc_turn(
     db: Session,
@@ -1673,15 +2577,81 @@ def handle_npc_turn(
                 _handle_basic_attack(db, combat, npc_id, target_id, npc_context, target_context, log)
             else:
                 log.append(f"{npc_id} could not find a target.")
+
+        elif action_type == "use_ability": # <--- NEW BLOCK
+             # Call the same logic players use!
+             # We can actually verify/deduct resource here if we want to be strict
+             # For now, we trust the AI's pre-check.
+
+             # Reuse the ability routing from player handler:
+             ability_data = services.rules_api.get_ability_data(ability_id)
+
+             # PAY COST
+             cost = ability_data.get("cost")
+             if cost:
+                 res_name = cost.get("resource")
+                 amt = cost.get("amount", 0)
+                 services.update_npc_resource_pool(
+                    int(npc_id.split("_")[1]),
+                    res_name,
+                    npc_context["resource_pools"][res_name]["current"] - amt
+                 )
+                 log.append(f"{npc_id} spends {amt} {res_name}.")
+
+             # UPDATE USAGE (The Limit System)
+             # We manually update it here for NPCs since we aren't calling handle_player_action
+             _check_and_update_usage(db, combat, npc_id, ability_id, ability_data.get("limit"), log)
+
+             _, target_context = get_actor_context(target_id)
+
+             # EXECUTE EFFECTS
+             for effect in ability_data.get("effects", []):
+                 handler = ABILITY_EFFECT_HANDLERS.get(effect["type"])
+                 if handler:
+                     # Use the same robust calling convention we fixed earlier
+                     if effect["type"] in ("modify_attack", "aoe_damage", "apply_injury", "repair_injury", "summon", "special_move", "create_trap", "move_self", "reaction_damage", "reaction_move_ally", "reaction_contest", "move_target_roll"): # Add all complex types
+                         handler(db, combat, npc_id, target_id, npc_context, target_context, log, effect)
+                     else:
+                         handler(target_id, log, effect)
         
         elif action_type == "move":
              # NPC movement logic (simplified)
              log.append(f"{npc_id} moves.")
-             # Implement movement logic here using _handle_effect_move_self or similar
-             pass
+
+             # Simplified movement for prototype: just teleport to a random nearby tile
+             # Real logic would use A* here.
+             old_coords = _get_actor_coords(npc_context)
+             if old_coords:
+                 # Pick a random neighbor
+                 dx = random.choice([-1, 0, 1])
+                 dy = random.choice([-1, 0, 1])
+                 new_coords = [old_coords[0]+dx, old_coords[1]+dy]
+
+                 # Basic bounds/passability check omitted for brevity in prototype,
+                 # but we update DB.
+                 services.world_api.update_npc_state(int(npc_id.split('_')[1]), {"coordinates": new_coords})
+                 log.append(f"{npc_id} moves to {new_coords}.")
+
+                 # CHECK FOR INTERRUPT
+                 reaction_req = _check_for_player_reaction(
+                     db, combat, "actor_move", npc_id, log,
+                     {"old_coords": old_coords, "new_coords": new_coords}
+                 )
+
+                 if reaction_req:
+                    # PAUSE THE GAME
+                    combat.pending_reaction = reaction_req
+                    db.commit()
+                    log.append("Reaction Opportunity! Waiting for player...")
+                    return log # Stop the turn here!
 
         # 4. End Turn
         combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
+
+        # --- NEW: CLEANUP ZONES ---
+        _cleanup_expired_zones(combat, log)
+        # --------------------------
+
         check_combat_end_condition(db, combat, log)
         db.commit()
         db.refresh(combat)

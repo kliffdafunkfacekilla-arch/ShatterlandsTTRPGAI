@@ -16,8 +16,19 @@ logger = logging.getLogger("monolith.ai_dm")
 
 def get_narrative_response(actor_id: str, prompt_text: str) -> Dict[str, Any]:
     """
-    The main entry point for the AI DM.
-    It fetches context and calls the handler to get a response.
+    Generates a narrative response from the AI Dungeon Master based on a player's prompt.
+
+    This function fetches the current context for the actor (character) and their location,
+    then delegates the response generation to the keyword handler.
+
+    Args:
+        actor_id (str): The unique identifier of the actor (character) initiating the prompt.
+        prompt_text (str): The text of the prompt or action provided by the player.
+
+    Returns:
+        Dict[str, Any]: A dictionary containing the success status and the generated message.
+            - success (bool): True if the response was generated successfully, False otherwise.
+            - message (str): The generated narrative response or an error message.
     """
     try:
         # 1. Fetch the necessary context
@@ -71,6 +82,16 @@ def get_narrative_response(actor_id: str, prompt_text: str) -> Dict[str, Any]:
         return {"success": False, "message": "An error occurred in the AI DM."}
 
 def register(orchestrator) -> None:
+    """
+    Registers the AI DM module with the orchestrator.
+
+    This function is called during the monolith startup sequence. Although this module
+    is primarily called directly via its API, registration allows for potential future
+    event subscriptions.
+
+    Args:
+        orchestrator: The system orchestrator instance (not currently used but required by the interface).
+    """
     # This module is called directly, but we register it
     # to be consistent and allow it to subscribe to events later.
     logger.info("[ai_dm] module registered (keyword-based handler)")

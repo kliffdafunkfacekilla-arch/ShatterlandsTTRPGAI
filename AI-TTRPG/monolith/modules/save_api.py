@@ -69,6 +69,15 @@ def list_save_games() -> List[Dict[str, str]]:
         return []
 
 def register(orchestrator) -> None:
+    """
+    Registers the Save API module.
+
+    This module provides a direct API for the client and does not currently
+    subscribe to any event bus topics.
+
+    Args:
+        orchestrator: The system orchestrator instance.
+    """
     # This module is called directly by the client,
     # so it just needs to be loaded.
     logger.info("[save_api] module registered (direct-call API)")

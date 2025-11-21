@@ -1,0 +1,59 @@
+{
+    "old_man_willow": {
+        "start_node": "intro",
+        "nodes": {
+            "intro": {
+                "text": "Well, hello there, traveler. What brings you to these parts?",
+                "options": [
+                    {
+                        "text": "Just passing through.",
+                        "next_node_id": "passing_through"
+                    },
+                    {
+                        "text": "I'm looking for adventure.",
+                        "next_node_id": "adventure"
+                    }
+                ]
+            },
+            "passing_through": {
+                "text": "I see. Well, be careful on the road. There are dangers about.",
+                "options": [
+                    {
+                        "text": "Thanks for the warning.",
+                        "next_node_id": "end"
+                    }
+                ]
+            },
+            "adventure": {
+                "text": "Adventure, you say? I might know of a quest for a brave soul like you.",
+                "options": [
+                    {
+                        "text": "Tell me more.",
+                        "next_node_id": "quest_offer"
+                    },
+                    {
+                        "text": "I'm not interested.",
+                        "next_node_id": "end"
+                    }
+                ]
+            },
+            "quest_offer": {
+                "text": "There's a group of goblins causing trouble in the nearby caves. Clear them out, and I'll reward you.",
+                "options": [
+                    {
+                        "text": "I'll do it!",
+                        "next_node_id": "end_quest_accepted"
+                    }
+                ]
+            },
+            "end": {
+                "text": "Farewell, traveler.",
+                "options": []
+            },
+            "end_quest_accepted": {
+                "text": "Good luck. Be careful.",
+                "options": []
+            }
+        }
+    }
+}

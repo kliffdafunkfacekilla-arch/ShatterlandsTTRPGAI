@@ -4,6 +4,85 @@ from typing import List, Dict, Any, Optional
 
 
 # --- NEW SCHEMAS ---
+class CombatSlots(BaseModel):
+    head: Optional[Dict[str, Any]] = None
+    chest: Optional[Dict[str, Any]] = None
+    legs: Optional[Dict[str, Any]] = None
+    shoulders: Optional[Dict[str, Any]] = None
+    boots: Optional[Dict[str, Any]] = None
+    hands: Optional[Dict[str, Any]] = None
+    tail: Optional[Dict[str, Any]] = None  # Added Tail slot
+    main_hand: Optional[Dict[str, Any]] = None
+    off_hand: Optional[Dict[str, Any]] = None
+
+class AccessorySlots(BaseModel):
+    # Glasses (1)
+    glasses: Optional[Dict[str, Any]] = None
+    # Necklaces (1)
+    neck: Optional[Dict[str, Any]] = None
+    # Earrings (Left: 2, Right: 2)
+    ear_l1: Optional[Dict[str, Any]] = None
+    ear_l2: Optional[Dict[str, Any]] = None
+    ear_r1: Optional[Dict[str, Any]] = None
+    ear_r2: Optional[Dict[str, Any]] = None
+    # Lip Rings (2)
+    lip_1: Optional[Dict[str, Any]] = None
+    lip_2: Optional[Dict[str, Any]] = None
+    # Bracelets (Left: 2, Right: 2)
+    wrist_l1: Optional[Dict[str, Any]] = None
+    wrist_l2: Optional[Dict[str, Any]] = None
+    wrist_r1: Optional[Dict[str, Any]] = None
+    wrist_r2: Optional[Dict[str, Any]] = None
+    # Rings (8 total - 4 per hand)
+    ring_l1: Optional[Dict[str, Any]] = None
+    ring_l2: Optional[Dict[str, Any]] = None
+    ring_l3: Optional[Dict[str, Any]] = None
+    ring_l4: Optional[Dict[str, Any]] = None
+    ring_r1: Optional[Dict[str, Any]] = None
+    ring_r2: Optional[Dict[str, Any]] = None
+    ring_r3: Optional[Dict[str, Any]] = None
+    ring_r4: Optional[Dict[str, Any]] = None
+    # Other
+    brooch: Optional[Dict[str, Any]] = None
+    circlet: Optional[Dict[str, Any]] = None
+    belt: Optional[Dict[str, Any]] = None # Kept belt as it was in original, though not explicitly in new list, it's usually standard.
+    # Removed 'face', 'outfit' as they seem redundant or replaced by specific slots, 
+    # but keeping 'belt' as it is often a distinct slot. 
+    # If 'outfit' was cosmetic, it might be covered by 'shoulders/cloak' or just base gear.
+    # If 'face' was for masks/glasses, 'glasses' covers it.
+
+class EquipmentSlots(BaseModel):
+    combat: CombatSlots = Field(default_factory=CombatSlots)
+    accessories: AccessorySlots = Field(default_factory=AccessorySlots)
+    equipped_gear: Optional[Dict[str, Any]] = None
+    carried_gear: List[Dict[str, Any]] = Field(default_factory=list) # New Carried Gear slot (List of items)
+
+# --- NEW: Progression Schemas ---
+class LevelUpRequest(BaseModel):
+    character_id: str
+
+
+class LevelUpResponse(BaseModel):
+    success: bool
+    new_level: int
+    message: str
+    character_summary: Dict[str, Any]  # Snapshop of new HP/AP
+
+
+class AbilityPurchaseRequest(BaseModel):
+    character_id: str
+    school: str
+    branch: str
+    tier: int = Field(ge=1, le=9)
+
+
+class AbilityPurchaseResponse(BaseModel):
+    success: bool
+    message: str
+    remaining_ap: int
+    unlocked_node_id: Optional[str] = None
+
+
 class FeatureChoice(BaseModel):
     """Represents a single feature choice made by the user."""
 
@@ -52,10 +131,19 @@ class Character(CharacterBase):
         from_attributes = True
 
 
+class ResourcePool(BaseModel):
+    current: int
+    max: int
+    reserved: int = 0
+
+    @property
+    def available(self) -> int:
+        return self.current - self.reserved
+
 class CharacterContextResponse(CharacterBase):
     """
-    This is the full character sheet/context object returned
-    to the frontend. It is UNCHANGED.
+    The full state of the character sent to the client.
+    UPDATED to include Progression and new Vitals.
     """
 
     id: str
@@ -69,18 +157,26 @@ class CharacterContextResponse(CharacterBase):
     xp: int = Field(default=0, description="Current Experience Points")
     is_dead: bool = Field(default=False, description="Is the character dead?")
     # --- END ADD ---
+
+    # --- NEW FIELDS ---
+    available_ap: int
+    unlocked_abilities: List[str]
+    active_techniques: List[str] = Field(default_factory=list)
+    # ------------------
+
     max_composure: int
     current_composure: int
-    resource_pools: Dict[str, Any]  # e.g., {"Stamina": {"current": 10, "max": 10}, ...}
-    talents: List[str]
+    resource_pools: Dict[str, ResourcePool]  # e.g., {"Stamina": {"current": 10, "max": 10}, ...}
+    talents: List[Any]  # Can be list of strings or dicts
     abilities: List[str]
     inventory: Dict[str, Any]
-    equipment: Dict[str, Any]
+    equipment: EquipmentSlots
     status_effects: List[str]
     injuries: List[Dict[str, Any]]
 
     # --- ADD THIS LINE ---
     current_location_id: int
+    dr: int = Field(default=0, description="Total Damage Reduction from all sources.")
     # --- END ADD ---
 
     position_x: int

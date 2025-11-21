@@ -11,8 +11,19 @@ def get_keyword_response(
     char_context: Dict[str, Any],
     loc_context: Dict[str, Any]) -> str:
     """
-    Parses the user's prompt for keywords and generates a
-    context-aware response.
+    Generates a narrative response based on simple keyword matching in the user's prompt.
+
+    It checks for standard actions like looking around, inspecting specific objects (doors),
+    or checking one's own status, and uses the provided character and location context
+    to construct a relevant reply.
+
+    Args:
+        prompt_text (str): The raw text input from the user.
+        char_context (Dict[str, Any]): The current state of the character (HP, name, etc.).
+        loc_context (Dict[str, Any]): The current state of the location (description, NPCs, items).
+
+    Returns:
+        str: A descriptive string response to the user's action.
     """
     prompt = prompt_text.lower().strip()
 

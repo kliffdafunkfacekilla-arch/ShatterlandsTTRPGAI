@@ -16,17 +16,33 @@ class Position:
 
 @dataclass
 class PlayerState:
+    """
+    Represents the minimal shared state of a player for system-wide access.
+    """
     id: int
     name: str
     position: Position
     current_location_id: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
+        """Converts the dataclass instance to a dictionary."""
         return asdict(self)
 
 
 def safe_update(target: Dict[str, Any], diff: Dict[str, Any]) -> Dict[str, Any]:
-    """Simple deterministic merge helper used by orchestrator/state updates."""
+    """
+    Performs a safe, non-destructive dictionary update.
+
+    Returns a new dictionary containing the merged result of `target` and `diff`,
+    without modifying the original `target` dictionary.
+
+    Args:
+        target (Dict): The base dictionary.
+        diff (Dict): The updates to apply.
+
+    Returns:
+        Dict: The new merged dictionary.
+    """
     result = dict(target)
     result.update(diff)
     return result

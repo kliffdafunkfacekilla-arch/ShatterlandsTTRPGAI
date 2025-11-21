@@ -21,6 +21,12 @@ except ImportError as e:
 TILE_SIZE = 64 # Render tiles at 64x64 pixels
 
 class MapViewWidget(FloatLayout):
+    """
+    A Widget that renders the 2D tile-based map and entities.
+
+    It acts as a simple rendering surface and does not handle game logic or input
+    (which is handled by `MainInterfaceScreen` or `CombatScreen`).
+    """
     # Keep track of rendered sprites
     tile_sprites = ListProperty([])
     entity_sprites = ListProperty([])
@@ -31,6 +37,9 @@ class MapViewWidget(FloatLayout):
     player_sprite = ObjectProperty(None, allownone=True)
 
     def __init__(self, **kwargs):
+        """
+        Initializes the map widget.
+        """
         super().__init__(**kwargs)
         # We are a simple FloatLayout, so our size must
         # be set from the outside.
@@ -39,7 +48,14 @@ class MapViewWidget(FloatLayout):
     def build_scene(self, location_context, party_contexts_list):
         """
         Clears and rebuilds the entire map visual.
-        - party_contexts_list: A LIST of player character contexts.
+
+        This function iterates through the map data, NPCs, and player list provided
+        in the context, looks up their assets via `asset_loader`, and adds Image widgets
+        to the scene.
+
+        Args:
+            location_context (Dict): The full location context (map data, NPCs, etc.).
+            party_contexts_list (List[Dict]): A list of character context dictionaries for the party.
         """
         if not asset_loader:
             logging.error("Cannot build scene, asset_loader is not available.")
@@ -99,7 +115,15 @@ class MapViewWidget(FloatLayout):
         logging.info("MapViewWidget: Scene built.")
 
     def add_entity_sprite(self, entity_context, map_height, is_player=False, is_active=False):
-        """Adds a single NPC or player sprite to the map."""
+        """
+        Instantiates and adds a single sprite (NPC or Player) to the map.
+
+        Args:
+            entity_context (Dict): The data for the entity (location, ID, etc.).
+            map_height (int): The height of the map in tiles (needed for coordinate conversion).
+            is_player (bool): Whether this entity is a player character.
+            is_active (bool): Whether this player is the currently controlled character.
+        """
         if is_player:
             sprite_id = entity_context.portrait_id or 'character_1'
             coords = [entity_context.position_x, entity_context.position_y]
@@ -143,7 +167,15 @@ class MapViewWidget(FloatLayout):
 
 
     def move_active_player_sprite(self, player_id: str, tile_x: int, tile_y: int, map_height: int):
-        """Updates the position of the specified player's sprite."""
+        """
+        Updates the position of a specific player's sprite on the map.
+
+        Args:
+            player_id (str): The ID of the player to move.
+            tile_x (int): The new X grid coordinate.
+            tile_y (int): The new Y grid coordinate.
+            map_height (int): The height of the map in tiles.
+        """
 
         # Find the correct sprite from our dictionary
         sprite_to_move = self.player_sprites.get(player_id)

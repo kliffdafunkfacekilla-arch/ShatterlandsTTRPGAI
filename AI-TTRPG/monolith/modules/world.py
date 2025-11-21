@@ -20,6 +20,17 @@ from .world_pkg import schemas as we_schemas
 logger = logging.getLogger("monolith.world")
 
 def get_world_location_context(location_id: int) -> Dict[str, Any]:
+    """
+    Retrieves the context for a specific location in the world.
+
+    This includes its description, map data, and other metadata.
+
+    Args:
+        location_id (int): The unique identifier of the location.
+
+    Returns:
+        Dict[str, Any]: The location context dictionary.
+    """
     # --- REMOVED ASYNC AND _client ---
     db = we_db.SessionLocal()
     try:
@@ -41,7 +52,13 @@ def get_world_location_context(location_id: int) -> Dict[str, Any]:
 
 def spawn_trap_in_world(trap_request: Any) -> Dict[str, Any]:
     """
-    Spawns a trap instance in the database.
+    Spawns a trap instance in the world based on a request object.
+
+    Args:
+        trap_request (Any): A request object (dict or Pydantic model) containing trap details.
+
+    Returns:
+        Dict[str, Any]: The context of the newly created trap instance.
     """
     db = we_db.SessionLocal()
     try:
@@ -68,6 +85,16 @@ def spawn_trap_in_world(trap_request: Any) -> Dict[str, Any]:
         db.close()
 
 def update_location_annotations(location_id: int, annotations: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Updates the AI annotations for a specific location.
+
+    Args:
+        location_id (int): The unique identifier of the location.
+        annotations (Dict[str, Any]): The new annotations data.
+
+    Returns:
+        Dict[str, Any]: A dictionary containing the updated 'ai_annotations'.
+    """
     # --- REMOVED ASYNC AND _client ---
     db = we_db.SessionLocal()
     try:
@@ -84,6 +111,15 @@ def update_location_annotations(location_id: int, annotations: Dict[str, Any]) -
 
 # --- (Apply same sync refactor to all other functions in this file) ---
 def spawn_npc_in_world(spawn_request: Any) -> Dict[str, Any]:
+    """
+    Spawns an NPC in the world based on a request object.
+
+    Args:
+        spawn_request (Any): A request object (dict or Pydantic model) containing NPC details.
+
+    Returns:
+        Dict[str, Any]: A summary of the spawned NPC's data (ID, location, stats).
+    """
     db = we_db.SessionLocal()
     try:
         if hasattr(spawn_request, "model_dump"): # Pydantic v2
@@ -109,6 +145,15 @@ def spawn_npc_in_world(spawn_request: Any) -> Dict[str, Any]:
         db.close()
 
 def get_npc_context(npc_instance_id: int) -> Dict[str, Any]:
+    """
+    Retrieves the full context/state of a specific NPC instance.
+
+    Args:
+        npc_instance_id (int): The unique identifier of the NPC instance.
+
+    Returns:
+        Dict[str, Any]: The NPC instance data.
+    """
     db = we_db.SessionLocal()
     try:
         npc = we_crud.get_npc(db, npc_instance_id)
@@ -123,6 +168,16 @@ def get_npc_context(npc_instance_id: int) -> Dict[str, Any]:
         db.close()
 
 def update_npc_state(npc_id: int, updates: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Updates the state of a specific NPC instance.
+
+    Args:
+        npc_id (int): The unique identifier of the NPC instance.
+        updates (Dict[str, Any]): A dictionary of fields to update.
+
+    Returns:
+        Dict[str, Any]: The updated NPC instance data.
+    """
     db = we_db.SessionLocal()
     try:
         update_schema = we_schemas.NpcUpdate(**updates)
@@ -138,6 +193,15 @@ def update_npc_state(npc_id: int, updates: Dict[str, Any]) -> Dict[str, Any]:
         db.close()
 
 def spawn_item_in_world(spawn_request: Any) -> Dict[str, Any]:
+    """
+    Spawns an item in the world (on the ground).
+
+    Args:
+        spawn_request (Any): A request object (dict or Pydantic model) containing item details.
+
+    Returns:
+        Dict[str, Any]: The created item instance data.
+    """
     db = we_db.SessionLocal()
     try:
         if hasattr(spawn_request, "model_dump"):
@@ -157,6 +221,15 @@ def spawn_item_in_world(spawn_request: Any) -> Dict[str, Any]:
         db.close()
 
 def delete_item_from_world(item_id: int) -> Dict[str, Any]:
+    """
+    Removes an item instance from the world.
+
+    Args:
+        item_id (int): The unique identifier of the item instance.
+
+    Returns:
+        Dict[str, Any]: A success dictionary.
+    """
     db = we_db.SessionLocal()
     try:
         success = we_crud.delete_item(db, item_id)
@@ -170,6 +243,16 @@ def delete_item_from_world(item_id: int) -> Dict[str, Any]:
         db.close()
 
 def update_location_map(location_id: int, map_update: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Updates the map data for a specific location.
+
+    Args:
+        location_id (int): The unique identifier of the location.
+        map_update (Dict[str, Any]): The map data to update.
+
+    Returns:
+        Dict[str, Any]: The updated location data.
+    """
     db = we_db.SessionLocal()
     try:
         schema = we_schemas.LocationMapUpdate(**map_update)
@@ -185,7 +268,16 @@ def update_location_map(location_id: int, map_update: Dict[str, Any]) -> Dict[st
         db.close()
 
 def apply_status_to_npc(npc_id: int, status_id: str) -> Dict[str, Any]:
-    """Applies a status to an NPC and returns new context."""
+    """
+    Applies a status effect to an NPC.
+
+    Args:
+        npc_id (int): The unique identifier of the NPC.
+        status_id (str): The status effect identifier.
+
+    Returns:
+        Dict[str, Any]: The updated NPC instance data.
+    """
     db = we_db.SessionLocal()
     try:
         updated_npc = we_crud.apply_status_to_npc(db, npc_id, status_id)
@@ -200,7 +292,16 @@ def apply_status_to_npc(npc_id: int, status_id: str) -> Dict[str, Any]:
         db.close()
 
 def remove_status_from_npc(npc_id: int, status_id: str) -> Dict[str, Any]:
-    """Removes a status from an NPC and returns new context."""
+    """
+    Removes a status effect from an NPC.
+
+    Args:
+        npc_id (int): The unique identifier of the NPC.
+        status_id (str): The status effect identifier to remove.
+
+    Returns:
+        Dict[str, Any]: The updated NPC instance data.
+    """
     db = we_db.SessionLocal()
     try:
         updated_npc = we_crud.remove_status_from_npc(db, npc_id, status_id)
@@ -216,13 +317,31 @@ def remove_status_from_npc(npc_id: int, status_id: str) -> Dict[str, Any]:
 
 
 def register(orchestrator) -> None:
+    """
+    Registers the world module with the orchestrator.
+
+    This module is primarily a direct-call adapter for other modules and does not
+    currently subscribe to event bus commands.
+
+    Args:
+        orchestrator: The system orchestrator instance.
+    """
     # This module doesn't subscribe to commands directly.
     # It's imported and called directly by other modules (like story.py)
     # for synchronous data queries.
     logger.info("[world] module registered (direct-call adapter)")
 
 def apply_composure_damage_to_npc(npc_id: int, damage_amount: int) -> Dict[str, Any]:
-    """Applies composure damage to an NPC and returns new context."""
+    """
+    Applies composure damage to an NPC.
+
+    Args:
+        npc_id (int): The unique identifier of the NPC.
+        damage_amount (int): The amount of composure damage to apply.
+
+    Returns:
+        Dict[str, Any]: The updated NPC instance data.
+    """
     db = we_db.SessionLocal()
     try:
         db_npc = we_crud.get_npc(db, npc_id)
@@ -242,7 +361,16 @@ def apply_composure_damage_to_npc(npc_id: int, damage_amount: int) -> Dict[str, 
         db.close()
 
 def apply_composure_healing_to_npc(npc_id: int, amount: int) -> Dict[str, Any]:
-    """Applies composure healing to an NPC and returns new context."""
+    """
+    Applies composure healing to an NPC.
+
+    Args:
+        npc_id (int): The unique identifier of the NPC.
+        amount (int): The amount of composure to restore.
+
+    Returns:
+        Dict[str, Any]: The updated NPC instance data.
+    """
     db = we_db.SessionLocal()
     try:
         db_npc = we_crud.get_npc(db, npc_id)
@@ -262,7 +390,18 @@ def apply_composure_healing_to_npc(npc_id: int, amount: int) -> Dict[str, Any]:
         db.close()
 
 def apply_temp_hp_to_npc(npc_id: int, amount: int) -> Dict[str, Any]:
-    """Adds temporary HP to an NPC (does not stack, takes highest) and returns new context."""
+    """
+    Applies temporary HP to an NPC.
+
+    Does not stack; the higher value replaces the current one.
+
+    Args:
+        npc_id (int): The unique identifier of the NPC.
+        amount (int): The amount of temporary HP to apply.
+
+    Returns:
+        Dict[str, Any]: The updated NPC instance data.
+    """
     db = we_db.SessionLocal()
     try:
         db_npc = we_crud.get_npc(db, npc_id)
@@ -283,7 +422,17 @@ def apply_temp_hp_to_npc(npc_id: int, amount: int) -> Dict[str, Any]:
         db.close()
 
 def update_npc_resource_pool(npc_id: int, pool_name: str, new_value: int) -> Dict[str, Any]:
-    """Updates a specific resource pool for an NPC and returns new context."""
+    """
+    Updates a specific resource pool for an NPC.
+
+    Args:
+        npc_id (int): The unique identifier of the NPC.
+        pool_name (str): The name of the resource pool.
+        new_value (int): The new current value for the pool.
+
+    Returns:
+        Dict[str, Any]: The updated NPC instance data.
+    """
     db = we_db.SessionLocal()
     try:
         db_npc = we_crud.get_npc(db, npc_id)

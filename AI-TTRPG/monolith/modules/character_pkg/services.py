@@ -1,9 +1,14 @@
 # app/services.py
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
+from copy import deepcopy
 import uuid
 import logging
 from . import models, schemas
+from ..rules_pkg.data_loader import get_item_template
+from ..rules_pkg.models_inventory import PassiveModifier
+from ..rules_pkg.talent_logic import get_talent_modifiers
+from ..rules_pkg.inventory_logic import get_passive_modifiers
 from .. import rules as rules_api
 
 logger = logging.getLogger("monolith.character.services")
@@ -20,6 +25,66 @@ def get_characters(
     """Fetches a list of all characters."""
     return db.query(models.Character).offset(skip).limit(limit).all()
 
+def apply_passive_modifiers(character: models.Character) -> (Dict[str, Any], int):
+    """
+    Applies all passive modifiers from equipment and talents to a character's stats.
+    Returns a tuple containing the new, modified stats dictionary and the total DR.
+    """
+    base_stats = deepcopy(character.stats)
+    total_dr = 0
+
+    # Get modifiers from equipment
+    equipment_modifiers = get_passive_modifiers(character)
+
+    # Get modifiers from talents
+    talent_modifiers = get_talent_modifiers(character.talents or [])
+
+    all_modifiers = equipment_modifiers + talent_modifiers
+
+    for mod in all_modifiers:
+        if mod.effect_type == "STAT_MODIFIER" and mod.target in base_stats:
+            base_stats[mod.target] += mod.value
+            logger.info(f"Applied {mod.source_id}: {mod.target} +{mod.value}")
+        elif mod.effect_type == "DR_MODIFIER":
+            total_dr += mod.value
+            logger.info(f"Applied {mod.source_id}: DR +{mod.value}")
+
+    return base_stats, total_dr
+
+def toggle_technique_state(db: Session, character_id: str, technique_id: str, active: bool) -> Optional[models.Character]:
+    """
+    Toggles a technique on or off for a character, updating reserved resources.
+    """
+    character = get_character(db, character_id)
+    if not character:
+        logger.error(f"Toggle technique failed: Character {character_id} not found.")
+        return None
+
+    # Ensure resource pools are in the correct format (dict of dicts)
+    resource_pools = deepcopy(character.resource_pools) if character.resource_pools else {}
+
+    # Ensure active_techniques is initialized
+    active_techniques = list(character.active_techniques) if character.active_techniques else []
+
+    # Call core logic
+    success = rules_api.core.toggle_technique(resource_pools, active_techniques, technique_id, active)
+
+    if success:
+        character.resource_pools = resource_pools
+        character.active_techniques = active_techniques
+        try:
+            db.commit()
+            db.refresh(character)
+            logger.info(f"Technique '{technique_id}' toggled to {active}. New resources: {resource_pools}")
+            return character
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Database error toggling technique: {e}")
+            raise
+    else:
+        logger.warning(f"Failed to toggle technique '{technique_id}' (Active={active}) for {character.name}")
+        return None
+
 def get_character_context(
     db_character: models.Character,
 ) -> schemas.CharacterContextResponse:
@@ -30,7 +95,6 @@ def get_character_context(
     if not db_character:
         return None
 
-    def_stats = {}
     def_skills = {}
     def_pools = {}
     def_talents = []
@@ -39,9 +103,11 @@ def get_character_context(
     def_equip = {}
     def_status = []
     def_injuries = []
+    def_unlocks = []
+    def_techniques = []
 
-    raw_stats = db_character.stats if isinstance(db_character.stats, dict) else def_stats
-    final_stats = raw_stats.copy()
+    # Apply passive modifiers from talents and equipment
+    final_stats, total_dr = apply_passive_modifiers(db_character)
 
     # --- IMPLEMENT: DYNAMIC STAT OVERRIDE LOGIC ---
     current_statuses = db_character.status_effects or []
@@ -49,12 +115,15 @@ def get_character_context(
         if status_id.startswith("TempDebuff_"):
             try:
                 # Expected format: TempDebuff_STATNAME_AMOUNT_DURATION (e.g., TempDebuff_Might_-2_1)
-                _, stat_name, amount_str, _ = status_id.split("_")
-                amount = int(amount_str)
+                # Note: amount is typically negative for debuffs
+                parts = status_id.split("_")
+                if len(parts) == 4:
+                    _, stat_name, amount_str, _ = parts
+                    amount = int(amount_str)
 
-                if stat_name in final_stats:
-                    final_stats[stat_name] += amount
-                    logger.info(f"Applying temporary modifier: {stat_name} adjusted by {amount}")
+                    if stat_name in final_stats:
+                        final_stats[stat_name] += amount
+                        logger.info(f"Applying temporary modifier: {stat_name} adjusted by {amount}")
             except Exception as e:
                 logger.warning(f"Failed to parse dynamic stat status {status_id}: {e}")
     # --- END IMPLEMENTATION ---
@@ -75,7 +144,23 @@ def get_character_context(
         temp_hp=getattr(db_character, "temp_hp", 0),
         xp=getattr(db_character, "xp", 0),
         is_dead=bool(getattr(db_character, "is_dead", 0)),
+        dr=total_dr,
         # --- END ADD ---
+
+        # --- NEW FIELDS ---
+        available_ap=getattr(db_character, "available_ap", 0),
+        unlocked_abilities=(
+            db_character.unlocked_abilities
+            if isinstance(db_character.unlocked_abilities, list)
+            else def_unlocks
+        ),
+        active_techniques=(
+            db_character.active_techniques
+            if isinstance(db_character.active_techniques, list)
+            else def_techniques
+        ),
+        # ------------------
+
         max_composure=getattr(db_character, "max_composure", 10),
         current_composure=getattr(db_character, "current_composure", 10),
         resource_pools=(
@@ -141,6 +226,7 @@ def _get_rules_engine_data() -> Dict[str, Any]:
             "training_choices": rules_api.get_training_choices(),
             "devotion_choices": rules_api.get_devotion_choices(),
             "all_talents_structured": rules_api.get_all_talents_data(),
+            "item_templates": rules_api._get_data("item_templates"),
         }
 
         all_talents_map = {}
@@ -424,20 +510,47 @@ def create_character(
                 logger.exception(f"Error applying mods for talent '{character.ability_talent}': {e}")
 
     logger.info(f"Final calculated stats: {base_stats}")
-    logger.info("Calculating vitals...")
-    try:
-        vitals_payload = {"stats": base_stats}
-        vitals_data_dict = rules_api.calculate_base_vitals_api(vitals_payload)
 
-        max_hp = vitals_data_dict.get("max_hp", 1)
-        resource_pools = vitals_data_dict.get("resources", {})
-        logger.info(f"Vitals calculated: MaxHP={max_hp}")
+    # Quick math for Speed: Base 5 + (Reflexes Mod)
+    # We need calculate_modifier which is in rules_pkg.core
+    try:
+        reflexes = base_stats.get("Reflexes", 10)
+        ref_mod = rules_api.core.calculate_modifier(reflexes)
+        base_stats["Speed"] = 5 + max(0, ref_mod)
+        logger.info(f"Calculated Speed: {base_stats['Speed']}")
+    except Exception as e:
+        logger.warning(f"Speed calculation failed: {e}")
+
+    logger.info("Calculating vitals...")
+
+    # --- UPDATE: Use New Vitals Logic ---
+    try:
+        # We use the internal rules function directly for safety in service layer
+        vitals_req = rules_api.models.BaseVitalsRequest(stats=base_stats, level=1)
+        vitals = rules_api.core.calculate_base_vitals(vitals_req)
+
+        max_hp = vitals.max_hp
+        max_composure = vitals.max_composure
+        resource_pools = vitals.resources
+        logger.info(f"Vitals calculated: MaxHP={max_hp}, MaxComposure={max_composure}")
     except Exception as e:
         logger.error(f"FATAL: Failed to calculate vitals from rules_engine: {e}")
         raise e
+    # --- END UPDATE ---
 
     base_abilities = []
     school_data = rules.get("all_abilities_map", {}).get(character.ability_school)
+
+    # --- NEW: Initial Unlocks ---
+    # "One Ability school unlocked and can use the first tier abilities"
+    initial_unlocks = []
+    school = character.ability_school # e.g., "Force"
+
+    # Assuming standard branches: Offense, Defense, Utility
+    initial_unlocks.append(f"{school}_Offense_T1")
+    initial_unlocks.append(f"{school}_Defense_T1")
+    initial_unlocks.append(f"{school}_Utility_T1")
+    # --- END NEW ---
 
     if not school_data:
         logger.warning(f"No ability school data found for '{character.ability_school}'. No base ability added.")
@@ -449,9 +562,10 @@ def create_character(
             try:
                 first_branch = branches[0]
                 first_tier = first_branch.get("tiers", [])[0]
-                description = first_tier.get("description", "Unknown Ability")
-                base_abilities.append(description)
-                logger.info(f"Added T1 ability: {description}")
+                # Fix: Save the NAME, not the description
+                ability_name = first_tier.get("name", "Unknown Ability")
+                base_abilities.append(ability_name)
+                logger.info(f"Added T1 ability: {ability_name}")
             except Exception as e:
                 logger.exception(f"Could not parse T1 ability from school '{character.ability_school}': {e}")
 
@@ -469,15 +583,28 @@ def create_character(
         # --- ADD THIS LINE ---
         temp_hp=0,
         xp=0,
+        available_ap=3, # Starting Grant
         is_dead=0,
         # --- END ADD ---
-        max_composure=10,
-        current_composure=10,
+
+        max_composure=max_composure,
+        current_composure=max_composure,
         resource_pools=resource_pools,
+
+        unlocked_abilities=initial_unlocks, # New Field
+
         talents=[character.ability_talent],
         abilities=base_abilities,
         inventory={"item_iron_sword": 1, "item_leather_jerkin": 1},
-        equipment={"weapon": "item_iron_sword", "armor": "item_leather_jerkin"},
+
+        equipment={
+            "combat": {
+                "main_hand": rules.get("item_templates", {}).get("item_iron_sword"),
+                "chest": rules.get("item_templates", {}).get("item_leather_jerkin"),
+            },
+            "accessories": {},
+            "equipped_gear": None
+        },
         status_effects=[],
         injuries=[],
         current_location_id=1,
@@ -556,30 +683,244 @@ def remove_item_from_character(db: Session, character_id: str, item_id: str, qua
         logger.error(f"Failed to remove item: {e}")
         raise
 
-def equip_item(db: Session, character_id: str, slot: str, item_id: str) -> Optional[models.Character]:
-    """Equips an item to a specific slot."""
+def _get_slot_category(slot_name: str) -> Optional[str]:
+    """Helper to determine if a slot is 'combat' or 'accessories'."""
+    if slot_name in schemas.CombatSlots.model_fields:
+        return "combat"
+    if slot_name in schemas.AccessorySlots.model_fields:
+        return "accessories"
+    if slot_name == "equipped_gear":
+        return "equipped_gear"
+    return None
+
+def equip_item(db: Session, character_id: str, item_id: str, target_slot: str) -> Optional[models.Character]:
+    """
+    Equips an item from a character's inventory to a specified slot.
+    Handles validation, swapping, and database persistence.
+    """
     character = get_character(db, character_id)
     if not character:
+        logger.error(f"Equip failed: Character '{character_id}' not found.")
         return None
 
-    inventory = character.inventory or {}
-    if item_id not in inventory:
-        logger.warning(f"Cannot equip {item_id}, not in inventory.")
+    item_template = get_item_template(item_id)
+    if not item_template:
+        logger.error(f"Equip failed: Item template '{item_id}' not found.")
         return None
 
-    equipment = dict(character.equipment) if character.equipment else {}
-    equipment[slot] = item_id
+    if target_slot not in item_template.slots:
+        logger.error(f"Equip failed: Item '{item_id}' cannot be equipped in slot '{target_slot}'.")
+        return None
+
+    inventory = deepcopy(dict(character.inventory)) if character.inventory else {}
+    if inventory.get(item_id, 0) < 1:
+        logger.error(f"Equip failed: Item '{item_id}' not in character's inventory.")
+        return None
+
+    equipment = deepcopy(dict(character.equipment)) if character.equipment else {}
+    slot_category = _get_slot_category(target_slot)
+
+    if not slot_category:
+        logger.error(f"Equip failed: Invalid target slot '{target_slot}'.")
+        return None
+
+    # Ensure equipment structure is initialized
+    if slot_category not in equipment:
+        equipment[slot_category] = {}
+
+    # Unequip any existing item in the target slot
+    if slot_category == "equipped_gear":
+        currently_equipped = equipment.get("equipped_gear")
+        if currently_equipped:
+            # We need to find the item_id of the equipped item. Assume it was stored.
+            equipped_item_id = currently_equipped.get("id", "unknown_item")
+            inventory[equipped_item_id] = inventory.get(equipped_item_id, 0) + 1
+            logger.info(f"Unequipped '{equipped_item_id}' to inventory.")
+    else:
+        currently_equipped = equipment.get(slot_category, {}).get(target_slot)
+        if currently_equipped:
+            equipped_item_id = currently_equipped.get("id", "unknown_item")
+            inventory[equipped_item_id] = inventory.get(equipped_item_id, 0) + 1
+            logger.info(f"Unequipped '{equipped_item_id}' from '{target_slot}' to inventory.")
+
+    # Decrement inventory and equip the new item
+    inventory[item_id] -= 1
+    if inventory[item_id] == 0:
+        del inventory[item_id]
+
+    item_data_to_store = item_template.model_dump()
+    item_data_to_store['id'] = item_id # Store the id for future reference
+
+    if slot_category == "equipped_gear":
+        equipment["equipped_gear"] = item_data_to_store
+    else:
+        equipment[slot_category][target_slot] = item_data_to_store
+
+    logger.info(f"Equipped '{item_id}' to '{target_slot}'.")
+
+    # Persist changes to the database
+    character.inventory = inventory
     character.equipment = equipment
-
     try:
         db.commit()
         db.refresh(character)
-        logger.info(f"Equipped {item_id} to {slot} for {character_id}")
         return character
     except Exception as e:
         db.rollback()
-        logger.error(f"Failed to equip item: {e}")
+        logger.exception(f"Database error while equipping item: {e}")
         raise
+
+def get_passive_modifiers(character: models.Character) -> List[PassiveModifier]:
+    """
+    Aggregates all passive modifiers from a character's equipped items.
+    """
+    modifiers: List[PassiveModifier] = []
+    if not isinstance(character.equipment, dict):
+        return modifiers
+
+    equipment = character.equipment
+
+    # Iterate through combat and accessory slots
+    for category in ["combat", "accessories"]:
+        for slot_name, item in equipment.get(category, {}).items():
+            if not item:
+                continue
+
+            item_id = item.get("id", "unknown_item")
+
+            # Handle direct DR stat
+            if "dr" in item and isinstance(item["dr"], int):
+                modifiers.append(PassiveModifier(
+                    effect_type="DR_MODIFIER",
+                    target=slot_name,
+                    value=item["dr"],
+                    source_id=item_id
+                ))
+
+            # Handle effects list
+            for effect in item.get("effects", []):
+                if effect.get("type") == "buff" and "target_stat" in effect:
+                    modifiers.append(PassiveModifier(
+                        effect_type="STAT_MODIFIER",
+                        target=effect["target_stat"],
+                        value=effect.get("value", 0),
+                        source_id=item_id
+                    ))
+
+    return modifiers
+
+def _recalculate_character_vitals(db: Session, character: models.Character):
+    """Internal helper to update Max HP/Composure after stats/level change."""
+    try:
+        req = rules_api.models.BaseVitalsRequest(stats=character.stats, level=character.level)
+        vitals = rules_api.core.calculate_base_vitals(req)
+        character.max_hp = vitals.max_hp
+        character.max_composure = vitals.max_composure
+
+        # Preserve existing reserved amounts if possible, or reset if not
+        current_pools = character.resource_pools or {}
+        new_pools = vitals.resources
+
+        for pool_name, pool_data in new_pools.items():
+            if pool_name in current_pools and "reserved" in current_pools[pool_name]:
+                 pool_data["reserved"] = current_pools[pool_name]["reserved"]
+            else:
+                 pool_data["reserved"] = 0
+
+        character.resource_pools = new_pools
+
+        # Apply passive modifiers to max resources (e.g. Grappled effect)
+        _, _ = apply_passive_modifiers(character)
+        # Wait, apply_passive_modifiers only calculates stats and returns them.
+        # It does not update the character model directly for resources.
+        # I need to handle resource max modifiers here.
+
+        # Get modifiers again to apply resource max changes
+        equipment_modifiers = get_passive_modifiers(character)
+        talent_modifiers = get_talent_modifiers(character.talents or [])
+        all_modifiers = equipment_modifiers + talent_modifiers
+
+        # Status effects also need to be checked for resource max penalties (Grappled)
+
+        if rules_api.data_loader.STATUS_EFFECTS:
+             for status_id in (character.status_effects or []):
+                  # Handle both simple ID "Grappled" and complex "TempDebuff_..."
+                  # Status effects in JSON are keys like "Grappled"
+                  status_def = rules_api.core.get_status_effect(status_id, rules_api.data_loader.STATUS_EFFECTS)
+                  # StatusEffectResponse has 'effects' list
+                  for effect_str in status_def.effects:
+                       # "resource_max_penalty:Stamina:5"
+                       parts = effect_str.split(":")
+                       if parts[0] == "resource_max_penalty" and len(parts) == 3:
+                            res_target = parts[1]
+                            val = int(parts[2])
+                            if res_target in character.resource_pools:
+                                 character.resource_pools[res_target]["max"] = max(1, character.resource_pools[res_target]["max"] - val)
+                                 logger.info(f"Applied resource max penalty from status {status_id}: {res_target} -{val}")
+
+        # CHECK FOR OVER-RESERVATION
+        # If Reserved > Max, we must disable techniques until we are under budget.
+        if character.active_techniques:
+            if not rules_api.data_loader.TECHNIQUES:
+                rules_api.data_loader.load_data()
+
+            techniques_to_remove = []
+
+            # Iterate pools to check for violation
+            for pool_name, pool_data in character.resource_pools.items():
+                if pool_data["reserved"] > pool_data["max"]:
+                    logger.info(f"Resource Overdraft in {pool_name}: Reserved {pool_data['reserved']} > Max {pool_data['max']}. Disabling techniques...")
+
+                    # Iterate active techniques to find ones using this resource
+                    # We iterate in reverse or just repeatedly until solved?
+                    # Simple approach: find techniques using this resource and turn them off one by one.
+
+                    # Make a copy to iterate safely
+                    active_copy = list(character.active_techniques)
+                    for tech_id in active_copy:
+                        if pool_data["reserved"] <= pool_data["max"]:
+                            break # Solved
+
+                        tech_data = rules_api.data_loader.TECHNIQUES.get(tech_id)
+                        if not tech_data: continue
+
+                        cost = tech_data.get("maintenance_cost", {}).get(pool_name)
+                        if cost:
+                            # Found a culprit
+                            logger.info(f"Force disabling technique '{tech_id}' to free {cost} {pool_name}")
+                            pool_data["reserved"] -= cost
+                            techniques_to_remove.append(tech_id)
+
+                            # Remove from our local copy so we don't double count if using multiple resources?
+                            # Actually just flagging for removal is safer.
+                            # But we need to update 'reserved' locally to know if we are done.
+
+            # Apply removals
+            if techniques_to_remove:
+                new_active = [t for t in character.active_techniques if t not in techniques_to_remove]
+                character.active_techniques = new_active
+                logger.info(f"Updated active techniques after overdraft check: {character.active_techniques}")
+
+        # Note: We generally don't auto-fill current HP here unless it's a full rest or level up event
+    except Exception as e:
+        logger.error(f"Failed to recalculate vitals: {e}")
+
+def level_up_character(db: Session, character: models.Character):
+    """Internal logic applied when XP threshold is met."""
+    if character.level >= 20:
+        return
+
+    character.level += 1
+    character.available_ap += 2 # Drip rate
+
+    # Recalculate Vitals with new level scaling
+    _recalculate_character_vitals(db, character)
+
+    # Full Heal
+    character.current_hp = character.max_hp
+    character.current_composure = character.max_composure
+
+    logger.info(f"{character.name} leveled up to {character.level}!")
 
 def award_xp(db: Session, character_id: str, amount: int) -> Optional[models.Character]:
     """Awards XP and handles leveling up."""
@@ -595,9 +936,7 @@ def award_xp(db: Session, character_id: str, amount: int) -> Optional[models.Cha
     # This is a placeholder for the real curve.
     next_level_threshold = character.level * 1000
     if character.xp >= next_level_threshold:
-        character.level += 1
-        logger.info(f"{character.name} leveled up to {character.level}!")
-        # TODO: Trigger level up event/bonuses
+        level_up_character(db, character)
 
     try:
         db.commit()
@@ -607,6 +946,45 @@ def award_xp(db: Session, character_id: str, amount: int) -> Optional[models.Cha
         db.rollback()
         logger.error(f"Failed to award XP: {e}")
         raise
+
+def purchase_ability(db: Session, character_id: str, school: str, branch: str, tier: int):
+    """
+    Attempts to buy an ability node.
+    """
+    char = get_character(db, character_id)
+    if not char: raise Exception("Character not found")
+
+    # 1. Construct Request
+    target_node = rules_api.models.AbilityNode(school=school, branch=branch, tier=tier)
+
+    req = rules_api.models.AbilityPurchaseRequest(
+        target_ability=target_node,
+        current_unlocks=char.unlocked_abilities or [],
+        available_ap=char.available_ap
+    )
+
+    # 2. Validate via Rules Engine
+    result = rules_api.core.validate_ability_unlock(req)
+
+    if not result.success:
+        return {"success": False, "message": result.message}
+
+    # 3. Commit Transaction
+    # Update AP
+    char.available_ap = result.remaining_ap
+
+    # Append new node ID safely
+    current_list = list(char.unlocked_abilities) if char.unlocked_abilities else []
+    current_list.append(result.new_unlock)
+    char.unlocked_abilities = current_list
+
+    try:
+        db.commit()
+        db.refresh(char)
+        return {"success": True, "message": result.message, "character": char}
+    except Exception as e:
+        db.rollback()
+        raise e
 
 def handle_death(db: Session, character_id: str) -> Optional[models.Character]:
     """Sets the character status to dead/downed."""
@@ -677,8 +1055,17 @@ def update_character_context(
 
 def create_default_test_character(db: Session, rules_data: dict):
     """
-    Creates a hardcoded default character for testing by calling the main creation service.
-    This is now a SYNCHRONOUS function.
+    Creates a hardcoded default character for testing purposes.
+
+    This function constructs a fixed `CharacterCreate` payload and invokes the
+    main `create_character` service to generate a complete character record.
+
+    Args:
+        db (Session): The database session.
+        rules_data (dict): The pre-loaded rules data required for creation.
+
+    Returns:
+        models.Character: The created character object.
     """
     logger.info("--- Creating Default Test Character ---")
 

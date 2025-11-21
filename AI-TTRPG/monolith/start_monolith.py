@@ -125,6 +125,14 @@ def _run_migrations_for_module(module_name: str, root_path: Path, mode: str):
 
 # --- Main Startup Function ---
 async def _main():
+    """
+    The main async entry point for the Monolith.
+
+    1. Runs database migrations for all modules.
+    2. Registers modules with the Orchestrator.
+    3. Starts the Orchestrator.
+    4. Enters a keep-alive loop (unless run-once mode is set).
+    """
     orch = get_orchestrator()
     bus = orch.bus
 

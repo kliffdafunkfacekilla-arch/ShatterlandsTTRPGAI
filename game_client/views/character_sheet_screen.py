@@ -199,10 +199,36 @@ class CharacterSheetScreen(Screen):
         # --- Populate Talents ---
         self.talents_list.clear_widgets()
         if context.talents:
+            from monolith.modules import rules as rules_api # Import here to avoid circular imports if any
+            
             for talent_name in context.talents:
-                self.talents_list.add_widget(
-                    Label(text=talent_name, font_size='14sp', text_size=(self.talents_list.width, None), size_hint_y=None, height='40dp')
-                )
+                talent_data = rules_api.get_talent_details(talent_name)
+                
+                # Create a box for each talent
+                talent_box = BoxLayout(orientation='vertical', size_hint_y=None, height='60dp', spacing='2dp')
+                
+                # Name (Bold)
+                name_label = Label(text=f"[b]{talent_name}[/b]", markup=True, font_size='16sp', size_hint_y=None, height='20dp', halign='left', valign='middle')
+                name_label.bind(size=name_label.setter('text_size'))
+                talent_box.add_widget(name_label)
+                
+                # Effect Description
+                effect_text = talent_data.get("effect", "No description available.")
+                desc_label = Label(text=effect_text, font_size='12sp', color=(0.8, 0.8, 0.8, 1), size_hint_y=None, height='20dp', halign='left', valign='middle')
+                desc_label.bind(size=desc_label.setter('text_size'))
+                talent_box.add_widget(desc_label)
+
+                # Modifiers (if any)
+                modifiers = talent_data.get("modifiers", [])
+                if modifiers:
+                    mod_text = ", ".join([f"{m.get('type')}: +{m.get('bonus', 0)}" for m in modifiers if 'bonus' in m])
+                    if mod_text:
+                        mod_label = Label(text=f"[i]Bonus: {mod_text}[/i]", markup=True, font_size='12sp', color=(0.5, 1, 0.5, 1), size_hint_y=None, height='15dp', halign='left', valign='middle')
+                        mod_label.bind(size=mod_label.setter('text_size'))
+                        talent_box.add_widget(mod_label)
+                        talent_box.height = '75dp' # Increase height if modifiers exist
+
+                self.talents_list.add_widget(talent_box)
 
         # --- Populate Abilities ---
         self.abilities_list.clear_widgets()

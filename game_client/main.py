@@ -49,6 +49,8 @@ from views.character_sheet_screen import CharacterSheetScreen
 from views.load_game_screen import LoadGameScreen
 from views.inventory_screen import InventoryScreen
 from views.quest_log_screen import QuestLogScreen
+from views.dialogue_screen import DialogueScreen
+from views.shop_screen import ShopScreen
 # --- ADD THIS IMPORT ---
 from views.settings_screen import SettingsScreen
 # --- END ADD ---
@@ -56,6 +58,11 @@ from views.settings_screen import SettingsScreen
 
 # --- 6. THE MAIN APP CLASS (Unchanged from refactor) ---
 class ShatterlandsClientApp(App):
+    """
+    The core Kivy application class for the Shatterlands Client.
+
+    Manages the screen manager, global settings, and the application lifecycle.
+    """
     game_settings = {}
 
     # --- ADD THIS ---
@@ -66,6 +73,15 @@ class ShatterlandsClientApp(App):
     # --- END ADD ---
 
     def build(self):
+        """
+        Builds the widget tree for the application.
+
+        Sets the window size and title, initializes the ScreenManager,
+        and adds all the application screens (views).
+
+        Returns:
+            ScreenManager: The root widget of the application.
+        """
         Window.size = (1280, 720)
         self.title = "Shatterlands TTRPG Client"
 
@@ -79,6 +95,8 @@ class ShatterlandsClientApp(App):
         sm.add_widget(CharacterSheetScreen(name='character_sheet'))
         sm.add_widget(InventoryScreen(name='inventory'))
         sm.add_widget(QuestLogScreen(name='quest_log'))
+        sm.add_widget(DialogueScreen(name='dialogue_screen'))
+        sm.add_widget(ShopScreen(name='shop_screen'))
 
         # --- ADD THIS LINE ---
         sm.add_widget(SettingsScreen(name='settings'))
@@ -90,7 +108,10 @@ class ShatterlandsClientApp(App):
 # --- 7. ASYNC MAIN FUNCTION ---
 async def main():
     """
-    Configures logging, runs monolith setup, and then starts the Kivy app.
+    The asynchronous entry point for the application.
+
+    Configures logging, initializes the backend monolith (database migrations,
+    module registration), loads assets and settings, and launches the Kivy event loop.
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s')
     logger = logging.getLogger("game_client")

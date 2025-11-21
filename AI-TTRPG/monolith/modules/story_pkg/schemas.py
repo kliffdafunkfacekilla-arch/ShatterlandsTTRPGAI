@@ -5,7 +5,6 @@ from typing import List, Optional, Any, Dict
 class StoryFlagBase(BaseModel):
     flag_name: str
     value: str
-
 class StoryFlag(StoryFlagBase):
     id: int
     class Config:
@@ -19,17 +18,13 @@ class ActiveQuestBase(BaseModel):
     current_step: int = 1
     status: str = "active"
     campaign_id: int
-
 class ActiveQuestCreate(ActiveQuestBase):
     pass
-
 class ActiveQuest(ActiveQuestBase):
     id: int
     class Config:
         from_attributes = True
-
 class ActiveQuestUpdate(BaseModel):
-    # Only these fields can be updated
     current_step: Optional[int] = None
     status: Optional[str] = None
     description: Optional[str] = None
@@ -39,26 +34,20 @@ class ActiveQuestUpdate(BaseModel):
 class CampaignBase(BaseModel):
     name: str
     main_plot_summary: Optional[str] = None
-
 class CampaignCreate(CampaignBase):
     pass
-
 class Campaign(CampaignBase):
     id: int
-    # This will automatically include the quests
     active_quests: List[ActiveQuest] = []
     class Config:
         from_attributes = True
 
-# --- Orchestration Schemas (for talking to other services) ---
-
+# --- Orchestration ---
 class OrchestrationSpawnNpc(BaseModel):
     template_id: str
     location_id: int
     name_override: Optional[str] = None
-    coordinates: Optional[Any] = None # e.g., [x, y]
-
-    # --- ADD THESE FIELDS ---
+    coordinates: Optional[Any] = None
     current_hp: Optional[int] = None
     max_hp: Optional[int] = None
     temp_hp: Optional[int] = 0
@@ -67,7 +56,6 @@ class OrchestrationSpawnNpc(BaseModel):
     resource_pools: Optional[Dict[str, Any]] = {}
     abilities: Optional[List[str]] = []
     behavior_tags: Optional[List[str]] = []
-    # --- END ADD ---
 
 class TrapInstanceCreate(BaseModel):
     template_id: str
@@ -79,84 +67,60 @@ class OrchestrationSpawnItem(BaseModel):
     location_id: Optional[int] = None
     npc_id: Optional[int] = None
     quantity: int = 1
-    # --- ADD THIS LINE ---
-    coordinates: Optional[Any] = None # e.g., [x, y]
+    coordinates: Optional[Any] = None
 
 class OrchestrationCharacterContext(BaseModel):
-    # This is a schema for the *response* from character_engine
     id: int
     name: str
     kingdom: str
     character_sheet: Dict[str, Any]
 
 class OrchestrationWorldContext(BaseModel):
-    # This is a schema for the *response* from world_engine
     id: int
     name: str
-    region: Any # We can just grab the whole sub-object
+    region: Any
     generated_map_data: Optional[Any] = None
-    # --- ADDED/FIXED FIELDS ---
-    ai_annotations: Optional[Dict[str, Any]] = None  # Ensure annotations pass through
-    spawn_points: Optional[Dict[str, Any]] = None    # Ensure spawn points pass through
-    # --- END ADDED/FIXED FIELDS ---
+    ai_annotations: Optional[Dict[str, Any]] = None
+    spawn_points: Optional[Dict[str, Any]] = None
     npcs: List[Any] = []
     items: List[Any] = []
 
-# --- ADD THESE SCHEMAS FOR INTERACTIONS ---
-class InteractionRequest(BaseModel):
-    """
-    Request sent from player interface to interact with something.
-    """
-    actor_id: str # e.g., "player_1"
-    location_id: int
-    target_object_id: str # The key within ai_annotations, e.g., "door_1", "lever_A"
-    interaction_type: str = "use" # e.g., "use", "examine", "talk" (expand later)
-
-class InteractionResponse(BaseModel):
-    """
-    Response summarizing the outcome of an interaction.
-    """
-    success: bool
-    message: str # Narrative description of what happened
-    updated_annotations: Optional[Dict[str, Any]] = None # The new state if changed
-    items_added: Optional[List[Dict]] = None # Items added to player inventory
-    items_removed: Optional[List[Dict]] = None # Items removed from player inventory
-    # Add other potential outcomes like quests updated, flags set, etc. later
-
-# --- Ensure Combat Schemas are also present if not already added ---
-# (Add these if they are missing from your schemas.py)
+# --- Combat ---
 class CombatStartRequest(BaseModel):
     location_id: int
-    player_ids: List[str] # e.g., ["player_1"]
-    npc_template_ids: List[str] # e.g., ["goblin_scout", "goblin_scout"]
+    player_ids: List[str]
+    npc_template_ids: List[str]
 
 class CombatParticipantResponse(BaseModel):
     actor_id: str
     actor_type: str
     initiative_roll: int
+    # --- BURT'S NEW FIELD ---
+    ability_usage: Dict[str, int] = {}
+    # ------------------------
     class Config:
-        from_attributes = True # or orm_mode = True
+        from_attributes = True
 
 class CombatEncounter(BaseModel):
     id: int
     location_id: int
-    status: str # active, players_win, npcs_win, etc.
+    status: str
     turn_order: List[str]
     current_turn_index: int
     participants: List[CombatParticipantResponse] = []
+    # --- BURT'S NEW FIELD ---
+    active_zones: List[Dict[str, Any]] = []
+    # ------------------------
     class Config:
-        from_attributes = True # or orm_mode = True
+        from_attributes = True
 
 class PlayerActionRequest(BaseModel):
-    action: str # e.g., "attack", "move", "use_ability", "wait", "ready"
-    target_id: Optional[str] = None # e.g., "npc_12", "player_2"
+    action: str
+    target_id: Optional[str] = None
     ability_id: Optional[str] = None
     item_id: Optional[str] = None
-
-    # --- ADD THESE LINES ---
-    coordinates: Optional[List[int]] = None # For move actions, e.g., [x, y]
-    ready_action_details: Optional[Dict[str, Any]] = None # For complex "ready" actions
-    # --- END ADD ---
+    coordinates: Optional[List[int]] = None
+    ready_action_details: Optional[Dict[str, Any]] = None
 
 class PlayerActionResponse(BaseModel):
     success: bool
@@ -164,3 +128,6 @@ class PlayerActionResponse(BaseModel):
     log: list[str]
     new_turn_index: int
     combat_over: bool = False
+    # --- BURT'S NEW FIELD ---
+    reaction_opportunity: Optional[Dict[str, Any]] = None
+    # ------------------------

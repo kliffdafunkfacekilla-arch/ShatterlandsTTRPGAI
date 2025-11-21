@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
+from .models_inventory import Item
 
 
 # Game Data Models
@@ -161,10 +162,22 @@ class RollResult(BaseModel):
     sre_triggered: bool = False
 
 
+from .models_inventory import PassiveModifier
+
+class ModifierSource(BaseModel):
+    """
+    Represents the source of a modifier (e.g., a Talent).
+    """
+    name: str
+    source_type: str # Literal["talent", "ability", "item"]
+    modifiers: List[PassiveModifier]
+
+
 class TalentInfo(BaseModel):
     name: str
     source: str
     effect: str
+    modifiers: List[PassiveModifier] = []
 
 
 class FeatureStatsResponse(BaseModel):
@@ -179,6 +192,39 @@ class BackgroundChoice(BaseModel):
     skills: List[str]
 
 
+# --- NEW: Ability Logic Models ---
+class AbilityNode(BaseModel):
+    """
+    Represents a specific node in the ability tree.
+    Used for purchase validation.
+    """
+    school: str  # e.g., "Force"
+    branch: str  # e.g., "Offense"
+    tier: int = Field(ge=1, le=9)  # 1-9
+    name: Optional[str] = None
+
+    def to_id(self) -> str:
+        """Returns unique string ID: 'Force_Offense_T1'"""
+        return f"{self.school}_{self.branch}_T{self.tier}"
+
+    def get_prerequisite_id(self) -> Optional[str]:
+        """Returns the ID of the node strictly below this one."""
+        if self.tier == 1:
+            return None
+        return f"{self.school}_{self.branch}_T{self.tier - 1}"
+
+
+class AbilityPurchaseRequest(BaseModel):
+    target_ability: AbilityNode
+    current_unlocks: List[str]  # List of IDs e.g. ["Force_Offense_T1"]
+    available_ap: int
+
+
+class AbilityPurchaseResponse(BaseModel):
+    success: bool
+    message: str
+    remaining_ap: int
+    new_unlock: Optional[str] = None
 # --- END ADD ---
 
 
@@ -433,6 +479,7 @@ class BaseVitalsRequest(BaseModel):
     stats: Dict[str, int] = Field(
         ..., description="Dictionary of all 12 stats and their scores"
     )
+    level: int = Field(default=1, ge=1) # Added for scaling
 
     @field_validator("stats")
     def validate_stats(cls, v):
@@ -450,9 +497,12 @@ class BaseVitalsResponse(BaseModel):
     """
 
     max_hp: int
+    max_composure: int # Added
     resources: Dict[str, Dict[str, int]] = Field(
         description="Dictionary of all 6 resource pools with current/max values."
     )
+
+    model_config = {"from_attributes": True}
 
 # --- ADDED NPC GENERATION MODELS (Consolidated from npc_generator) ---
 class NpcGenerationRequest(BaseModel):
@@ -481,3 +531,62 @@ class NpcTemplateResponse(BaseModel):
     max_hp: int
     behavior_tags: List[str]
     loot_table_ref: Optional[str] = None
+
+# --- ADDED MODELS for Social, Rest, and Exploration ---
+
+class SocialEncounterRequest(BaseModel):
+    """
+    Input for a social exchange.
+    """
+    attacker_skill: str = Field(..., description="The conversational skill used (e.g., Intimidation).")
+    attacker_stat_score: int = Field(..., description="Score of the relevant stat.")
+    attacker_skill_rank: int = Field(..., description="Rank of the skill.")
+    defender_skill: str = Field(default="Negotiations", description="The conversational skill used for defense.")
+    defender_willpower_score: int = Field(..., description="Defender's Willpower (or stat for their defense skill).")
+    defender_skill_rank: int = Field(default=0, description="Defender's relevant defensive skill rank.")
+    context_modifiers: int = Field(default=0, description="Situational bonuses/penalties.")
+
+class SocialEncounterResponse(BaseModel):
+    """
+    Output of a social exchange.
+    """
+    roll_value: int
+    total_value: int
+    target_dc: int
+    outcome: str = Field(..., description="Success, Failure, Critical Success, etc.")
+    composure_damage: int = Field(default=0, description="Damage to social HP/Patience.")
+
+class RestRequest(BaseModel):
+    """
+    Input for calculating rest benefits.
+    """
+    comfort_level: int = Field(ge=0, le=5, description="Quality of rest environment.")
+    security_level: int = Field(ge=0, le=5, description="Safety of the location.")
+    food_quality: int = Field(ge=0, le=5, description="Quality of rations/meal.")
+    prep_focus: str = Field(..., description="Activity during rest: 'tend_wounds', 'meditate', 'inspire', 'repair'.")
+    duration_hours: int = Field(..., ge=1)
+
+class RestResponse(BaseModel):
+    """
+    Output of rest calculation.
+    """
+    hp_recovered: int
+    resources_recovered: Dict[str, int]
+    buffs_gained: List[str]
+    fatigue_removed: int
+
+class StealthRequest(BaseModel):
+    """
+    Input for stealth calculation.
+    """
+    agility_score: int
+    stealth_skill_rank: int
+    armor_penalty: int
+    environmental_modifiers: int
+
+class StealthResponse(BaseModel):
+    """
+    Output for stealth check.
+    """
+    stealth_score: int
+    detection_dc: int
