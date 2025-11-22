@@ -8,8 +8,6 @@ import logging
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.image import Image
 from kivy.properties import ListProperty, ObjectProperty, DictProperty
-from kivy.graphics import Rectangle, Color
-from kivy.graphics.texture import Texture
 
 # --- Client Asset Loader ---
 # ... (imports unchanged) ...
@@ -80,58 +78,28 @@ class MapViewWidget(FloatLayout):
         # Set our own size based on the map
         self.size = (map_width * TILE_SIZE, map_height * TILE_SIZE)
 
-        # --- 1. Render Tiles (Optimized with Canvas) ---
-        with self.canvas:
-            # Clear previous instructions
-            self.canvas.clear()
-            
-            # Reset color to white (no tint)
-            Color(1, 1, 1, 1)
+        # --- 1. Render Tiles ---
+        for y, row in enumerate(tile_map):
+            for x, tile_id in enumerate(row):
+                render_info = asset_loader.get_sprite_render_info(str(tile_id))
 
-            for y, row in enumerate(tile_map):
-                for x, tile_id in enumerate(row):
-                    render_info = asset_loader.get_sprite_render_info(str(tile_id))
+                if not render_info:
+                    logging.warning(f"No render info for tile ID {tile_id} at ({x},{y})")
+                    continue
 
-                    if not render_info:
-                        logging.warning(f"No render info for tile ID {tile_id} at ({x},{y})")
-                        continue
+                sheet_path, u, v, u2, v2 = render_info
+                render_y = (map_height - 1 - y) * TILE_SIZE
 
-                    sheet_path, u, v, u2, v2 = render_info
-                    render_y = (map_height - 1 - y) * TILE_SIZE
-                    
-                    texture = asset_loader.get_texture(sheet_path)
-                    
-                    # Kivy Rectangle tex_coords format: (u, v, u2, v, u2, v2, u, v2) - 8 values
-                    # But wait, Kivy's default is (u, v, u+w, v, u+w, v+h, u, v+h)
-                    # Our render_info gives u, v, u2, v2 (left, bottom, right, top) or similar?
-                    # Usually u, v (bottom-left), u2, v2 (top-right).
-                    # Kivy texture coordinates are 0,0 at bottom-left.
-                    # Let's assume render_info is correct for Kivy Image, which uses (u, v, u2, v2)?
-                    # Actually, Image widget takes tex_coords as a tuple of 4 or 8?
-                    # Looking at previous code: tex_coords=(u, v, u2, v2) passed to Image.
-                    # For Rectangle, we need to be explicit if we want to use a sub-region of a texture.
-                    # However, creating a RegionTexture is better if possible, but here we have raw coords.
-                    
-                    # Correct 8-point format for Rectangle tex_coords:
-                    # (u, v2, u2, v2, u2, v, u, v) # Top-Left, Top-Right, Bottom-Right, Bottom-Left?
-                    # Kivy 2.0+ Image widget handles 4-tuple. Rectangle instruction needs 8-tuple or 4-tuple?
-                    # Docs say: "tex_coords is a list of 8 values... (u1, v1, u2, v2, u3, v3, u4, v4)"
-                    # corresponding to BL, BR, TR, TL.
-                    
-                    # Let's map (u, v, u2, v2) -> BL, BR, TR, TL
-                    # BL = (u, v)
-                    # BR = (u2, v)
-                    # TR = (u2, v2)
-                    # TL = (u, v2)
-                    
-                    tc = (u, v, u2, v, u2, v2, u, v2)
-
-                    Rectangle(
-                        texture=texture,
-                        pos=(x * TILE_SIZE, render_y),
-                        size=(TILE_SIZE, TILE_SIZE),
-                        tex_coords=tc
-                    )
+                tile_image = Image(
+                    source=sheet_path,
+                    texture=asset_loader.get_texture(sheet_path),
+                    tex_coords=(u, v, u2, v2),
+                    size_hint=(None, None),
+                    size=(TILE_SIZE, TILE_SIZE),
+                    pos=(x * TILE_SIZE, render_y)
+                )
+                self.add_widget(tile_image)
+                self.tile_sprites.append(tile_image)
 
 
         # --- 2. Render NPCs ---
