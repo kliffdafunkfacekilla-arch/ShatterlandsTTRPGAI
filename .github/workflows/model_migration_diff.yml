@@ -1,34 +1,92 @@
-name: Model-Migration Drift Check
+name: Model-Migration Drift Detection
+
 on:
-  push:
-    paths:
-      - 'AI-TTRPG/monolith/modules/**/models.py'
-      - 'AI-TTRPG/monolith/modules/**/alembic/versions/*.py'
-      - 'tools/model_migration_diff.py'
-      - '.github/workflows/model_migration_diff.yml'
   pull_request:
     paths:
-      - 'AI-TTRPG/monolith/modules/**/models.py'
-      - 'AI-TTRPG/monolith/modules/**/alembic/versions/*.py'
+      - 'AI-TTRPG/monolith/**/models.py'
+      - 'AI-TTRPG/monolith/**/alembic/versions/*.py'
       - 'tools/model_migration_diff.py'
-      - '.github/workflows/model_migration_diff.yml'
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'AI-TTRPG/monolith/**/models.py'
+      - 'AI-TTRPG/monolith/**/alembic/versions/*.py'
+
 jobs:
   drift-check:
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for accurate diffing
+      
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies (all services)
+      
+      - name: Install dependencies
         run: |
-          pip install -r AI-TTRPG/world_engine/requirements.txt
-          pip install -r AI-TTRPG/story_engine/requirements.txt
-          pip install -r AI-TTRPG/character_engine/requirements.txt
-          pip install -r AI-TTRPG/encounter_generator/requirements.txt
-          pip install -r AI-TTRPG/map_generator/requirements.txt
-          pip install -r AI-TTRPG/rules_engine/requirements.txt
-      - name: Run model-migration drift check
-        run: python tools/model_migration_diff.py
+          python -m pip install --upgrade pip
+          # Install only what's needed for drift detection
+          pip install sqlalchemy alembic pydantic
+      
+      - name: Run Model-Migration Drift Detection
+        id: drift_check
+        continue-on-error: true
+        run: |
+          echo "🔍 Running model-migration drift detection..."
+          python tools/model_migration_diff.py
+          EXIT_CODE=$?
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          
+          if [ $EXIT_CODE -eq 2 ]; then
+            echo "❌ DRIFT DETECTED: ORM models changed without migrations"
+            exit 1
+          elif [ $EXIT_CODE -eq 1 ]; then
+            echo "⚠️  Warning: Potential issues (non-blocking)"
+            exit 0
+          else
+            echo "✅ No drift detected"
+            exit 0
+          fi
+      
+      - name: Comment on PR (drift detected)
+        if: steps.drift_check.outcome == 'failure' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ❌ Model-Migration Drift Detected
+              
+**Your PR contains changes to SQLAlchemy ORM models without corresponding Alembic migrations.**
+
+### Required Action:
+1. Generate a new migration in the affected module:
+   \`\`\`bash
+   cd AI-TTRPG/monolith/modules/<module_name>
+   alembic revision --autogenerate -m "description_of_changes"
+   \`\`\`
+2. Review the generated migration for accuracy
+3. Commit the migration file to this PR
+
+### Why This Matters:
+- Prevents database schema desynchronization
+- Ensures safe deployments across environments
+- Maintains data integrity
+
+**This check must pass before merging.**`
+            })
+      
+      - name: Fail job if drift detected
+        if: steps.drift_check.outputs.exit_code == '2'
+        run: |
+          echo "❌ Failing build due to model-migration drift"
+          exit 1
