@@ -104,23 +104,6 @@ def award_xp(char_id: str, amount: int) -> Dict[str, Any]:
     finally:
         db.close()
 
-def list_characters() -> List[Dict[str, Any]]:
-    """
-    Lists all available characters.
-
-    Returns:
-        List[Dict[str, Any]]: A list of character context dictionaries.
-    """
-    db = char_db.SessionLocal()
-    try:
-        db_chars = char_crud.list_characters(db)
-        return [char_services.get_character_context(c).model_dump() for c in db_chars]
-    except Exception as e:
-        logger.exception(f"[character.list_characters] Error: {e}")
-        raise
-    finally:
-        db.close()
-
 # --- NEW: Progression Endpoints ---
 @router.post("/level-up", response_model=schemas.LevelUpResponse)
 def level_up_character_endpoint(
