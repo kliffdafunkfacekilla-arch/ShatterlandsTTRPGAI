@@ -40,6 +40,28 @@ class CharacterCreationScreen(Screen):
         self.feature_spinners = {}
         self.build_ui()
 
+    def on_enter(self):
+        """Called when the screen is displayed. Load initial data."""
+        if rules_api:
+            try:
+                # Load Kingdoms
+                kingdoms = rules_api.get_all_kingdoms()
+                self.kingdom_spinner.values = tuple(kingdoms) if kingdoms else ('No Kingdoms Found',)
+                
+                # Load Ability Schools
+                schools = rules_api.get_all_ability_schools()
+                self.school_spinner.values = tuple(schools) if schools else ('No Schools Found',)
+                
+                # Load Background Choices
+                self.origin_spinner.values = tuple(rules_api.get_origin_choices())
+                self.childhood_spinner.values = tuple(rules_api.get_childhood_choices())
+                self.coming_of_age_spinner.values = tuple(rules_api.get_coming_of_age_choices())
+                self.training_spinner.values = tuple(rules_api.get_training_choices())
+                self.devotion_spinner.values = tuple(rules_api.get_devotion_choices())
+                
+            except Exception as e:
+                logging.error(f"Failed to load initial rules data: {e}")
+
     # ---------------------------------------------------------------------
     # UI Construction
     # ---------------------------------------------------------------------

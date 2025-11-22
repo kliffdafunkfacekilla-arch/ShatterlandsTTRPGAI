@@ -64,6 +64,9 @@ def calculate_creation_preview(request_data: Dict[str, Any]) -> Dict[str, Any]:
 def get_all_stats() -> List[str]:
     return data_loader.STATS_LIST
 
+def get_all_skills() -> List[str]:
+    return list(data_loader.SKILL_MAP.keys())
+
 def get_ability_data(ability_name: str) -> Dict[str, Any]:
     if not data_loader.ABILITY_DATA:
         return {}
