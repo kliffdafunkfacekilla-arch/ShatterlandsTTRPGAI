@@ -7,6 +7,9 @@ from typing import Dict, List, Optional, Any
 from . import models
 from .models import RollResult, TalentInfo, FeatureStatsResponse
 from . import data_loader # Import data_loader to access TECHNIQUES
+import logging
+
+logger = logging.getLogger("monolith.rules.core")
 
 
 def calculate_modifier(score: int) -> int:
@@ -23,8 +26,8 @@ def calculate_modifier(score: int) -> int:
     """
     if not isinstance(score, int):
         # Basic type check for safety
-        print(
-            f"Warning: calculate_modifier received non-integer score: {score}. Using 10."
+        logger.warning(
+            f"calculate_modifier received non-integer score: {score}. Using 10."
         )
         score = 10
     return math.floor((score - 10) / 2)
@@ -71,7 +74,7 @@ def generate_npc_template_core(
                 final_stats[stat] += modifier
                 final_stats[stat] = max(1, final_stats[stat])
             except ValueError:
-                print(f"Warning: Invalid modifier format '{mod_str}' for stat '{stat}'")
+                logger.warning(f"Invalid modifier format '{mod_str}' for stat '{stat}'")
 
     # Quick math for Speed: Base 5 + (Reflexes Mod)
     reflexes = final_stats.get("Reflexes", 10)
@@ -133,8 +136,8 @@ def calculate_skill_mt_bonus(rank: int) -> int:
         int: The calculated mastery tier bonus.
     """
     if not isinstance(rank, int) or rank < 0:
-        print(
-            f"Warning: calculate_skill_mt_bonus received invalid rank: {rank}. Using 0."
+        logger.warning(
+            f"calculate_skill_mt_bonus received invalid rank: {rank}. Using 0."
         )
         rank = 0
     return math.floor(rank / 3)
@@ -315,7 +318,7 @@ def calculate_damage(damage_data: models.DamageRequest) -> models.DamageResponse
         # We just parse the dice string provided.
         num_dice, die_type = parse_dice_string(damage_data.base_damage_dice)
     except ValueError as e:
-        print(f"Error parsing dice string in core calculate_damage: {e}")
+        logger.error(f"Error parsing dice string in core calculate_damage: {e}")
         # Return zero damage
         return models.DamageResponse(
             damage_roll_details=[],
@@ -672,8 +675,8 @@ def find_eligible_talents(
     unlocked_talents = []
 
     if not talent_data or not stats_list or not all_skills_map:
-        print(
-            "Warning: Missing required data (talents, stats list, or skills map) for talent lookup."
+        logger.warning(
+            "Missing required data (talents, stats list, or skills map) for talent lookup."
         )
         return []
 
@@ -752,8 +755,8 @@ def find_eligible_talents(
                                 )
                             )
                 elif skill_name:
-                    print(
-                        f"Warning: Skill '{skill_name}' from talent data not found in master skill map."
+                    logger.warning(
+                        f"Skill '{skill_name}' from talent data not found in master skill map."
                     )
 
     return unlocked_talents

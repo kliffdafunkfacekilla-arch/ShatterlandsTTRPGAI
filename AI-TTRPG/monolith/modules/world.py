@@ -16,6 +16,7 @@ import json
 from .world_pkg import crud as we_crud
 from .world_pkg import database as we_db
 from .world_pkg import schemas as we_schemas
+from .world_pkg import services as we_services
 
 logger = logging.getLogger("monolith.world")
 
@@ -34,7 +35,7 @@ def get_world_location_context(location_id: int) -> Dict[str, Any]:
     # --- REMOVED ASYNC AND _client ---
     db = we_db.SessionLocal()
     try:
-        ctx = we_crud.get_location_context(db, location_id)
+        ctx = we_services.get_location_context(db, location_id)
         if not ctx:
             raise Exception(f"Location {location_id} not found")
         if isinstance(ctx.get("generated_map_data"), str):
