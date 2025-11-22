@@ -3,6 +3,8 @@ Functional Combat Screen
 Handles the turn-based combat loop, displays the map,
 and provides player actions with AI-Optimized Flavor Text.
 """
+from __future__ import annotations
+
 import logging
 import random
 from kivy.app import App
@@ -20,6 +22,7 @@ try:
     from monolith.modules.character_pkg import services as char_services
     from monolith.modules.character_pkg.database import SessionLocal as CharSession
     from monolith.modules.world_pkg import crud as world_crud
+    from monolith.modules.world_pkg import services as world_services
     from monolith.modules.world_pkg.database import SessionLocal as WorldSession
     from monolith.modules.character_pkg.schemas import CharacterContextResponse
 except ImportError as e:
@@ -28,7 +31,7 @@ except ImportError as e:
     story_api, story_schemas = None, None
     char_crud, char_services, CharSession = None, None, None
     rules_api = None
-    world_crud, WorldSession = None, None
+    world_crud, world_services, WorldSession = None, None, None
 
 # --- Client Imports ---
 try:
@@ -194,7 +197,7 @@ class CombatScreen(Screen):
                         self.party_contexts_list.append(char_services.get_character_context(db_char))
 
             with WorldSession() as world_db:
-                self.location_context = world_crud.get_location_context(world_db, loc_id)
+                self.location_context = world_services.get_location_context(world_db, loc_id)
                 # Try to set initial narrative description from map context
                 if self.location_context:
                     # If 'flavor_context' was saved in ai_annotations or map data
@@ -443,7 +446,7 @@ class CombatScreen(Screen):
     def refresh_combat_context(self):
         try:
             with WorldSession() as world_db:
-                self.location_context = world_crud.get_location_context(
+                self.location_context = world_services.get_location_context(
                     world_db, self.location_context.get('id')
                 )
 

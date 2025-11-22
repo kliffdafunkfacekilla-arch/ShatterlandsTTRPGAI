@@ -26,6 +26,7 @@ try:
     from monolith.modules.character_pkg import services as char_services
     from monolith.modules.character_pkg.database import SessionLocal as CharSession
     from monolith.modules.world_pkg import crud as world_crud
+    from monolith.modules.world_pkg import services as world_services
     from monolith.modules.world_pkg.database import SessionLocal as WorldSession
     from monolith.modules import character as character_api
     from monolith.modules import story as story_api
@@ -38,7 +39,7 @@ except ImportError as e:
     # ... (all set to None)
     CharacterContextResponse = None # Add this
     char_crud, char_services, CharSession = None, None, None
-    world_crud, WorldSession = None, None
+    world_crud, world_services, WorldSession = None, None, None
     character_api, story_api, story_schemas = None, None, None
     save_api = None
     CharacterContextResponse = None
@@ -350,7 +351,7 @@ class MainInterfaceScreen(Screen):
             if self.active_character_context:
                 loc_id = self.active_character_context.current_location_id # Use active char's location
                 world_db = WorldSession()
-                self.location_context = world_crud.get_location_context(world_db, loc_id)
+                self.location_context = world_services.get_location_context(world_db, loc_id)
                 if not self.location_context:
                     raise Exception(f"Location ID '{loc_id}' not found in database.")
                 logging.info(f"Loaded context for location: {self.location_context.get('name')}")

@@ -20,15 +20,10 @@ import logging
 # --- Direct Monolith Imports ---
 # ... (imports are unchanged) ...
 try:
-    from monolith.modules.character_pkg import crud as char_crud
-    from monolith.modules.character_pkg import services as char_services
-    from monolith.modules.character_pkg.database import SessionLocal as CharSession
+    from monolith.modules import character as character_api
 except ImportError as e:
     logging.error(f"GAME_SETUP: Failed to import monolith modules: {e}")
-    # Create dummy fallbacks so the app doesn't crash on import
-    char_crud = None
-    char_services = None
-    CharSession = None
+    character_api = None
 
 class GameSetupScreen(Screen):
     """
@@ -115,7 +110,7 @@ class GameSetupScreen(Screen):
         Fetches the character list directly from the database
         and populates the checkbox list.
         """
-        if not CharSession or not char_crud or not char_services:
+        if not character_api:
             self.character_select_list.clear_widgets()
             self.character_select_list.add_widget(Label(text="Error: Monolith not loaded"))
             return
@@ -124,32 +119,27 @@ class GameSetupScreen(Screen):
         self.character_select_list.clear_widgets()
         self.character_toggles.clear()
 
-        db = None
         try:
-            db = CharSession()
-            db_chars = char_crud.list_characters(db)
+            # 1. Get characters from API
+            char_contexts = character_api.list_characters()
 
-            if db_chars:
-                # 2. Convert models to the context dicts using the service
-                char_contexts = [char_services.get_character_context(c) for c in db_chars]
-
-                if not char_contexts:
-                    self.character_select_list.add_widget(Label(text="No characters found."))
-                    return
-
+            if char_contexts:
                 # --- NEW: Populate Checkbox List ---
                 for char_context in char_contexts:
+                    # Handle both dict and object (Pydantic) access if needed, but API returns dicts
+                    c_name = char_context.get('name') if isinstance(char_context, dict) else char_context.name
+                    
                     char_box = BoxLayout(orientation='horizontal', size_hint_y=None, height='44dp')
 
                     checkbox = CheckBox(size_hint_x=0.2)
-                    label = Label(text=char_context.name, size_hint_x=0.8, halign='left')
+                    label = Label(text=c_name, size_hint_x=0.8, halign='left')
                     label.bind(size=label.setter('text_size')) # for alignment
 
                     char_box.add_widget(checkbox)
                     char_box.add_widget(label)
 
                     self.character_select_list.add_widget(char_box)
-                    self.character_toggles[char_context.name] = checkbox
+                    self.character_toggles[c_name] = checkbox
                 # --- END NEW ---
 
             else:
@@ -159,9 +149,6 @@ class GameSetupScreen(Screen):
             logging.error(f"GAME_SETUP: Failed to load character list: {e}")
             self.character_select_list.clear_widgets()
             self.character_select_list.add_widget(Label(text="Error: Could not load characters."))
-        finally:
-            if db:
-                db.close() # Always close the session
 
     def go_to_main_menu(self, instance):
         """Navigates back to the main menu."""
