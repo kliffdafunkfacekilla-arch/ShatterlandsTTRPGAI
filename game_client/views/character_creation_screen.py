@@ -158,6 +158,31 @@ class CharacterCreationScreen(Screen):
     def on_feature_select(self, key, value):
         self.selected_options["features"][key] = value
 
+    def on_name_change(self, instance, value):
+        self.selected_options["name"] = value
+
+    def on_kingdom_select(self, spinner, text):
+        self.selected_options["kingdom"] = text
+        self.load_feature_spinners(text)
+
+    def on_school_select(self, spinner, text):
+        self.selected_options["ability_school"] = text
+
+    def on_origin_select(self, spinner, text):
+        self.selected_options["origin"] = text
+
+    def on_childhood_select(self, spinner, text):
+        self.selected_options["childhood"] = text
+
+    def on_coming_of_age_select(self, spinner, text):
+        self.selected_options["coming_of_age"] = text
+
+    def on_training_select(self, spinner, text):
+        self.selected_options["training"] = text
+
+    def on_devotion_select(self, spinner, text):
+        self.selected_options["devotion"] = text
+
     def submit_character(self, instance):
         name = self.selected_options.get("name")
         if not name:
