@@ -174,8 +174,14 @@
         "category": "jewelry",
         "weight": 0.1,
         "slots": [
-            "ring_l1", "ring_l2", "ring_l3", "ring_l4",
-            "ring_r1", "ring_r2", "ring_r3", "ring_r4"
+            "ring_l1",
+            "ring_l2",
+            "ring_l3",
+            "ring_l4",
+            "ring_r1",
+            "ring_r2",
+            "ring_r3",
+            "ring_r4"
         ],
         "value": 50,
         "icon": "icon_gold_ring",
@@ -232,7 +238,10 @@
         "weight": 0.1,
         "slots": [
             "neck",
-            "wrist_l1", "wrist_l2", "wrist_r1", "wrist_r2"
+            "wrist_l1",
+            "wrist_l2",
+            "wrist_r1",
+            "wrist_r2"
         ],
         "effects": [
             {
@@ -262,5 +271,245 @@
         ],
         "icon": "icon_scroll_fire",
         "sprite_ref": "sprite_scroll_fire"
-    }
+    },
+    "item_brawling_gloves": {
+        "name": "Brawling Gloves",
+        "type": "weapon",
+        "category": "Unarmed/Fist Weapons",
+        "weight": 1.0,
+        "slots": [
+            "hands"
+        ],
+        "damage_dice": "1d4",
+    "icon": "icon_brawling_gloves",
+    "sprite_ref": "sprite_brawling_gloves"
+},
+"item_iron_key": {
+    "name": "Iron Key",
+    "type": "quest",
+    "category": "quest",
+    "weight": 0.1,
+    "slots": [],
+    "icon": "icon_iron_key",
+    "sprite_ref": "sprite_iron_key"
+},
+"item_health_potion_small": {
+    "name": "Small Health Potion",
+    "type": "consumable",
+    "category": "potion",
+    "weight": 0.5,
+    "slots": [],
+    "effects": [
+        {
+            "type": "heal",
+            "value": 15,
+            "description": "Restores 15 HP"
+        }
+    ],
+    "quantity": 1,
+    "max_stack": 5,
+    "icon": "icon_health_potion_small",
+    "sprite_ref": "sprite_health_potion_small"
+},
+"item_apple": {
+    "name": "Apple",
+    "type": "consumable",
+    "category": "food",
+    "weight": 0.2,
+    "slots": [],
+    "effects": [
+        {
+            "type": "heal",
+            "value": 2,
+            "description": "Restores 2 HP"
+        }
+    ],
+    "quantity": 1,
+    "max_stack": 10,
+    "icon": "icon_apple",
+    "sprite_ref": "sprite_apple"
+},
+"item_scrap_metal": {
+    "name": "Scrap Metal",
+    "type": "material",
+    "category": "material",
+    "weight": 0.5,
+    "slots": [],
+    "quantity": 1,
+    "max_stack": 20,
+    "icon": "icon_scrap_metal",
+    "sprite_ref": "sprite_scrap_metal"
+},
+"item_rope": {
+    "name": "Rope (50ft)",
+    "type": "tool",
+    "category": "utility",
+    "weight": 5.0,
+    "slots": [
+        "carried_gear"
+    ],
+    "effects": [
+        {
+            "type": "utility",
+            "value": 0,
+            "description": "Used for climbing or binding."
+        }
+    ],
+    "icon": "icon_rope",
+    "sprite_ref": "sprite_rope"
+},
+"item_torch": {
+    "name": "Torch",
+    "type": "tool",
+    "category": "utility",
+    "weight": 1.0,
+    "slots": [
+        "off_hand",
+        "equipped_gear",
+        "carried_gear"
+    ],
+    "effects": [
+        {
+            "type": "utility",
+            "value": 0,
+            "description": "Provides light."
+        }
+    ],
+    "icon": "icon_torch",
+    "sprite_ref": "sprite_torch"
+},
+"item_gold_ring": {
+    "name": "Gold Ring",
+    "type": "accessory",
+    "category": "jewelry",
+    "weight": 0.1,
+    "slots": [
+        "ring_l1",
+        "ring_l2",
+        "ring_l3",
+        "ring_l4",
+        "ring_r1",
+        "ring_r2",
+        "ring_r3",
+        "ring_r4"
+    ],
+    "value": 50,
+    "icon": "icon_gold_ring",
+    "sprite_ref": "sprite_gold_ring"
+},
+"item_silver_necklace": {
+    "name": "Silver Necklace",
+    "type": "accessory",
+    "category": "jewelry",
+    "weight": 0.2,
+    "slots": [
+        "neck"
+    ],
+    "value": 30,
+    "icon": "icon_silver_necklace",
+    "sprite_ref": "sprite_silver_necklace"
+},
+"item_leather_belt": {
+    "name": "Leather Belt",
+    "type": "accessory",
+    "category": "clothing",
+    "weight": 0.5,
+    "slots": [
+        "belt"
+    ],
+    "value": 5,
+    "icon": "icon_leather_belt",
+    "sprite_ref": "sprite_leather_belt"
+},
+"item_ancient_tome": {
+    "name": "Ancient Tome",
+    "type": "book",
+    "category": "lore",
+    "weight": 2.0,
+    "slots": [],
+    "value": 100,
+    "icon": "icon_ancient_tome",
+    "sprite_ref": "sprite_ancient_tome"
+},
+"item_ruby_gem": {
+    "name": "Ruby Gem",
+    "type": "treasure",
+    "category": "gem",
+    "weight": 0.1,
+    "slots": [],
+    "value": 200,
+    "icon": "icon_ruby_gem",
+    "sprite_ref": "sprite_ruby_gem"
+},
+"item_lucky_charm": {
+    "name": "Lucky Charm",
+    "type": "charm",
+    "category": "charm",
+    "weight": 0.1,
+    "slots": [
+        "neck",
+        "wrist_l1",
+        "wrist_l2",
+        "wrist_r1",
+        "wrist_r2"
+    ],
+    "effects": [
+        {
+            "type": "buff",
+            "target_stat": "Luck",
+            "value": 1,
+            "description": "+1 Luck"
+        }
+    ],
+    "icon": "icon_lucky_charm",
+    "sprite_ref": "sprite_lucky_charm"
+},
+"item_fireball_scroll": {
+    "name": "Scroll of Fireball",
+    "type": "charm",
+    "category": "scroll",
+    "weight": 0.1,
+    "slots": [
+        "equipped_gear"
+    ],
+    "effects": [
+        {
+            "type": "damage",
+            "value": 20,
+            "description": "Casts Fireball"
+        }
+    ],
+    "icon": "icon_scroll_fire",
+    "sprite_ref": "sprite_scroll_fire"
+},
+"test_sword": {
+    "name": "Test Sword",
+    "type": "weapon",
+    "category": "Great Weapons",
+    "weight": 1.0,
+    "slots": [
+        "main_hand"
+    ],
+    "damage_dice": "2d12",
+    "icon": "icon_iron_sword",
+    "sprite_ref": "sprite_iron_sword"
+},
+"test_potion": {
+    "name": "Test Potion",
+    "type": "consumable",
+    "category": "potion",
+    "weight": 0.1,
+    "slots": [],
+    "effects": [
+        {
+            "type": "heal",
+            "value": 100,
+            "description": "Restores 100 HP"
+        }
+    ],
+    "quantity": 10,
+    "max_stack": 99,
+    "icon": "icon_health_potion_small",
+    "sprite_ref": "sprite_health_potion_small"
+}
 }

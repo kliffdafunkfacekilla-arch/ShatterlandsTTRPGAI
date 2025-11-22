@@ -41,29 +41,48 @@ class LLMService:
         if not self.model:
             return self._get_fallback_flavor()
 
+        try:
+            # Lazy import to avoid circular dependency if any
+            from monolith.modules.map_pkg.models import MapFlavorContext
+        except ImportError:
+            logger.error("Could not import MapFlavorContext")
+            return self._get_fallback_flavor()
+
         tag_str = ", ".join(tags)
         prompt = f"""
         You are a Fantasy RPG Content Generator.
         I need a JSON object containing atmospheric descriptions and combat flavor text for a map with these tags: [{tag_str}].
-
-        Return ONLY valid JSON matching this exact structure:
+        
+        The output MUST be a valid JSON object that strictly adheres to this schema:
         {{
-            "environment_description": "A 2-sentence summary of the location's vibe.",
-            "visuals": ["List of 3 specific visual details visible in the area"],
-            "sounds": ["List of 3 background sounds"],
-            "smells": ["List of 2 smells"],
-            "combat_hits": ["List of 5 generic descriptions of a successful hit that incorporate the environment (e.g. 'You slam them into a mossy tree')"],
-            "combat_misses": ["List of 5 descriptions of a miss (e.g. 'They duck behind a crumbling statue')"],
-            "spell_casts": ["List of 3 descriptions of magic gathering in this environment"],
-            "enemy_intros": ["List of 3 ways an enemy might appear here"]
+            "environment_description": "string",
+            "visuals": ["string", "string", "string"],
+            "sounds": ["string", "string", "string"],
+            "smells": ["string", "string"],
+            "combat_hits": ["string", "string", "string", "string", "string"],
+            "combat_misses": ["string", "string", "string", "string", "string"],
+            "spell_casts": ["string", "string", "string"],
+            "enemy_intros": ["string", "string", "string"]
         }}
+        
+        Ensure the content is thematic and immersive.
         """
 
         try:
-            response = self.model.generate_content(prompt)
+            # Use generation_config to enforce JSON response if supported by the model version,
+            # otherwise rely on the prompt and cleaning.
+            response = self.model.generate_content(
+                prompt,
+                generation_config={"response_mime_type": "application/json"}
+            )
+            
             clean_text = clean_json_response(response.text)
             data = json.loads(clean_text)
-            return data
+            
+            # Validate with Pydantic
+            validated_context = MapFlavorContext(**data)
+            return validated_context.model_dump()
+
         except Exception as e:
             logger.error(f"Flavor generation failed: {e}")
             return self._get_fallback_flavor()

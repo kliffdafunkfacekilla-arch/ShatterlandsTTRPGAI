@@ -2,14 +2,14 @@ name: Model-Migration Drift Check
 on:
   push:
     paths:
-      - 'AI-TTRPG/**/app/models.py'
-      - 'AI-TTRPG/**/alembic/versions/*.py'
+      - 'AI-TTRPG/monolith/modules/**/models.py'
+      - 'AI-TTRPG/monolith/modules/**/alembic/versions/*.py'
       - 'tools/model_migration_diff.py'
       - '.github/workflows/model_migration_diff.yml'
   pull_request:
     paths:
-      - 'AI-TTRPG/**/app/models.py'
-      - 'AI-TTRPG/**/alembic/versions/*.py'
+      - 'AI-TTRPG/monolith/modules/**/models.py'
+      - 'AI-TTRPG/monolith/modules/**/alembic/versions/*.py'
       - 'tools/model_migration_diff.py'
       - '.github/workflows/model_migration_diff.yml'
 jobs:

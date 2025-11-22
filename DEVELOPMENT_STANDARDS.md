@@ -24,3 +24,12 @@ This document establishes strict guidelines for all AI agents and developers wor
 ## 5. User Communication
 *   **Be Honest**: If a fix requires a destructive action (like a DB reset), explain WHY and ask for permission first.
 *   **Document Changes**: Keep the `walkthrough.md` or similar documentation updated with what was changed and why.
+
+## 6. Safe Data Editing
+*   **JSON Files**: NEVER use string replacement tools (`replace_file_content`) on large JSON files. Always use `tools/safe_json_editor.py` or write a custom Python script to load, modify, and save the JSON. This prevents corruption due to context mismatches or line ending issues.
+
+## 7. Environment Specifics (Windows)
+*   **OS**: The development environment is **Windows**.
+*   **Paths**: Always use `os.path.join` or `pathlib` for file paths. If hardcoding is necessary for scripts, use raw strings (e.g., `r"path\to\file"`) or forward slashes (`/`), which Python handles correctly on Windows.
+*   **Line Endings**: Expect CRLF (`\r\n`). When reading/writing files in Python, always specify `encoding='utf-8'` to ensure consistency.
+*   **Shell**: The terminal uses **PowerShell**. Ensure commands are compatible (e.g., use `;` for chaining, not `&&` unless in cmd, but `run_command` uses pwsh).

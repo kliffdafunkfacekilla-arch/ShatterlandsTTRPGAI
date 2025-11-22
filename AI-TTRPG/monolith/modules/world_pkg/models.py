@@ -96,6 +96,7 @@ class Location(Base):
     trap_instances = relationship("TrapInstance", back_populates="location") # Add this line
     ai_annotations = Column(JSON, nullable=True) # Store descriptions, interactions flags etc.
     spawn_points = Column(JSON, nullable=True) # <-- ADD THIS
+    flavor_context = Column(JSON, nullable=True) # Stores MapFlavorContext data
 
 class NpcInstance(Base):
     """

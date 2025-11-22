@@ -346,6 +346,24 @@ def get_location_context(db: Session, location_id: int):
             # 4. Save the new map to the database
             # This call commits to the DB and refreshes the 'location' object
             update_location_map(db, location_id, map_update_schema)
+            
+            # 5. Save Flavor Context if available
+            flavor_data = map_response_dict.get("flavor_context")
+            if flavor_data:
+                # Convert Pydantic model to dict if it isn't already
+                if hasattr(flavor_data, 'model_dump'):
+                    flavor_dict = flavor_data.model_dump()
+                elif hasattr(flavor_data, 'dict'):
+                    flavor_dict = flavor_data.dict()
+                else:
+                    flavor_dict = flavor_data
+                
+                # Update annotations
+                current_annotations = location.ai_annotations or {}
+                current_annotations['flavor_context'] = flavor_dict
+                update_location_annotations(db, location_id, current_annotations)
+                logger.info(f"Saved flavor context for location {location_id}")
+
             logger.info(f"Successfully generated and saved new map for location {location_id}.")
 
         except Exception as e:

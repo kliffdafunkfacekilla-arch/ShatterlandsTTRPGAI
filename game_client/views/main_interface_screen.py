@@ -47,6 +47,7 @@ except ImportError as e:
 try:
     from game_client import asset_loader
     from game_client.views.map_view_widget import MapViewWidget
+    from game_client import debug_utils
 except ImportError as e:
     logging.error(f"MAIN_INTERFACE: Failed to import client modules: {e}")
     asset_loader = None
@@ -194,6 +195,9 @@ MAIN_INTERFACE_KV = """
                     on_release:
                         app.root.get_screen('settings').previous_screen = 'main_interface'
                         app.root.current = 'settings'
+                Button:
+                    text: 'Debug'
+                    on_release: root.show_debug_popup()
                 Button:
                     text: 'Save Game'
                     on_release: root.show_save_popup()
@@ -569,6 +573,41 @@ class MainInterfaceScreen(Screen):
             logging.exception(f"Error calling save_game: {e}")
             self.update_log(f"Save failed: {e}")
         self.save_popup.dismiss()
+
+    def show_debug_popup(self):
+        """Shows the debug menu."""
+        if not debug_utils:
+            logging.error("Debug utils not loaded.")
+            return
+
+        content = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
+        
+        btn_teleport = Button(text='Teleport to Construct')
+        btn_teleport.bind(on_release=lambda x: debug_utils.teleport_to_construct(App.get_running_app()))
+        content.add_widget(btn_teleport)
+        
+        btn_spawn_dummy = Button(text='Spawn Dummy')
+        btn_spawn_dummy.bind(on_release=lambda x: debug_utils.spawn_npc(App.get_running_app(), "training_dummy"))
+        content.add_widget(btn_spawn_dummy)
+
+        btn_spawn_goblin = Button(text='Spawn Goblin')
+        btn_spawn_goblin.bind(on_release=lambda x: debug_utils.spawn_npc(App.get_running_app(), "live_goblin"))
+        content.add_widget(btn_spawn_goblin)
+        
+        btn_items = Button(text='Grant Test Items')
+        btn_items.bind(on_release=lambda x: debug_utils.grant_test_items(App.get_running_app()))
+        content.add_widget(btn_items)
+        
+        btn_heal = Button(text='Heal Party')
+        btn_heal.bind(on_release=lambda x: debug_utils.heal_party(App.get_running_app()))
+        content.add_widget(btn_heal)
+        
+        btn_close = Button(text='Close')
+        content.add_widget(btn_close)
+        
+        popup = Popup(title='Debug Menu', content=content, size_hint=(0.5, 0.8))
+        btn_close.bind(on_release=popup.dismiss)
+        popup.open()
 
     def on_touch_down(self, touch):
         """Handle clicks on the map for movement."""
