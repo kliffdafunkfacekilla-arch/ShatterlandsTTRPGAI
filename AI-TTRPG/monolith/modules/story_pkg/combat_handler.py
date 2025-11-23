@@ -2405,6 +2405,82 @@ def handle_player_action(db: Session, combat: models.CombatEncounter, actor_id: 
 
         combat.current_turn_index = (combat.current_turn_index + 1) % len(combat.turn_order)
         combat_over = check_combat_end_condition(db, combat, log)
+        
+        # ============================================================================
+        # REACTIVE STORY ENGINE INTEGRATION
+        # ============================================================================
+        # Generate dynamic story events based on combat outcome and world state
+        try:
+            from ..world_pkg import crud as world_crud
+            from .event_engine import check_and_generate_events
+            from .schemas import EventConsequenceType
+            
+            # Update world state based on combat outcome
+            if combat_over:
+                # Determine if players won or lost
+                players_alive = any(
+                    p.actor_id.startswith("player_") and 
+                    get_actor_context(p.actor_id)[1].get("current_hp", 0) > 0
+                    for p in combat.participants
+                )
+                
+                if players_alive:
+                    # Players won - boost reputation
+                    world_crud.set_combat_outcome(db, combat.location_id, "VICTORY")
+                    world_crud.update_player_reputation(db, combat.location_id, delta=+2)
+                    logger.info(f"Players won combat at location {combat.location_id}")
+                else:
+                    # Players lost - reputation penalty
+                    world_crud.set_combat_outcome(db, combat.location_id, "DEFEAT")
+                    world_crud.update_player_reputation(db, combat.location_id, delta=-5)
+                    logger.info(f"Players defeated at location {combat.location_id}")
+            
+            # Check for critical hits/misses in the last action
+            if log:
+                last_log_entry = log[-1] if log else ""
+                if "CRITICAL HIT" in last_log_entry.upper():
+                    world_crud.set_combat_outcome(db, combat.location_id, "CRITICAL_HIT")
+                elif "CRITICAL MISS" in last_log_entry.upper():
+                    world_crud.set_combat_outcome(db, combat.location_id, "CRITICAL_MISS")
+            
+            # Generate events based on current world state
+            context = world_crud.get_world_state_context(db, combat.location_id)
+            events = check_and_generate_events(context)
+            
+            # Execute event consequences and add narrative to log
+            for event in events:
+                log.append(f"\n🎭 {event.narrative_text}")
+                logger.info(f"Story event triggered: {event.event_id}")
+                
+                # Execute consequences based on type
+                if event.consequence_type == EventConsequenceType.SPAWN_NPC:
+                    # Queue NPC spawn (would need to be handled after combat)
+                    log.append(f"   → {event.payload.get('npc_type', 'enemies')} approach!")
+                    
+                elif event.consequence_type == EventConsequenceType.WORLD_STATE_CHANGE:
+                    # Apply world state changes
+                    if "reputation_bonus" in event.payload:
+                        world_crud.update_player_reputation(
+                            db, combat.location_id, 
+                            delta=event.payload["reputation_bonus"]
+                        )
+                    if "global_morale_debuff" in event.payload:
+                        log.append(f"   → Morale penalty: -{event.payload['global_morale_debuff']}")
+                
+                elif event.consequence_type == EventConsequenceType.ADD_QUEST_LOG:
+                    quest_title = event.payload.get("quest_title", "New Quest")
+                    log.append(f"   → Quest Added: {quest_title}")
+                
+                elif event.consequence_type == EventConsequenceType.INITIATE_SKILL_CHALLENGE:
+                    skill = event.payload.get("skill_check", "Unknown")
+                    dc = event.payload.get("difficulty", 15)
+                    log.append(f"   → Skill Challenge: {skill} (DC {dc})")
+            
+        except Exception as e:
+            logger.warning(f"Event engine failed gracefully: {e}")
+            # Don't fail combat on event engine errors - just log them
+        # ============================================================================
+        
         db.commit()
         db.refresh(combat)
 

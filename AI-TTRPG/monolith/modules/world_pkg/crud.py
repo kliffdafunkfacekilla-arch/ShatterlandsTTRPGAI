@@ -102,6 +102,106 @@ def update_location_annotations(db: Session, location_id: int, annotations: dict
         db.refresh(db_loc)
     return db_loc
 
+
+# ============================================================================
+# REACTIVE STORY ENGINE: World State Management
+# ============================================================================
+
+def update_player_reputation(db: Session, location_id: int, delta: int) -> Optional[models.Location]:
+    """
+    Updates the player's reputation at a specific location.
+    
+    Args:
+        db: Database session
+        location_id: ID of the location
+        delta: Reputation change (positive or negative)
+    
+    Returns:
+        Updated Location object or None
+    """
+    db_loc = get_location(db, location_id)
+    if db_loc:
+        current_rep = db_loc.player_reputation or 0
+        new_rep = max(-100, min(100, current_rep + delta))  # Clamp to -100 to +100
+        db_loc.player_reputation = new_rep
+        logger.info(f"Updated reputation for location {location_id}: {current_rep} -> {new_rep}")
+        db.commit()
+        db.refresh(db_loc)
+    return db_loc
+
+
+def set_combat_outcome(db: Session, location_id: int, outcome: str) -> Optional[models.Location]:
+    """
+    Records the last combat outcome for a location.
+    
+    Args:
+        db: Database session
+        location_id: ID of the location
+        outcome: Combat outcome string (e.g., "CRITICAL_HIT", "DEFEAT")
+    
+    Returns:
+        Updated Location object or None
+    """
+    db_loc = get_location(db, location_id)
+    if db_loc:
+        db_loc.last_combat_outcome = outcome
+        logger.info(f"Set combat outcome for location {location_id}: {outcome}")
+        db.commit()
+        db.refresh(db_loc)
+    return db_loc
+
+
+def update_kingdom_resources(db: Session, region_id: int, delta: int) -> Optional[models.Region]:
+    """
+    Updates the kingdom resource level for a region.
+    
+    Args:
+        db: Database session
+        region_id: ID of the region
+        delta: Resource change (positive or negative)
+    
+    Returns:
+        Updated Region object or None
+    """
+    db_region = get_region(db, region_id)
+    if db_region:
+        current_resources = db_region.kingdom_resource_level or 50
+        new_resources = max(0, min(100, current_resources + delta))  # Clamp to 0-100
+        db_region.kingdom_resource_level = new_resources
+        logger.info(f"Updated resources for region {region_id}: {current_resources} -> {new_resources}")
+        db.commit()
+        db.refresh(db_region)
+    return db_region
+
+
+def get_world_state_context(db: Session, location_id: int):
+    """
+    Builds a WorldStateContext for event engine evaluation.
+    
+    Args:
+        db: Database session
+        location_id: Current location ID
+    
+    Returns:
+        Dict with world state data suitable for WorldStateContext
+    """
+    from ..story_pkg.schemas import WorldStateContext
+    
+    location = get_location(db, location_id)
+    if not location:
+        raise HTTPException(status_code=404, detail="Location not found")
+    
+    region = get_region(db, location.region_id) if location.region_id else None
+    
+    context = WorldStateContext(
+        player_reputation=location.player_reputation or 0,
+        kingdom_resource_level=region.kingdom_resource_level if region else 50,
+        last_combat_outcome=location.last_combat_outcome,
+        current_location_tags=location.tags or []
+    )
+    
+    return context
+
 # --- NPC Instance ---
 def get_npc(db: Session, npc_id: int) -> Optional[models.NpcInstance]:
     """

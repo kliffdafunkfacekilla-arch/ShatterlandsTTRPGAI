@@ -65,6 +65,9 @@ class Region(Base):
     current_weather = Column(String, default="clear")
     environmental_effects = Column(JSON, default=[]) # e.g., ["blight_level_2"]
     faction_influence = Column(JSON, default={}) # e.g., {"faction_id_1": 0.75}
+    
+    # --- REACTIVE STORY ENGINE: World State Tracking ---
+    kingdom_resource_level = Column(Integer, default=50)  # 0-100 scale
 
     # This links a Region to its many Locations
     locations = relationship("Location", back_populates="region")
@@ -95,8 +98,12 @@ class Location(Base):
     item_instances = relationship("ItemInstance", back_populates="location")
     trap_instances = relationship("TrapInstance", back_populates="location") # Add this line
     ai_annotations = Column(JSON, nullable=True) # Store descriptions, interactions flags etc.
-    spawn_points = Column(JSON, nullable=True) # <-- ADD THIS
+    spawn_points = Column(JSON, nullable=True)
     flavor_context = Column(JSON, nullable=True) # Stores MapFlavorContext data
+    
+    # --- REACTIVE STORY ENGINE: Location State ---
+    player_reputation = Column(Integer, default=0)  # -100 to +100 scale
+    last_combat_outcome = Column(String, nullable=True)  # e.g., "CRITICAL_HIT", "DEFEAT"
 
 class NpcInstance(Base):
     """
