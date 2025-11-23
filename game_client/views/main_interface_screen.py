@@ -491,6 +491,36 @@ class MainInterfaceScreen(Screen):
     def show_save_popup(self):
         pass
 
+    def process_story_events(self, events: List[dict]):
+        """
+        Parses and displays a list of StoryEvents from the backend.
+        """
+        if not events:
+            return
+
+        for event in events:
+            # 1. Display the narrative text in the log
+            if event.get("narrative_text"):
+                self.update_log(f"[Event] {event['narrative_text']}")
+
+            # 2. Handle specific consequences (Visual feedback)
+            c_type = event.get("consequence_type")
+            payload = event.get("payload", {})
+
+            if c_type == "WORLD_STATE_CHANGE":
+                if "reputation_mod" in payload:
+                    mod = payload["reputation_mod"]
+                    sign = "+" if mod > 0 else ""
+                    self.update_log(f">> Reputation {sign}{mod}")
+                if "global_morale_debuff" in payload:
+                    self.update_log(f">> Kingdom Morale Decreased!")
+
+            elif c_type == "SPAWN_NPC":
+                npc_id = payload.get("npc_template_id")
+                self.update_log(f">> A {npc_id} appears!")
+                # In a real implementation, we would trigger a map refresh here
+                # self.refresh_map() 
+
     def on_submit_narration(self, instance):
         """Called when the user presses Enter in the DM input box."""
         prompt_text = instance.text
@@ -508,7 +538,16 @@ class MainInterfaceScreen(Screen):
         self.update_log(f"You: {prompt_text}")
         try:
             response = story_api.handle_narrative_prompt(actor_id, prompt_text)
+            
+            # Display the main AI response
             self.update_narration(response.get("message", "An error occurred."))
+            
+            # Process any side-effects/events included in the response
+            # Note: handle_narrative_prompt might need to be updated to return 'events'
+            # For now, we assume the response MIGHT contain them if the backend supports it.
+            if "events" in response:
+                self.process_story_events(response["events"])
+
         except Exception as e:
             logging.exception(f"Error handling narrative prompt: {e}")
             self.update_narration(f"Error: {e}")
