@@ -26,7 +26,6 @@ try:
     from monolith.modules.character_pkg import services as char_services
     from monolith.modules.character_pkg.database import SessionLocal as CharSession
     from monolith.modules.world_pkg import crud as world_crud
-    from monolith.modules.world_pkg import services as world_services
     from monolith.modules.world_pkg.database import SessionLocal as WorldSession
     from monolith.modules import character as character_api
     from monolith.modules import story as story_api
@@ -39,7 +38,7 @@ except ImportError as e:
     # ... (all set to None)
     CharacterContextResponse = None # Add this
     char_crud, char_services, CharSession = None, None, None
-    world_crud, world_services, WorldSession = None, None, None
+    world_crud, WorldSession = None, None
     character_api, story_api, story_schemas = None, None, None
     save_api = None
     CharacterContextResponse = None
@@ -48,6 +47,7 @@ except ImportError as e:
 try:
     from game_client import asset_loader
     from game_client.views.map_view_widget import MapViewWidget
+    from game_client import debug_utils
 except ImportError as e:
     logging.error(f"MAIN_INTERFACE: Failed to import client modules: {e}")
     asset_loader = None
@@ -195,6 +195,9 @@ MAIN_INTERFACE_KV = """
                     on_release:
                         app.root.get_screen('settings').previous_screen = 'main_interface'
                         app.root.current = 'settings'
+                Button:
+                    text: 'Debug'
+                    on_release: root.show_debug_popup()
                 Button:
                     text: 'Save Game'
                     on_release: root.show_save_popup()
@@ -351,7 +354,7 @@ class MainInterfaceScreen(Screen):
             if self.active_character_context:
                 loc_id = self.active_character_context.current_location_id # Use active char's location
                 world_db = WorldSession()
-                self.location_context = world_services.get_location_context(world_db, loc_id)
+                self.location_context = world_crud.get_location_context(world_db, loc_id)
                 if not self.location_context:
                     raise Exception(f"Location ID '{loc_id}' not found in database.")
                 logging.info(f"Loaded context for location: {self.location_context.get('name')}")
@@ -570,6 +573,41 @@ class MainInterfaceScreen(Screen):
             logging.exception(f"Error calling save_game: {e}")
             self.update_log(f"Save failed: {e}")
         self.save_popup.dismiss()
+
+    def show_debug_popup(self):
+        """Shows the debug menu."""
+        if not debug_utils:
+            logging.error("Debug utils not loaded.")
+            return
+
+        content = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
+        
+        btn_teleport = Button(text='Teleport to Construct')
+        btn_teleport.bind(on_release=lambda x: debug_utils.teleport_to_construct(App.get_running_app()))
+        content.add_widget(btn_teleport)
+        
+        btn_spawn_dummy = Button(text='Spawn Dummy')
+        btn_spawn_dummy.bind(on_release=lambda x: debug_utils.spawn_npc(App.get_running_app(), "training_dummy"))
+        content.add_widget(btn_spawn_dummy)
+
+        btn_spawn_goblin = Button(text='Spawn Goblin')
+        btn_spawn_goblin.bind(on_release=lambda x: debug_utils.spawn_npc(App.get_running_app(), "live_goblin"))
+        content.add_widget(btn_spawn_goblin)
+        
+        btn_items = Button(text='Grant Test Items')
+        btn_items.bind(on_release=lambda x: debug_utils.grant_test_items(App.get_running_app()))
+        content.add_widget(btn_items)
+        
+        btn_heal = Button(text='Heal Party')
+        btn_heal.bind(on_release=lambda x: debug_utils.heal_party(App.get_running_app()))
+        content.add_widget(btn_heal)
+        
+        btn_close = Button(text='Close')
+        content.add_widget(btn_close)
+        
+        popup = Popup(title='Debug Menu', content=content, size_hint=(0.5, 0.8))
+        btn_close.bind(on_release=popup.dismiss)
+        popup.open()
 
     def on_touch_down(self, touch):
         """Handle clicks on the map for movement."""

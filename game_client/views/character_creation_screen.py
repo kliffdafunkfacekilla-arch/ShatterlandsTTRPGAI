@@ -35,6 +35,7 @@ class CharacterCreationScreen(Screen):
             "coming_of_age": "",
             "training": "",
             "devotion": "",
+            "ability_talent": "",
             "features": {},  # feature_key -> selected value
         }
         self.feature_spinners = {}
@@ -58,6 +59,25 @@ class CharacterCreationScreen(Screen):
                 self.coming_of_age_spinner.values = tuple(rules_api.get_coming_of_age_choices())
                 self.training_spinner.values = tuple(rules_api.get_training_choices())
                 self.devotion_spinner.values = tuple(rules_api.get_devotion_choices())
+
+                # Load Talents
+                talents_data = rules_api.get_all_talents_data()
+                # Flatten talents map for the spinner
+                all_talents = []
+                if talents_data:
+                    # Single Stat Mastery
+                    for t in talents_data.get("single_stat_mastery", []):
+                        if "talent_name" in t: all_talents.append(t["talent_name"])
+                    # Dual Stat Focus
+                    for t in talents_data.get("dual_stat_focus", []):
+                        if "talent_name" in t: all_talents.append(t["talent_name"])
+                    # Skill Mastery (nested)
+                    for cat in talents_data.get("single_skill_mastery", {}).values():
+                        for group in cat:
+                            for t in group.get("talents", []):
+                                if "talent_name" in t: all_talents.append(t["talent_name"])
+                
+                self.talent_spinner.values = tuple(sorted(all_talents)) if all_talents else ('No Talents Found',)
                 
             except Exception as e:
                 logging.error(f"Failed to load initial rules data: {e}")
@@ -124,6 +144,12 @@ class CharacterCreationScreen(Screen):
         self.devotion_spinner.bind(text=self.on_devotion_select)
         form_layout.add_widget(self.devotion_spinner)
 
+        # Talent Choice
+        form_layout.add_widget(Label(text="Starting Talent:", size_hint_y=None, height='30dp'))
+        self.talent_spinner = Spinner(text='Select Talent...', values=('Loading...',), size_hint_y=None, height='44dp')
+        self.talent_spinner.bind(text=self.on_talent_select)
+        form_layout.add_widget(self.talent_spinner)
+
         # Placeholder for dynamic feature spinners – they will be added to self.form_layout later
         # Feature spinners will be loaded dynamically based on selected kingdom
 
@@ -163,8 +189,16 @@ class CharacterCreationScreen(Screen):
         except Exception as e:
             logging.error(f"Error fetching features for kingdom {kingdom}: {e}")
             features = {}
+        
         # Create spinners for each feature
-        for f_key, options in sorted(features.items()):
+        # Sort keys numerically (F1, F2, ... F10)
+        def sort_key(item):
+            key = item[0]
+            if key.startswith("F") and key[1:].isdigit():
+                return int(key[1:])
+            return 999
+
+        for f_key, options in sorted(features.items(), key=sort_key):
             # Label
             self.form_layout.add_widget(Label(text=f"{f_key}:", size_hint_y=None, height='30dp'))
             spinner = Spinner(text='Loading...', values=tuple(options) if options else ('None',), size_hint_y=None, height='44dp')
@@ -205,17 +239,25 @@ class CharacterCreationScreen(Screen):
     def on_devotion_select(self, spinner, text):
         self.selected_options["devotion"] = text
 
+    def on_talent_select(self, spinner, text):
+        self.selected_options["ability_talent"] = text
+
     def submit_character(self, instance):
         name = self.selected_options.get("name")
         if not name:
             print("Name is required!")
             return
         try:
+            # Construct feature choices list of objects
+            feature_choices_list = []
+            for f_id, choice_name in self.selected_options.get("features", {}).items():
+                feature_choices_list.append({"feature_id": f_id, "choice_name": choice_name})
+
             new_char = char_schemas.CharacterCreate(
                 name=name,
                 kingdom=self.selected_options.get("kingdom", "Unknown"),
                 ability_school=self.selected_options.get("ability_school", "Unknown"),
-                feature_choices=list(self.selected_options.get("features", {}).values()),
+                feature_choices=feature_choices_list,
                 origin_choice=self.selected_options.get("origin", "Unknown"),
                 childhood_choice=self.selected_options.get("childhood", "Unknown"),
                 coming_of_age_choice=self.selected_options.get("coming_of_age", "Unknown"),

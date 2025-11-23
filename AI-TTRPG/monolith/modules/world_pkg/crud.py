@@ -8,7 +8,7 @@ import logging
 
 # --- MONOLITH IMPORT ---
 # Import our new, self-contained map module
-# from .. import map as map_api # MOVED TO SERVICES
+from .. import map as map_api
 # --- END IMPORT ---
 
 logger = logging.getLogger("monolith.world.crud")
@@ -101,6 +101,106 @@ def update_location_annotations(db: Session, location_id: int, annotations: dict
         db.commit()
         db.refresh(db_loc)
     return db_loc
+
+
+# ============================================================================
+# REACTIVE STORY ENGINE: World State Management
+# ============================================================================
+
+def update_player_reputation(db: Session, location_id: int, delta: int) -> models.GameState:
+    """
+    Updates the global player reputation.
+    Ignores location_id as reputation is now global.
+    """
+    game_state = get_game_state(db)
+    current_rep = game_state.player_reputation or 0
+    new_rep = max(-100, min(100, current_rep + delta))
+    game_state.player_reputation = new_rep
+    logger.info(f"Updated global reputation: {current_rep} -> {new_rep}")
+    db.commit()
+    db.refresh(game_state)
+    return game_state
+
+
+def set_combat_outcome(db: Session, location_id: int, outcome: str) -> Optional[models.Location]:
+    """
+    Records the last combat outcome for a location.
+    """
+    db_loc = get_location(db, location_id)
+    if db_loc:
+        db_loc.last_combat_outcome = outcome
+        logger.info(f"Set combat outcome for location {location_id}: {outcome}")
+        db.commit()
+        db.refresh(db_loc)
+    return db_loc
+
+
+def update_kingdom_resources(db: Session, region_id: int, delta: int) -> models.GameState:
+    """
+    Updates the global kingdom resource level.
+    Ignores region_id as resources are now global.
+    """
+    game_state = get_game_state(db)
+    current_resources = game_state.kingdom_resource_level or 100
+    new_resources = max(0, min(100, current_resources + delta))
+    game_state.kingdom_resource_level = new_resources
+    logger.info(f"Updated global resources: {current_resources} -> {new_resources}")
+    db.commit()
+    db.refresh(game_state)
+    return game_state
+
+
+def get_game_state(db: Session) -> models.GameState:
+    """
+    Retrieves the global game state (ID=1). Creates it if missing.
+    """
+    state = db.query(models.GameState).get(1)
+    if not state:
+        state = models.GameState(id=1, player_reputation=0, kingdom_resource_level=100)
+        db.add(state)
+        db.commit()
+        db.refresh(state)
+    return state
+
+def update_game_state(db: Session, updates: Dict[str, Any]) -> models.GameState:
+    """
+    Updates the global game state with the provided dictionary.
+    """
+    state = get_game_state(db)
+    for key, value in updates.items():
+        if hasattr(state, key):
+            setattr(state, key, value)
+    
+    db.commit()
+    db.refresh(state)
+    return state
+
+def get_world_state_context(db: Session, location_id: int):
+    """
+    Builds a WorldStateContext for event engine evaluation.
+    Now uses the global GameState model.
+    """
+    from ..story_pkg.schemas import WorldStateContext
+    
+    # Get Location for tags/context
+    location = get_location(db, location_id)
+    if not location:
+        raise HTTPException(status_code=404, detail="Location not found")
+    
+    # Get Global State
+    game_state = get_game_state(db)
+    
+    context = WorldStateContext(
+        player_reputation=game_state.player_reputation,
+        kingdom_resource_level=game_state.kingdom_resource_level,
+        last_combat_outcome=location.last_combat_outcome, # Keep this local for now? Or move to global?
+        # The user prompt implied global state variables, but combat outcome is often local.
+        # However, the prompt said "last_event_text" is in GameState.
+        # I'll keep combat outcome local as it makes sense, but use global rep/resources.
+        current_location_tags=location.tags or []
+    )
+    
+    return context
 
 # --- NPC Instance ---
 def get_npc(db: Session, npc_id: int) -> Optional[models.NpcInstance]:
@@ -310,6 +410,98 @@ def delete_item(db: Session, item_id: int) -> bool:
         return True
     return False
 
-# --- CONTEXT GETTER (MOVED TO SERVICES) ---
-# def get_location_context(db: Session, location_id: int):
-#     ... moved to services.py ...
+# --- CONTEXT GETTER (MODIFIED) ---
+def get_location_context(db: Session, location_id: int):
+    """
+    Retrieves the full context for a given location, including region,
+    NPCs, and items.
+
+    *** REFACTORED: This function now handles on-demand map generation. ***
+    """
+    logger.info(f"Getting full context for location_id: {location_id}")
+    location = db.query(models.Location).filter(models.Location.id == location_id).first()
+    if not location:
+        logger.error(f"Location not found for id: {location_id}")
+        raise HTTPException(status_code=404, detail="Location not found")
+
+    # --- NEW: On-Demand Map Generation ---
+    if not location.generated_map_data:
+        logger.warning(f"Location {location_id} ('{location.name}') has no map data. Generating one.")
+        try:
+            # 1. Get tags from location, or provide a default
+            tags = location.tags
+            if not tags or not isinstance(tags, list):
+                tags = ["forest", "outside", "clearing"] # A safe default
+
+            # 2. Call the monolith's map_api synchronously
+            map_response_dict = map_api.generate_map(tags=tags)
+
+            # 3. Create the Pydantic schema for the update
+            map_update_schema = schemas.LocationMapUpdate(
+                generated_map_data=map_response_dict.get("map_data"),
+                map_seed=map_response_dict.get("seed_used"),
+                spawn_points=map_response_dict.get("spawn_points")
+            )
+
+            # 4. Save the new map to the database
+            # This call commits to the DB and refreshes the 'location' object
+            update_location_map(db, location_id, map_update_schema)
+            
+            # 5. Save Flavor Context if available
+            flavor_data = map_response_dict.get("flavor_context")
+            if flavor_data:
+                # Convert Pydantic model to dict if it isn't already
+                if hasattr(flavor_data, 'model_dump'):
+                    flavor_dict = flavor_data.model_dump()
+                elif hasattr(flavor_data, 'dict'):
+                    flavor_dict = flavor_data.dict()
+                else:
+                    flavor_dict = flavor_data
+                
+                # Update annotations
+                current_annotations = location.ai_annotations or {}
+                current_annotations['flavor_context'] = flavor_dict
+                update_location_annotations(db, location_id, current_annotations)
+                logger.info(f"Saved flavor context for location {location_id}")
+
+            logger.info(f"Successfully generated and saved new map for location {location_id}.")
+
+        except Exception as e:
+            logger.exception(f"Failed to generate map for location {location_id}: {e}")
+            # Do not raise an error; we can still return the context without a map
+    # --- END NEW LOGIC ---
+
+    npcs = db.query(models.NpcInstance).filter(models.NpcInstance.location_id == location_id).all()
+    items = db.query(models.ItemInstance).filter(models.ItemInstance.location_id == location_id).all()
+
+    # Get Region name
+    region = db.query(models.Region).filter(models.Region.id == location.region_id).first()
+
+    # --- START OF NEW FIX ---
+    if not region:
+        logger.error(f"Data integrity error: Location {location_id} has region_id {location.region_id} but no matching region was found.")
+        raise HTTPException(status_code=500, detail=f"Data integrity error: Region {location.region_id} not found for location {location_id}.")
+
+    # Return a DICTIONARY (to match the old API response)
+    return {
+        "id": location.id, # <-- ADDED (was missing from your old code, but implied by schema)
+        "name": location.name,
+        "region_name": region.name,
+        "description": getattr(location, 'description', None),
+        "generated_map_data": location.generated_map_data,
+        "map_seed": location.map_seed,
+        "ai_annotations": location.ai_annotations,
+        "spawn_points": location.spawn_points, # <-- ADDED
+        # Use the Pydantic schemas to convert ORM objects
+        "npcs": [schemas.NpcInstance.from_orm(npc).model_dump() for npc in npcs],
+        "items": [schemas.ItemInstance.from_orm(item).model_dump() for item in items],
+        # Add traps and other fields if they exist in your schema/model
+        "trap_instances": [schemas.TrapInstance.from_orm(trap).model_dump() for trap in location.trap_instances],
+        "tags": location.tags,
+        "exits": location.exits,
+        "region": schemas.Region.from_orm(region).model_dump(),
+        # Use the current schema model names
+        "npcs": [schemas.NpcInstance.from_orm(npc) for npc in npcs],
+        "items": [schemas.ItemInstance.from_orm(item) for item in items],
+
+    }

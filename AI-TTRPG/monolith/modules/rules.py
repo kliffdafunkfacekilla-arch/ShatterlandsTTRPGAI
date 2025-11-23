@@ -23,13 +23,27 @@ def get_all_ability_schools() -> List[str]:
 def get_features_for_kingdom(kingdom: str) -> Dict[str, List[str]]:
     features = {}
     if not data_loader.KINGDOM_FEATURES:
+        # Fallback if data is missing
         for i in range(1, 10):
             features[f"F{i}"] = [f"Generic Feature {i}"]
         return features
-    for i in range(1, 10):
-        f_key = f"F{i}"
+    
+    # Dynamically iterate over all keys (F1, F2, F9, etc.)
+    # We filter for keys starting with 'F' followed by digits to be safe
+    feature_keys = [k for k in data_loader.KINGDOM_FEATURES.keys() if k.startswith("F") and k[1:].isdigit()]
+    
+    # Sort keys numerically (F1, F2, ... F9, F10)
+    feature_keys.sort(key=lambda x: int(x[1:]))
+
+    for f_key in feature_keys:
         feature_data = data_loader.KINGDOM_FEATURES.get(f_key, {})
-        lookup_key = "All" if f_key == "F9" else kingdom
+        # F9 (and potentially others in future) uses "All" instead of specific kingdoms
+        lookup_key = "All" if "All" in feature_data else kingdom
+        
+        # If the specific kingdom isn't found and "All" isn't there, try "All" as fallback
+        if lookup_key not in feature_data and "All" in feature_data:
+            lookup_key = "All"
+
         options = feature_data.get(lookup_key, [])
         features[f_key] = [opt["name"] for opt in options if "name" in opt]
     return features
@@ -66,6 +80,16 @@ def get_all_stats() -> List[str]:
 
 def get_all_skills() -> List[str]:
     return list(data_loader.SKILL_MAP.keys())
+
+def get_all_talents_data() -> Dict[str, Any]:
+    """Returns structured talent data."""
+    return data_loader.TALENT_DATA
+
+def get_ability_school(school_name: str) -> Dict[str, Any]:
+    """Returns data for a specific ability school."""
+    if not data_loader.ABILITY_DATA:
+        return {}
+    return data_loader.ABILITY_DATA.get(school_name, {})
 
 def get_ability_data(ability_name: str) -> Dict[str, Any]:
     if not data_loader.ABILITY_DATA:

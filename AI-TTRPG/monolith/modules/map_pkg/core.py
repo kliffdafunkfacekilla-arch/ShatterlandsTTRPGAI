@@ -256,16 +256,36 @@ def run_generation(algorithm: Dict[str, Any], seed: str, width_override: Optiona
 
     # 4. --- NEW: Generate AI Flavor ---
     flavor_data = None
+    
+    # Default fallback flavor
+    fallback_flavor = models.MapFlavorContext(
+        environment_description="A quiet area with no distinct features.",
+        visuals=["Standard terrain", "Nothing of note"],
+        sounds=["Silence", "Wind blowing"],
+        smells=["Earth", "Fresh air"],
+        combat_hits=["You strike true.", "The blow connects."],
+        combat_misses=["You miss.", "The attack goes wide."],
+        spell_casts=["Energy gathers.", "Magic flares."],
+        enemy_intros=["An enemy appears.", "You are not alone."]
+    )
+
     if ai_client:
         print("Requesting Map Flavor from AI...")
         # Use tags from algorithm definition to guide the AI (e.g., "forest", "creepy")
         map_tags = algorithm.get("required_tags", ["generic"])
-        flavor_dict = ai_client.generate_map_flavor(map_tags)
-
-        if flavor_dict:
-            flavor_data = models.MapFlavorContext(**flavor_dict)
+        try:
+            flavor_dict = ai_client.generate_map_flavor(map_tags)
+            if flavor_dict:
+                flavor_data = models.MapFlavorContext(**flavor_dict)
+            else:
+                print("AI returned empty flavor, using fallback.")
+                flavor_data = fallback_flavor
+        except Exception as e:
+            print(f"AI generation failed: {e}. Using fallback.")
+            flavor_data = fallback_flavor
     else:
-        print("AI Client not available, skipping flavor generation.")
+        print("AI Client not available, using fallback flavor.")
+        flavor_data = fallback_flavor
 
     # 5. Build Response
     return models.MapGenerationResponse(
