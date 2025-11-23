@@ -1,0 +1,54 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-8.3.4, pluggy-1.6.0 -- C:\Python313\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\AI-TTRPG
+plugins: anyio-4.10.0, asyncio-1.1.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 4 items
+
+tests/test_auth_integration.py::test_health_check_public PASSED          [ 25%]
+tests/test_auth_integration.py::test_map_generation_unauthorized PASSED  [ 50%]
+tests/test_auth_integration.py::test_map_generation_authorized PASSED    [ 75%]
+tests/test_auth_integration.py::test_character_endpoint_secured PASSED   [100%]
+
+============================== warnings summary ===============================
+monolith\modules\world_pkg\database.py:31
+  C:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\AI-TTRPG\monolith\modules\world_pkg\database.py:31: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    Base = declarative_base()
+
+..\..\..\..\..\..\Python313\Lib\site-packages\pydantic\_internal\_config.py:323: 15 warnings
+  C:\Python313\Lib\site-packages\pydantic\_internal\_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+monolith\modules\story_pkg\database.py:31
+  C:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\AI-TTRPG\monolith\modules\story_pkg\database.py:31: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    Base = declarative_base()
+
+monolith\modules\character_pkg\database.py:31
+  C:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\AI-TTRPG\monolith\modules\character_pkg\database.py:31: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    Base = declarative_base()
+
+monolith\main.py:19
+  C:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\AI-TTRPG\monolith\main.py:19: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+..\..\..\..\AppData\Roaming\Python\Python313\site-packages\fastapi\applications.py:4495
+  C:\Users\krazy\AppData\Roaming\Python\Python313\site-packages\fastapi\applications.py:4495: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+tests/test_auth_integration.py::test_map_generation_authorized
+  C:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\AI-TTRPG\monolith\modules\auth_pkg\utils.py:21: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 4 passed, 21 warnings in 2.18s ========================

@@ -1,0 +1,48 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-8.3.4, pluggy-1.6.0 -- C:\Python313\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\AI-TTRPG
+plugins: anyio-4.10.0, asyncio-1.1.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 0 items / 1 error
+
+=================================== ERRORS ====================================
+_______________ ERROR collecting tests/test_auth_integration.py _______________
+tests\test_auth_integration.py:3: in <module>
+    from monolith.main import app
+monolith\main.py:8: in <module>
+    from monolith.modules import story as story_module
+monolith\modules\story.py:15: in <module>
+    from .story_pkg import combat_handler as se_combat
+monolith\modules\story_pkg\combat_handler.py:6: in <module>
+    from . import crud, models, schemas, services
+monolith\modules\story_pkg\services.py:13: in <module>
+    from .. import world as world_api
+monolith\modules\world.py:16: in <module>
+    from .world_pkg import crud as we_crud
+monolith\modules\world_pkg\crud.py:165: in <module>
+    def update_game_state(db: Session, updates: Dict[str, Any]) -> models.GameState:
+E   NameError: name 'Dict' is not defined
+------------------------------- Captured stdout -------------------------------
+--- Map Generator: Loading Data ---
+Loaded 6 tile definitions.
+Loaded 2 generation algorithms.
+--- Map Generator: Data Loaded ---
+============================== warnings summary ===============================
+monolith\modules\world_pkg\database.py:31
+  C:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\AI-TTRPG\monolith\modules\world_pkg\database.py:31: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    Base = declarative_base()
+
+..\..\..\..\..\..\Python313\Lib\site-packages\pydantic\_internal\_config.py:323: 13 warnings
+  C:\Python313\Lib\site-packages\pydantic\_internal\_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+monolith\modules\story_pkg\database.py:31
+  C:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\AI-TTRPG\monolith\modules\story_pkg\database.py:31: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    Base = declarative_base()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+ERROR tests/test_auth_integration.py - NameError: name 'Dict' is not defined
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+======================== 15 warnings, 1 error in 3.50s ========================
