@@ -1,12 +1,15 @@
 # core.py
 import random
 import math
+import logging
 from typing import Dict, List, Optional, Any
 
 # Use relative import for models within the same package
 from . import models
 from .models import RollResult, TalentInfo, FeatureStatsResponse
 from . import data_loader # Import data_loader to access TECHNIQUES
+
+logger = logging.getLogger("rules.core")
 
 
 def calculate_modifier(score: int) -> int:
@@ -23,8 +26,8 @@ def calculate_modifier(score: int) -> int:
     """
     if not isinstance(score, int):
         # Basic type check for safety
-        print(
-            f"Warning: calculate_modifier received non-integer score: {score}. Using 10."
+        logger.warning(
+            f"calculate_modifier received non-integer score: {score}. Using 10."
         )
         score = 10
     return math.floor((score - 10) / 2)
@@ -71,7 +74,7 @@ def generate_npc_template_core(
                 final_stats[stat] += modifier
                 final_stats[stat] = max(1, final_stats[stat])
             except ValueError:
-                print(f"Warning: Invalid modifier format '{mod_str}' for stat '{stat}'")
+                logger.warning(f"Invalid modifier format '{mod_str}' for stat '{stat}'")
 
     # Quick math for Speed: Base 5 + (Reflexes Mod)
     reflexes = final_stats.get("Reflexes", 10)
@@ -133,8 +136,8 @@ def calculate_skill_mt_bonus(rank: int) -> int:
         int: The calculated mastery tier bonus.
     """
     if not isinstance(rank, int) or rank < 0:
-        print(
-            f"Warning: calculate_skill_mt_bonus received invalid rank: {rank}. Using 0."
+        logger.warning(
+            f"calculate_skill_mt_bonus received invalid rank: {rank}. Using 0."
         )
         rank = 0
     return math.floor(rank / 3)
@@ -315,7 +318,7 @@ def calculate_damage(damage_data: models.DamageRequest) -> models.DamageResponse
         # We just parse the dice string provided.
         num_dice, die_type = parse_dice_string(damage_data.base_damage_dice)
     except ValueError as e:
-        print(f"Error parsing dice string in core calculate_damage: {e}")
+        logger.error(f"Error parsing dice string in core calculate_damage: {e}")
         # Return zero damage
         return models.DamageResponse(
             damage_roll_details=[],
@@ -602,7 +605,7 @@ def get_status_effect(
         return models.StatusEffectResponse(**response_data)
     except Exception as e:
         # This might happen if the JSON data doesn't match the Pydantic model
-        print(f"Error creating StatusEffectResponse for '{found_key}': {e}")
+        logger.error(f"Error creating StatusEffectResponse for '{found_key}': {e}")
         raise ValueError(
             f"Data structure mismatch for status '{found_key}'. Check JSON against models.py. Error: {e}"
         )
@@ -672,8 +675,8 @@ def find_eligible_talents(
     unlocked_talents = []
 
     if not talent_data or not stats_list or not all_skills_map:
-        print(
-            "Warning: Missing required data (talents, stats list, or skills map) for talent lookup."
+        logger.warning(
+            "Missing required data (talents, stats list, or skills map) for talent lookup."
         )
         return []
 
@@ -752,11 +755,81 @@ def find_eligible_talents(
                                 )
                             )
                 elif skill_name:
-                    print(
-                        f"Warning: Skill '{skill_name}' from talent data not found in master skill map."
+                    logger.warning(
+                        f"Skill '{skill_name}' from talent data not found in master skill map."
                     )
 
     return unlocked_talents
+
+
+def _check_modifier_conditions(mod: models.PassiveModifier, context: Optional[Dict[str, Any]]) -> bool:
+    """Check if a modifier's conditions are met based on current context.
+    
+    Modifiers can have conditional requirements such as:
+    - "condition": "wielding_sword" - Only applies when wielding a sword weapon
+    - "condition": "hp_below_50" - Only applies when HP is below 50%
+    - "condition": "in_combat" - Only applies during combat
+    
+    Args:
+        mod: The passive modifier to check
+        context: Optional context data containing game state (equipment, combat status, etc.)
+    
+    Returns:
+        True if conditions are met or no conditions exist, False otherwise
+    """
+    # If no context provided or modifier has no condition field, always apply
+    if not context:
+        return True
+    
+    # Check if modifier has a condition field (extend PassiveModifier model if needed)
+    condition = getattr(mod, 'condition', None)
+    if not condition:
+        return True  # No conditions = always apply
+    
+    # Parse and evaluate conditions
+    if condition == "wielding_sword":
+        equipped_weapon = context.get("equipped_weapon", {})
+        weapon_category = equipped_weapon.get("category", "")
+        return "sword" in weapon_category.lower() or "blade" in weapon_category.lower()
+    
+    elif condition == "wielding_heavy_weapon":
+        equipped_weapon = context.get("equipped_weapon", {})
+        weapon_category = equipped_weapon.get("category", "")
+        return "heavy" in weapon_category.lower() or "great" in weapon_category.lower()
+    
+    elif condition == "hp_below_50":
+        current_hp = context.get("current_hp", 100)
+        max_hp = context.get("max_hp", 100)
+        return (current_hp / max(max_hp, 1)) < 0.5
+    
+    elif condition == "hp_below_25":
+        current_hp = context.get("current_hp", 100)
+        max_hp = context.get("max_hp", 100)
+        return (current_hp / max(max_hp, 1)) < 0.25
+    
+    elif condition == "in_combat":
+        return context.get("combat_active", False)
+    
+    elif condition == "wearing_heavy_armor":
+        equipped_armor = context.get("equipped_armor", {})
+        armor_category = equipped_armor.get("category", "")
+        return "heavy" in armor_category.lower()
+    
+    elif condition == "wearing_light_armor":
+        equipped_armor = context.get("equipped_armor", {})
+        armor_category = equipped_armor.get("category", "")
+        return "light" in armor_category.lower()
+    
+    elif condition.startswith("has_status:"):
+        # Example: "has_status:Poisoned"
+        required_status = condition.split(":", 1)[1]
+        active_status = context.get("status_effects", [])
+        return required_status in active_status
+    
+    else:
+        # Unknown condition - log warning and default to True to avoid breaking existing talents
+        logger.warning(f"Unknown modifier condition: '{condition}'. Defaulting to apply.")
+        return True
 
 
 def apply_passive_modifiers(
@@ -788,7 +861,9 @@ def apply_passive_modifiers(
     
     for talent in talents:
         for mod in talent.modifiers:
-            # TODO: Check conditions here if context is provided
+            # Check if modifier has conditions that need to be met
+            if not _check_modifier_conditions(mod, context):
+                continue  # Skip this modifier if conditions aren't met
             
             # Convert Pydantic model values to local variables for cleaner logic
             # PassiveModifier uses: effect_type, target, value

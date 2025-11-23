@@ -1,3 +1,8 @@
+"""
+Story adapter: Bridges the internal 'story_pkg' logic (combat, interaction, etc.) into the monolith event bus.
+
+Provides synchronous API functions for the Kivy client and registers async event bus handlers.
+"""
 import logging
 import asyncio
 from typing import Any, Dict, List
@@ -155,20 +160,56 @@ def rest_at_camp(rest_request: camp_schemas.CampRestRequest) -> Dict[str, Any]:
         db.close()
 
 def handle_narrative_prompt(actor_id: str, prompt_text: str) -> Dict[str, Any]:
-    """Generate a narrative response, using intent classification and deterministic routing before AI call."""
+    """Generate a narrative response using intent classification and deterministic routing.
+    
+    This function implements the AI gatekeeper pattern:
+    1. Classify intent using lightweight keyword matching
+    2. Route deterministic actions to coded logic
+    3. Only call expensive AI for truly narrative/creative requests
+    """
     logger.info(f"[story.sync] Narrative prompt from {actor_id}: {prompt_text}")
     try:
+        # Import here to avoid circular dependency
+        from .ai_dm_pkg.keyword_handler import classify_intent
+        
+        # Step 1: Intent Classification (Deterministic Filter)
+        action_intent = classify_intent(prompt_text)
+        logger.debug(f"[story.sync] Intent classified as: {action_intent.intent_type}, deterministic={action_intent.is_deterministic}")
+        
+        # Step 2: Deterministic Routing for known actions
+        if action_intent.is_deterministic:
+            intent_type = action_intent.intent_type
+            
+            if intent_type == "combat_action":
+                # Player typed something like "I attack the goblin"
+                # In production, this would parse the target and route to combat handler
+                return {"success": True, "message": "[Deterministic Combat Action] Use the combat system to attack."}
+            
+            elif intent_type == "shop_interaction":
+                # Player typed "buy potion" or similar
+                return {"success": True, "message": "[Deterministic Shop Action] Use the shop interface to trade."}
+            
+            elif intent_type == "inspect_item":
+                # Player typed "examine door" or similar
+                return {"success": True, "message": "[Deterministic Inspect] Use the inspect command to examine objects."}
+            
+            elif intent_type == "dialogue_action":
+                # Player typed "talk to guard" or similar
+                return {"success": True, "message": "[Deterministic Dialogue] Use the dialogue system to speak with NPCs."}
+            
+            # If we reach here with a deterministic flag but no handler, log warning
+            logger.warning(f"[story.sync] Deterministic intent '{intent_type}' has no handler, falling back to AI")
+        
+        # Step 3: AI Gatekeeper (Legacy check for backward compatibility)
         orchestrator = get_orchestrator()
-        # Intent classification using orchestrator's helper (local lightweight logic)
-        intent_info = orchestrator.classify_intent(prompt_text)
-        intent = intent_info.get("intent")
-        # Deterministic routing for known actionable intents
-        if intent in ("ACTION_SOCIAL", "ACTION_COMBAT"):
-            # For now, return a deterministic placeholder response
-            return {"success": True, "message": f"[Deterministic {intent.lower()} response placeholder]"}
-        # Narrative or unknown intent – fall back to AI DM
+        if not orchestrator.should_ai_be_called(action_intent.action_tags):
+            return {"success": True, "message": "[Simple Query] No AI needed for this request."}
+        
+        # Step 4: Call expensive AI-DM only for narrative/creative requests
+        logger.info(f"[story.sync] Invoking AI-DM for narrative request")
         response = ai_dm.get_narrative_response(actor_id, prompt_text)
         return response
+        
     except Exception as e:
         logger.exception(f"Call to AI DM module failed: {e}")
         return {"success": False, "message": "The world feels unresponsive..."}
