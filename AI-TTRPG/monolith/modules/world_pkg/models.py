@@ -162,3 +162,20 @@ class ItemInstance(Base):
 
     location = relationship("Location", back_populates="item_instances")
     npc = relationship("NpcInstance", back_populates="item_instances")
+
+# --- NEW MODEL: Global Game/World State ---
+class GameState(Base):
+    """
+    A single-row table to store global game state and reactive variables.
+    """
+    __tablename__ = 'game_state'
+    id = Column(Integer, primary_key=True) # Used to guarantee a single row (id=1)
+    
+    # Persistent Metrics for Event Engine Evaluation
+    player_reputation = Column(Integer, default=0, nullable=False)
+    kingdom_resource_level = Column(Integer, default=100, nullable=False)
+    
+    # Storing structured AI context for later use (e.g., save/load)
+    # Using JSON for schema-less data like the MapFlavorContext pydantic model.
+    last_map_flavor_context = Column(JSON, nullable=True) 
+    last_event_text = Column(String, nullable=True)

@@ -5,9 +5,18 @@ Responsibilities:
 - receive commands from UI or external callers
 - invoke modules synchronously when needed and listen to events
 """
-from typing import Any, Dict
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from typing import List, Dict, Any
 import asyncio
+
+from .modules.world_pkg.models import GameState
+from .modules.story_pkg.schemas import WorldStateContext, StoryEvent, EventConsequenceType
+from .modules.story_pkg.event_engine import check_and_generate_events
 from .event_bus import get_event_bus
+import logging
+
+logger = logging.getLogger("monolith.orchestrator")
 
 
 class Orchestrator:
@@ -21,6 +30,7 @@ class Orchestrator:
         self.state: Dict[str, Any] = {}
         self.bus = get_event_bus()
         self._lock = asyncio.Lock()
+        logger.info("Orchestrator Initialized.")
 
     async def start(self) -> None:
         """
@@ -60,145 +70,68 @@ class Orchestrator:
     # REACTIVE STORY ENGINE: Turn-Level Event Processing
     # ============================================================================
     
-    def process_turn_events(self, session, location_id: int) -> Dict[str, Any]:
-        """
-        Generates and processes reactive story events for the current turn.
+    def _get_current_state(self, session: Session) -> GameState:
+        """Retrieves or creates the single global GameState row."""
+        # Use a deterministic ID (1) for the single global row.
+        stmt = select(GameState).where(GameState.id == 1)
+        game_state = session.scalar(stmt)
         
-        This method:
-        1. Reads current world state from the database (location + region)
-        2. Generates events using the event engine
-        3. Applies event consequences (reputation, resources, etc.)
-        4. Persists state changes back to the database
-        
-        Args:
-            session: SQLAlchemy database session
-            location_id: The current location ID
-        
-        Returns:
-            Dict containing:
-                - events: List of generated StoryEvent objects
-                - state_changes: Dict of applied changes
-                - success: Boolean indicating if processing succeeded
-        """
-        try:
-            from .modules.world_pkg import crud as world_crud
-            from .modules.story_pkg.event_engine import check_and_generate_events
-            from .modules.story_pkg.schemas import EventConsequenceType
-            import logging
-            
-            logger = logging.getLogger("monolith.orchestrator")
-            
-            # 1. READ: Load current world state
-            logger.info(f"Processing turn events for location {location_id}")
-            context = world_crud.get_world_state_context(session, location_id)
-            
-            logger.debug(
-                f"World state: rep={context.player_reputation}, "
-                f"resources={context.kingdom_resource_level}, "
-                f"combat={context.last_combat_outcome}"
-            )
-            
-            # 2. GENERATE: Check for triggered events
-            events = check_and_generate_events(context)
-            
-            if not events:
-                logger.debug("No events triggered this turn")
-                return {
-                    "success": True,
-                    "events": [],
-                    "state_changes": {},
-                    "narrative": []
-                }
-            
-            # 3. APPLY/WRITE: Process event consequences
-            state_changes = {}
-            narrative_log = []
-            
-            for event in events:
-                logger.info(f"Processing event: {event.event_id}")
-                narrative_log.append(event.narrative_text)
-                
-                # Apply consequences based on type
-                if event.consequence_type == EventConsequenceType.WORLD_STATE_CHANGE:
-                    # Reputation changes
-                    if "reputation_bonus" in event.payload:
-                        delta = event.payload["reputation_bonus"]
-                        world_crud.update_player_reputation(session, location_id, delta)
-                        state_changes["reputation_delta"] = delta
-                        logger.info(f"Applied reputation bonus: +{delta}")
-                    
-                    # Resource changes
-                    if "resource_delta" in event.payload:
-                        location = world_crud.get_location(session, location_id)
-                        if location and location.region_id:
-                            delta = event.payload["resource_delta"]
-                            world_crud.update_kingdom_resources(
-                                session, location.region_id, delta
-                            )
-                            state_changes["resource_delta"] = delta
-                            logger.info(f"Applied resource change: {delta:+d}")
-                
-                elif event.consequence_type == EventConsequenceType.SPAWN_NPC:
-                    # Queue NPC spawn (implementation depends on game flow)
-                    npc_type = event.payload.get("npc_type", "unknown")
-                    count = event.payload.get("count", 1)
-                    state_changes.setdefault("queued_spawns", []).append({
-                        "type": npc_type,
-                        "count": count,
-                        "location_id": location_id
-                    })
-                    logger.info(f"Queued NPC spawn: {count}x {npc_type}")
-                
-                elif event.consequence_type == EventConsequenceType.ADD_QUEST_LOG:
-                    # Add quest to active quests
-                    quest_id = event.payload.get("quest_id")
-                    quest_title = event.payload.get("quest_title")
-                    state_changes.setdefault("new_quests", []).append({
-                        "id": quest_id,
-                        "title": quest_title
-                    })
-                    logger.info(f"Added quest: {quest_title}")
-                
-                elif event.consequence_type == EventConsequenceType.INITIATE_SKILL_CHALLENGE:
-                    # Queue skill challenge
-                    skill = event.payload.get("skill_check")
-                    dc = event.payload.get("difficulty", 15)
-                    state_changes.setdefault("skill_challenges", []).append({
-                        "skill": skill,
-                        "dc": dc
-                    })
-                    logger.info(f"Initiated skill challenge: {skill} DC {dc}")
-            
-            # Commit all state changes
+        if game_state is None:
+            # Initialize state if it doesn't exist (e.g., first run after migration)
+            game_state = GameState(id=1, player_reputation=0, kingdom_resource_level=100)
+            session.add(game_state)
             session.commit()
-            logger.info(f"Turn events processed successfully: {len(events)} events")
+            logger.warning("GameState row not found. Initializing new state (id=1).")
             
-            return {
-                "success": True,
-                "events": [
-                    {
-                        "id": e.event_id,
-                        "trigger": e.trigger_type.value,
-                        "consequence": e.consequence_type.value,
-                        "narrative": e.narrative_text
-                    }
-                    for e in events
-                ],
-                "state_changes": state_changes,
-                "narrative": narrative_log
-            }
-            
-        except Exception as e:
-            logger.exception(f"Failed to process turn events: {e}")
-            # Rollback on error
-            session.rollback()
-            return {
-                "success": False,
-                "error": str(e),
-                "events": [],
-                "state_changes": {},
-                "narrative": []
-            }
+        return game_state
+
+    def process_turn_events(self, session: Session, player_action_tags: List[str]) -> List[StoryEvent]:
+        """
+        The main game loop logic: reads current state, runs reactive event checks, 
+        applies consequences, and persists the updated state.
+        """
+        # 1. READ: Load current persistent state (GameState ORM model)
+        game_state = self._get_current_state(session)
+
+        # Build the immutable Pydantic context required by the event engine
+        context = WorldStateContext(
+            player_reputation=game_state.player_reputation,
+            kingdom_resource_level=game_state.kingdom_resource_level,
+            # Placeholder for combat outcomes, typically set by combat module
+            last_combat_outcome=None, 
+            current_location_tags=player_action_tags
+        )
+        
+        # 2. GENERATE: Check rules and generate reactive events
+        triggered_events = check_and_generate_events(context)
+        
+        # 3. APPLY: Process each generated event to modify the mutable ORM model
+        for event in triggered_events:
+            if event.consequence_type == EventConsequenceType.WORLD_STATE_CHANGE:
+                # Example: Apply a simple reputation change from the event payload
+                if 'reputation_mod' in event.payload:
+                    rep_mod = event.payload['reputation_mod']
+                    game_state.player_reputation += rep_mod
+                    logger.info(f"Applied Reputation Change: {rep_mod}. New Reputation: {game_state.player_reputation}")
+                
+                if 'global_morale_debuff' in event.payload:
+                    game_state.kingdom_resource_level -= event.payload['global_morale_debuff']
+
+                # Store the narrative for client-side logging/display
+                game_state.last_event_text = event.narrative_text
+                
+            elif event.consequence_type == EventConsequenceType.SPAWN_NPC:
+                # Future: Call NPC module to spawn entities based on payload
+                logger.info(f"Consequence: SPAWN_NPC triggered. Payload: {event.payload}")
+                
+            # NOTE: Other consequence types (COMBAT, QUEST) would call other 
+            # domain-specific service methods here.
+                
+        # 4. PERSIST: Commit the session to save changes to the single GameState row
+        session.commit()
+        
+        logger.info("Turn processing complete. State saved.")
+        return triggered_events
 
 
 # module-level orchestrator singleton for convenience

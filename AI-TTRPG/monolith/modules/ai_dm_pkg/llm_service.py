@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import hashlib
 import google.generativeai as genai
 from typing import List, Dict, Any, Optional
 
@@ -15,9 +16,43 @@ def clean_json_response(text: str) -> str:
         text = text[:-3]
     return text
 
+class LLMCache:
+    """
+    Simple in-memory cache for LLM responses to reduce latency and costs.
+    """
+    def __init__(self):
+        self._cache: Dict[str, Dict[str, Any]] = {}
+
+    def _generate_key(self, tags: List[str]) -> str:
+        """
+        Generates a deterministic cache key based on sorted tags.
+        """
+        # Sort tags to ensure ["forest", "dark"] == ["dark", "forest"]
+        sorted_tags = sorted([t.lower().strip() for t in tags])
+        key_str = "|".join(sorted_tags)
+        return hashlib.sha256(key_str.encode()).hexdigest()
+
+    def get(self, tags: List[str]) -> Optional[Dict[str, Any]]:
+        """Retrieves cached context if available."""
+        key = self._generate_key(tags)
+        result = self._cache.get(key)
+        if result:
+            logger.info(f"Cache HIT for tags: {tags}")
+        else:
+            logger.info(f"Cache MISS for tags: {tags}")
+        return result
+
+    def set(self, tags: List[str], data: Dict[str, Any]) -> None:
+        """Stores valid context in the cache."""
+        key = self._generate_key(tags)
+        self._cache[key] = data
+        logger.debug(f"Cached result for tags: {tags}")
+
+
 class LLMService:
     def __init__(self):
         self.model = None
+        self.cache = LLMCache()
         self._setup_client()
 
     def _setup_client(self):
@@ -37,7 +72,13 @@ class LLMService:
         """
         Generates a batch of flavor text based on map tags.
         Returns a dictionary matching MapFlavorContext.
+        Checks cache first.
         """
+        # 1. Check Cache
+        cached_result = self.cache.get(tags)
+        if cached_result:
+            return cached_result
+
         if not self.model:
             return self._get_fallback_flavor()
 
@@ -81,7 +122,12 @@ class LLMService:
             
             # Validate with Pydantic
             validated_context = MapFlavorContext(**data)
-            return validated_context.model_dump()
+            result_dict = validated_context.model_dump()
+            
+            # 2. Populate Cache
+            self.cache.set(tags, result_dict)
+            
+            return result_dict
 
         except Exception as e:
             logger.error(f"Flavor generation failed: {e}")
