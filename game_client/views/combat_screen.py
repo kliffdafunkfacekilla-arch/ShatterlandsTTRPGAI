@@ -331,7 +331,7 @@ class CombatScreen(Screen):
             self.combat_state['current_turn_index'] = (self.combat_state['current_turn_index'] + 1) % len(self.combat_state['turn_order'])
             self.check_turn()
 
-    def handle_player_action(self, actor_id: str, action: story_schemas.PlayerActionRequest):
+    def handle_player_action(self, actor_id: str, action: "story_schemas.PlayerActionRequest"):
         if not story_api: return
         try:
             combat_id = self.combat_state.get('id')
@@ -388,6 +388,13 @@ class CombatScreen(Screen):
             # Simple heuristic to detect hit/miss for flavor
             if "hits" in log_entry.lower(): hit_occurred = True
             if "misses" in log_entry.lower(): miss_occurred = True
+
+        # --- NEW: CHECK FOR REACTION ---
+        reaction_opp = response.get("reaction_opportunity")
+        if reaction_opp:
+            self.show_reaction_popup(reaction_opp)
+            return
+        # -------------------------------
 
         # 2. Instant Flavor Update (Optimization)
         flavor_text = ""
@@ -557,6 +564,42 @@ class CombatScreen(Screen):
         self.item_menu.add_widget(scroll)
         self.add_widget(self.item_menu)
 
+    def show_reaction_popup(self, data):
+        reactor = data.get('reactor_id')
+        trigger = data.get('trigger_id')
+        name = data.get('reaction_name')
+
+        content = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
+        content.add_widget(Label(text=f"{reactor}! {trigger} is moving past you.", font_size='16sp'))
+        content.add_widget(Label(text=f"Use {name}?", font_size='20sp', bold=True))
+
+        btns = BoxLayout(size_hint_y=0.4, spacing='10dp')
+
+        yes_btn = Button(text="Strike! (Yes)", background_color=(0, 1, 0, 1))
+        yes_btn.bind(on_release=lambda x: self.send_reaction_response("execute", data))
+
+        no_btn = Button(text="Ignore (No)", background_color=(1, 0, 0, 1))
+        no_btn.bind(on_release=lambda x: self.send_reaction_response("skip", data))
+
+        btns.add_widget(yes_btn)
+        btns.add_widget(no_btn)
+        content.add_widget(btns)
+
+        self.reaction_popup = Popup(title="Reaction Opportunity", content=content, size_hint=(0.6, 0.4), auto_dismiss=False)
+        self.reaction_popup.open()
+
+    def send_reaction_response(self, decision, data):
+        if hasattr(self, 'reaction_popup'):
+            self.reaction_popup.dismiss()
+
+        action = story_schemas.PlayerActionRequest(
+            action="resolve_reaction",
+            ready_action_details={"decision": decision}
+        )
+
+        reactor_id = data.get('reactor_id')
+        self.handle_player_action(reactor_id, action)
+
     def select_item(self, item_id: str, *args):
         self.close_item_menu()
         self.selected_item_id = item_id
@@ -614,25 +657,17 @@ class CombatScreen(Screen):
                 self.current_action = None
                 return True
 
-            # 1. Get current position
+            # --- Distance Check ---
             curr_x = self.active_combat_character.position_x
             curr_y = self.active_combat_character.position_y
-
-            # 2. Calculate Distance (Chebyshev: Diagonals count as 1 for simplicity, or 1.5 if you're hardcore)
-            # Burt says: Keep it simple for the prototype. 1 square = 1 distance.
-            dist_x = abs(tile_x - curr_x)
-            dist_y = abs(tile_y - curr_y)
-            distance = max(dist_x, dist_y) # Chebyshev distance
-
-            # 3. Get Speed (Default to 6 if not in stats)
-            # We check the 'stats' dictionary directly
+            distance = max(abs(tile_x - curr_x), abs(tile_y - curr_y))
             speed = self.active_combat_character.stats.get("Speed", 6)
 
-            # 4. The Check
             if distance > speed:
-                self.add_to_log(f"Too far! Speed is {speed}m (Target is {distance}m away).")
+                self.add_to_log(f"Too far! {distance}m > {speed}m.")
                 self.current_action = None
                 return True
+            # ----------------------
 
             # If we pass, send the action
             self.add_to_log(f"{self.active_combat_character.name} moves to ({tile_x}, {tile_y}).")
@@ -640,9 +675,6 @@ class CombatScreen(Screen):
                 action="move", coordinates=[tile_x, tile_y]
             )
             self.handle_player_action(self.active_combat_character.id, action)
-            self.current_action = None
-            return True
-
             self.current_action = None
             return True
         # --- END FIX ---
