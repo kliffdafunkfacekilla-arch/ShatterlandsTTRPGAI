@@ -184,6 +184,7 @@ class CharacterContextResponse(CharacterBase):
 
     # --- ADD THIS LINE ---
     portrait_id: Optional[str] = None # Add the portrait ID here
+    previous_state: Optional[Dict[str, Any]] = None # For AI Context Diffing
     # --- END ADD ---
 
     class Config:

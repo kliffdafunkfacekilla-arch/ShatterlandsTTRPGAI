@@ -1,0 +1,6 @@
+Sys path: ['C:\\Users\\krazy\\Documents\\GitHub\\ShatterlandsTTRPGAI\\AI-TTRPG', 'C:\\Users\\krazy\\Documents\\GitHub\\ShatterlandsTTRPGAI', 'C:\\Python313\\python313.zip', 'C:\\Python313\\DLLs', 'C:\\Python313\\Lib', 'C:\\Python313', 'C:\\Users\\krazy\\AppData\\Roaming\\Python\\Python313\\site-packages', 'C:\\Users\\krazy\\AppData\\Roaming\\Python\\Python313\\site-packages\\win32', 'C:\\Users\\krazy\\AppData\\Roaming\\Python\\Python313\\site-packages\\win32\\lib', 'C:\\Users\\krazy\\AppData\\Roaming\\Python\\Python313\\site-packages\\Pythonwin', 'C:\\Python313\\Lib\\site-packages', 'C:\\Users\\krazy\\Desktop\\my-voice-assistant\\V2\\piper1-gpl\\src']
+--- Map Generator: Loading Data ---
+Loaded 6 tile definitions.
+Loaded 2 generation algorithms.
+--- Map Generator: Data Loaded ---
+An error occurred: invalid syntax (services.py, line 5)

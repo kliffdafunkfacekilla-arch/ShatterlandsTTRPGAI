@@ -1,5 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Any, Dict
+from enum import Enum
 
 # --- StoryFlag ---
 class StoryFlagBase(BaseModel):
@@ -30,6 +31,16 @@ class ActiveQuestUpdate(BaseModel):
     description: Optional[str] = None
     steps: Optional[List[str]] = None
 
+# --- Story Seed ---
+class StorySeed(BaseModel):
+    """
+    A dormant plot point placed in the world.
+    """
+    id: str
+    trigger_type: str # e.g. "npc_talk", "enter_zone"
+    location_type: str # e.g. "forest"
+    data: Optional[Dict[str, Any]] = {} # Extra data
+
 # --- Campaign ---
 class CampaignBase(BaseModel):
     name: str
@@ -45,7 +56,7 @@ class Campaign(CampaignBase):
 # --- Orchestration ---
 class OrchestrationSpawnNpc(BaseModel):
     template_id: str
-    location_id: int
+    location_id:int
     name_override: Optional[str] = None
     coordinates: Optional[Any] = None
     current_hp: Optional[int] = None

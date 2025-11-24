@@ -10,6 +10,7 @@ from kivy.uix.screenmanager import Screen
 from kivy.properties import ObjectProperty, ListProperty, StringProperty
 from typing import Optional, List
 
+
 # --- Monolith Imports ---
 try:
     from monolith.modules import story as story_api
@@ -50,9 +51,8 @@ from kivy.clock import Clock
 from functools import partial
 from kivy.core.window import Window
 
-
 # Constants
-TILE_SIZE = 64
+TILE_SIZE = 64 
 
 class CombatScreen(Screen):
     # --- UI References ---
@@ -61,7 +61,7 @@ class CombatScreen(Screen):
     action_bar = ObjectProperty(None)
     map_view_anchor = ObjectProperty(None)
     map_view_widget = ObjectProperty(None)
-    narrative_label = ObjectProperty(None)
+    narrative_label = ObjectProperty(None) # For AI Narration
 
     # --- State ---
     combat_state = ObjectProperty(None)
@@ -69,7 +69,7 @@ class CombatScreen(Screen):
 
     # --- Party-based state ---
     party_contexts_list = ListProperty([])
-    active_combat_character = ObjectProperty(None, allownone=True)
+    active_combat_character = ObjectProperty(None, allownone=True) 
 
     log_text = StringProperty("Combat started.\n")
     current_action = StringProperty(None, allownone=True)
@@ -83,11 +83,11 @@ class CombatScreen(Screen):
         super().__init__(**kwargs)
         # --- Main Layout ---
         layout = BoxLayout(orientation='vertical', padding='10dp', spacing='5dp')
-
-        # 1. Narrative Box
+        
+        # 1. Narrative Box (Replacing simple title)
         self.narrative_label = Label(
-            text="The battle begins...",
-            font_size='16sp',
+            text="The battle begins...", 
+            font_size='16sp', 
             italic=True,
             size_hint_y=0.15,
             text_size=(Window.width - 40, None),
@@ -137,6 +137,11 @@ class CombatScreen(Screen):
 
         self.add_widget(layout)
         Window.bind(on_resize=self.center_layout)
+        
+    def center_layout(self, *args):
+        # Kivy's window binding expects this method to exist.
+        # Add widget positioning logic here later.
+        pass
 
     def _update_text_size(self, instance, value):
         instance.text_size = (instance.width - 20, None)
@@ -146,10 +151,11 @@ class CombatScreen(Screen):
         app = App.get_running_app()
         try:
             main_screen = app.root.get_screen('main_interface')
+            # Ensure we have party contexts
             if not main_screen.party_contexts:
-                logging.error("No party contexts found to start combat.")
-                app.root.current = 'main_interface'
-                return
+                 logging.error("No party contexts found to start combat.")
+                 app.root.current = 'main_interface'
+                 return
 
             player_ids = [p.id for p in main_screen.party_contexts]
             npc_ids = app.game_settings.get('pending_combat_npcs', ['goblin_scout'])
@@ -161,7 +167,7 @@ class CombatScreen(Screen):
                 npc_template_ids=npc_ids
             )
             self.combat_state = story_api.start_combat(start_req)
-            app.game_settings['combat_state'] = self.combat_state
+            app.game_settings['combat_state'] = self.combat_state 
 
         except Exception as e:
             logging.exception(f"Failed to start combat: {e}")
@@ -424,29 +430,14 @@ class CombatScreen(Screen):
             exit_btn.bind(on_release=self.end_combat)
             self.action_bar.add_widget(exit_btn)
             return
-
-        self.combat_state['current_turn_index'] = response.get('new_turn_index')
-        self.refresh_combat_context()
-        self.check_turn()
-
-    def update_narrative(self, logs: List[str], ai_dm_api):
-        """Calls the backend AI to texturize the logs."""
-        try:
-             story_text = ai_dm_api.generate_combat_narration(logs)
-             if story_text:
-                 self.narrative_label.text = story_text
-        except Exception as e:
-             logging.error(f"Narrative update failed: {e}")
-
-    def add_to_log(self, message: str):
-        logging.info(f"[CombatLog] {message}")
-        self.log_text += f"\n- {message}"
+        # Auto scroll logic would go here
 
     def end_combat(self, instance):
         app = App.get_running_app()
         if 'combat_state' in app.game_settings:
             del app.game_settings['combat_state']
 
+        # Refresh main screen state
         main_screen = app.root.get_screen('main_interface')
         if main_screen and self.party_contexts_list:
             main_screen.party_contexts = self.party_contexts_list
@@ -471,9 +462,9 @@ class CombatScreen(Screen):
                     if db_char:
                         new_contexts.append(char_services.get_character_context(db_char))
 
-            self.party_contexts_list = new_contexts
-            main_screen = App.get_running_app().root.get_screen('main_interface')
-            main_screen.party_contexts = new_contexts
+                self.party_contexts_list = new_contexts
+                main_screen = App.get_running_app().root.get_screen('main_interface')
+                main_screen.party_contexts = new_contexts
 
             self.map_view_widget.build_scene(self.location_context, self.party_contexts_list)
         except Exception as e:
@@ -487,9 +478,11 @@ class CombatScreen(Screen):
                     return "npc", npc
 
         for char_context in self.party_contexts_list:
-            if (char_context.position_x == tile_x and
+            if (
+                char_context.position_x == tile_x and
                 char_context.position_y == tile_y and
-                char_context.current_hp > 0):
+                char_context.current_hp > 0
+            ):
                 return "player", char_context.model_dump()
         return None
 
@@ -619,7 +612,7 @@ class CombatScreen(Screen):
             tile_id = tile_map[tile_y][tile_x]
         except IndexError:
             return False
-
+            
         # 0=Grass, 3=Stone Floor (Passable), others impassable
         if tile_id in [0, 3]:
             return True
@@ -650,7 +643,7 @@ class CombatScreen(Screen):
         if map_height == 0: return True
         tile_y = (map_height - 1) - int(local_pos[1] // TILE_SIZE)
 
-        # --- FIX: MOVE VALIDATION ---
+        # --- Move Action ---
         if self.current_action == "move":
             if not self.is_tile_passable(tile_x, tile_y):
                 self.add_to_log("You can't move there (Blocked).")
@@ -680,74 +673,36 @@ class CombatScreen(Screen):
         # --- END FIX ---
 
         target = self.get_target_at_coord(tile_x, tile_y)
-
-        # --- NEW: Smart Targeting Logic ---
-        if target:
-            target_type, target_data = target
-
-            is_friendly_action = False
-
-            # Check for friendly item
-            if self.current_action == "use_item" and self.selected_item_id == "item_health_potion_small":
-                is_friendly_action = True
-
-            # --- FIX STARTS HERE ---
-            # Check for friendly ability using the new Rules API lookup
-            if self.current_action == "use_ability" and self.selected_ability_id and rules_api:
-                ability_data = rules_api.get_ability_data(self.selected_ability_id)
-                if ability_data:
-                    t_type = ability_data.get("target_type", "enemy")
-                    # If the target is an ally or self, flag it as friendly
-                    if t_type in ["ally", "self", "area_ally", "ally_multi", "ally_or_self", "self_or_ally"]:
-                        is_friendly_action = True
-            # --- FIX ENDS HERE ---
-
-            target_id = None # Initialize target_id
-
-            # --- Target Validation ---
-
-            # Case 1: Hostile action on an enemy (OK)
-            if target_type == "npc" and not is_friendly_action:
-                target_id = f"npc_{target_data.get('id')}"
-
-            # Case 2: Friendly action on an ally (OK)
-            elif target_type == "player" and is_friendly_action:
-                target_id = target_data.get('id') # Already in "player_UUID" format
-
-            # Case 3: Hostile action on an ally (BAD)
-            elif target_type == "player" and not is_friendly_action:
-                self.add_to_log("You can't attack an ally!")
-                self.current_action = None
-                return True # Consume touch
-
-            # Case 4: Friendly action on an enemy (BAD)
-            elif target_type == "npc" and is_friendly_action:
-                self.add_to_log("You can't use that on an enemy!")
-                self.current_action = None
-                return True # Consume touch
-
+        
+        # Determine if action is friendly
+        is_friendly_action = False
+        if self.current_action == "use_item" and "potion" in str(self.selected_item_id):
+            is_friendly_action = True
+        elif self.current_action == "use_ability" and "Heal" in str(self.selected_ability_id):
+            is_friendly_action = True
+        
         target_id = None
         if target:
             t_type, t_data = target
-
+            
             if t_type == "npc" and not is_friendly_action:
                 target_id = f"npc_{t_data.get('id')}"
             elif t_type == "player" and is_friendly_action:
                 target_id = t_data.get('id')
             elif t_type == "player" and not is_friendly_action:
-                self.add_to_log("Cannot attack ally.")
-                return True
+                 self.add_to_log("Cannot attack ally.")
+                 return True
             elif t_type == "npc" and is_friendly_action:
-                self.add_to_log("Cannot heal enemy.")
-                return True
-            else:
-                self.add_to_log("Invalid target.")
-                return True
+                 self.add_to_log("Cannot heal enemy.")
+                 return True
+        else:
+            self.add_to_log("Invalid target.")
+            return True
 
         if target_id:
             ability_id = self.selected_ability_id if self.current_action == "use_ability" else None
             item_id = self.selected_item_id if self.current_action == "use_item" else None
-
+            
             action = story_schemas.PlayerActionRequest(
                 action=self.current_action,
                 target_id=target_id,

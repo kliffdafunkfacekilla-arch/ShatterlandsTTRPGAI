@@ -213,11 +213,76 @@ def find_spawn_points(grid: np.ndarray, floor_id: int, num_player: int = 1, num_
         "enemy": enemy_spawns
     }
 
+def _apply_injections(grid: np.ndarray, floor_id: int, injections: models.MapInjectionRequest):
+    """
+    Scans map for valid spots and overwrites tiles with injected items/NPCs.
+    Note: The current 'grid' is just integer tile IDs.
+    This function currently updates logic to RETURN injection coordinates,
+    as the grid itself only stores terrain types (IDs), not entities.
+
+    The entities will be returned as part of the spawn_points or a new field structure
+    if we were modifying the Map data structure deeper.
+
+    HOWEVER, the prompt says:
+    "It overwrites the items or npc_id fields of those specific tiles with the IDs from the injection request."
+
+    Since the current map_data is just `List[List[int]]` (tile IDs), we can't directly store item IDs there.
+
+    Instead, we will piggyback on the `spawn_points` dictionary or modify the response logic
+    to handle these injections during the World CRUD phase (entity spawning).
+
+    BUT, the prompt specifically asked to update `run_generation`.
+
+    Let's interpret "overwrites the items or npc_id fields of those specific tiles"
+    as needing a richer tile structure OR we just return the injection locations
+    so the caller (map_api or world_api) can spawn them.
+
+    The `MapGenerationResponse` has `spawn_points`. We can add specific keys there like:
+    "injection_item_X": [[x,y]]
+    "injection_npc_Y": [[x,y]]
+
+    Or we can assume `map_pkg` should handle the placement logic and return it.
+
+    Let's implement logic to find spots for them.
+    """
+    height, width = grid.shape
+    available_spots = []
+    for y in range(height):
+        for x in range(width):
+            if grid[y, x] == floor_id:
+                available_spots.append([x, y])
+
+    random.shuffle(available_spots)
+
+    injection_results = {}
+
+    # Place NPCs
+    for npc_id in injections.required_npc_ids:
+        if available_spots:
+            spot = available_spots.pop()
+            # We'll store this in a special key in spawn_points
+            key = f"injected_npc_{npc_id}"
+            if key not in injection_results:
+                injection_results[key] = []
+            injection_results[key].append(spot)
+
+    # Place Items
+    for item_id in injections.required_item_ids:
+        if available_spots:
+            spot = available_spots.pop()
+            key = f"injected_item_{item_id}"
+            if key not in injection_results:
+                injection_results[key] = []
+            injection_results[key].append(spot)
+
+    return injection_results
+
 # --- Main Generation Runner (UPDATED) ---
-def run_generation(algorithm: Dict[str, Any], seed: str, width_override: Optional[int] = None, height_override: Optional[int] = None) -> models.MapGenerationResponse:
+def run_generation(algorithm: Dict[str, Any], seed: str, width_override: Optional[int] = None, height_override: Optional[int] = None, injections: Optional[models.MapInjectionRequest] = None) -> models.MapGenerationResponse:
     """
     Selects and executes the chosen procedural generation algorithm and post-processing.
     INCLUDES AI FLAVOR GENERATION STEP.
+    Accepts optional injections to force items/NPCs onto the map.
     """
     algo_name = algorithm.get("name", "Unknown Algorithm")
     algo_type = algorithm.get("algorithm", "cellular_automata")
@@ -254,18 +319,45 @@ def run_generation(algorithm: Dict[str, Any], seed: str, width_override: Optiona
     floor_id = params.get("floor_tile_id", 0)
     spawn_points = find_spawn_points(grid_np, floor_id)
 
+    # 3.1 Apply Injections
+    if injections:
+        print(f"Applying map injections: {injections}")
+        injection_spawns = _apply_injections(grid_np, floor_id, injections)
+        # Merge into spawn_points
+        spawn_points.update(injection_spawns)
+
     # 4. --- NEW: Generate AI Flavor ---
     flavor_data = None
+    
+    # Default fallback flavor
+    fallback_flavor = models.MapFlavorContext(
+        environment_description="A quiet area with no distinct features.",
+        visuals=["Standard terrain", "Nothing of note"],
+        sounds=["Silence", "Wind blowing"],
+        smells=["Earth", "Fresh air"],
+        combat_hits=["You strike true.", "The blow connects."],
+        combat_misses=["You miss.", "The attack goes wide."],
+        spell_casts=["Energy gathers.", "Magic flares."],
+        enemy_intros=["An enemy appears.", "You are not alone."]
+    )
+
     if ai_client:
         print("Requesting Map Flavor from AI...")
         # Use tags from algorithm definition to guide the AI (e.g., "forest", "creepy")
         map_tags = algorithm.get("required_tags", ["generic"])
-        flavor_dict = ai_client.generate_map_flavor(map_tags)
-
-        if flavor_dict:
-            flavor_data = models.MapFlavorContext(**flavor_dict)
+        try:
+            flavor_dict = ai_client.generate_map_flavor(map_tags)
+            if flavor_dict:
+                flavor_data = models.MapFlavorContext(**flavor_dict)
+            else:
+                print("AI returned empty flavor, using fallback.")
+                flavor_data = fallback_flavor
+        except Exception as e:
+            print(f"AI generation failed: {e}. Using fallback.")
+            flavor_data = fallback_flavor
     else:
-        print("AI Client not available, skipping flavor generation.")
+        print("AI Client not available, using fallback flavor.")
+        flavor_data = fallback_flavor
 
     # 5. Build Response
     return models.MapGenerationResponse(

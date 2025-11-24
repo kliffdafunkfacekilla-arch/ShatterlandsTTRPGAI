@@ -2,7 +2,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 from . import models, schemas
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import HTTPException
 import logging
 
@@ -12,23 +12,6 @@ from .. import map as map_api
 # --- END IMPORT ---
 
 logger = logging.getLogger("monolith.world.crud")
-
-# --- Faction ---
-def get_faction(db: Session, faction_id: int) -> Optional[models.Faction]:
-    """
-    Retrieves a faction by ID.
-    """
-    return db.query(models.Faction).filter(models.Faction.id == faction_id).first()
-
-def create_faction(db: Session, faction: schemas.FactionCreate) -> models.Faction:
-    """
-    Creates a new faction entry in the database.
-    """
-    db_faction = models.Faction(**faction.dict())
-    db.add(db_faction)
-    db.commit()
-    db.refresh(db_faction)
-    return db_faction
 
 # --- Region ---
 def get_region(db: Session, region_id: int) -> Optional[models.Region]:
@@ -101,6 +84,106 @@ def update_location_annotations(db: Session, location_id: int, annotations: dict
         db.commit()
         db.refresh(db_loc)
     return db_loc
+
+
+# ============================================================================
+# REACTIVE STORY ENGINE: World State Management
+# ============================================================================
+
+def update_player_reputation(db: Session, location_id: int, delta: int) -> models.GameState:
+    """
+    Updates the global player reputation.
+    Ignores location_id as reputation is now global.
+    """
+    game_state = get_game_state(db)
+    current_rep = game_state.player_reputation or 0
+    new_rep = max(-100, min(100, current_rep + delta))
+    game_state.player_reputation = new_rep
+    logger.info(f"Updated global reputation: {current_rep} -> {new_rep}")
+    db.commit()
+    db.refresh(game_state)
+    return game_state
+
+
+def set_combat_outcome(db: Session, location_id: int, outcome: str) -> Optional[models.Location]:
+    """
+    Records the last combat outcome for a location.
+    """
+    db_loc = get_location(db, location_id)
+    if db_loc:
+        db_loc.last_combat_outcome = outcome
+        logger.info(f"Set combat outcome for location {location_id}: {outcome}")
+        db.commit()
+        db.refresh(db_loc)
+    return db_loc
+
+
+def update_kingdom_resources(db: Session, region_id: int, delta: int) -> models.GameState:
+    """
+    Updates the global kingdom resource level.
+    Ignores region_id as resources are now global.
+    """
+    game_state = get_game_state(db)
+    current_resources = game_state.kingdom_resource_level or 100
+    new_resources = max(0, min(100, current_resources + delta))
+    game_state.kingdom_resource_level = new_resources
+    logger.info(f"Updated global resources: {current_resources} -> {new_resources}")
+    db.commit()
+    db.refresh(game_state)
+    return game_state
+
+
+def get_game_state(db: Session) -> models.GameState:
+    """
+    Retrieves the global game state (ID=1). Creates it if missing.
+    """
+    state = db.query(models.GameState).get(1)
+    if not state:
+        state = models.GameState(id=1, player_reputation=0, kingdom_resource_level=100)
+        db.add(state)
+        db.commit()
+        db.refresh(state)
+    return state
+
+def update_game_state(db: Session, updates: Dict[str, Any]) -> models.GameState:
+    """
+    Updates the global game state with the provided dictionary.
+    """
+    state = get_game_state(db)
+    for key, value in updates.items():
+        if hasattr(state, key):
+            setattr(state, key, value)
+    
+    db.commit()
+    db.refresh(state)
+    return state
+
+def get_world_state_context(db: Session, location_id: int):
+    """
+    Builds a WorldStateContext for event engine evaluation.
+    Now uses the global GameState model.
+    """
+    from ..story_pkg.schemas import WorldStateContext
+    
+    # Get Location for tags/context
+    location = get_location(db, location_id)
+    if not location:
+        raise HTTPException(status_code=404, detail="Location not found")
+    
+    # Get Global State
+    game_state = get_game_state(db)
+    
+    context = WorldStateContext(
+        player_reputation=game_state.player_reputation,
+        kingdom_resource_level=game_state.kingdom_resource_level,
+        last_combat_outcome=location.last_combat_outcome, # Keep this local for now? Or move to global?
+        # The user prompt implied global state variables, but combat outcome is often local.
+        # However, the prompt said "last_event_text" is in GameState.
+        # I'll keep combat outcome local as it makes sense, but use global rep/resources.
+        current_location_tags=location.tags or []
+    )
+    
+    return context
 
 # --- NPC Instance ---
 def get_npc(db: Session, npc_id: int) -> Optional[models.NpcInstance]:
@@ -346,6 +429,24 @@ def get_location_context(db: Session, location_id: int):
             # 4. Save the new map to the database
             # This call commits to the DB and refreshes the 'location' object
             update_location_map(db, location_id, map_update_schema)
+            
+            # 5. Save Flavor Context if available
+            flavor_data = map_response_dict.get("flavor_context")
+            if flavor_data:
+                # Convert Pydantic model to dict if it isn't already
+                if hasattr(flavor_data, 'model_dump'):
+                    flavor_dict = flavor_data.model_dump()
+                elif hasattr(flavor_data, 'dict'):
+                    flavor_dict = flavor_data.dict()
+                else:
+                    flavor_dict = flavor_data
+                
+                # Update annotations
+                current_annotations = location.ai_annotations or {}
+                current_annotations['flavor_context'] = flavor_dict
+                update_location_annotations(db, location_id, current_annotations)
+                logger.info(f"Saved flavor context for location {location_id}")
+
             logger.info(f"Successfully generated and saved new map for location {location_id}.")
 
         except Exception as e:

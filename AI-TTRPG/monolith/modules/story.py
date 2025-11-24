@@ -1,17 +1,14 @@
-# AI-TTRPG/monolith/modules/story.py
 """
-Story adapter: Bridges the internal 'story_pkg' logic (combat,
-interaction, etc.) into the monolith event bus.
+Story adapter: Bridges the internal 'story_pkg' logic (combat, interaction, etc.) into the monolith event bus.
 
-This module is the primary synchronous API endpoint for the Kivy client.
+Provides synchronous API functions for the Kivy client and registers async event bus handlers.
 """
-from typing import Any, Dict, List
-import asyncio
 import logging
-import httpx # This import is no longer used but safe to keep
+import asyncio
+from typing import Any, Dict, List
 from ..event_bus import get_event_bus
 
-# Import from this module's *own* internal package
+# Internal package imports
 from .story_pkg import combat_handler as se_combat
 from .story_pkg import interaction_handler as se_interaction
 from .story_pkg import schemas as se_schemas
@@ -23,75 +20,26 @@ from .camp_pkg import schemas as camp_schemas
 from .story_pkg import database as se_db
 from .story_pkg import crud as se_crud
 from .story_pkg import models as se_models
+from .story_pkg import director # Import the director
 from . import ai_dm
+# from ..simulation import run_simulation_turn # This relative import is failing in tests
+# We can import it from the module if we are running from monolith root
+from . import simulation # It is in the same directory 'modules'
+from ..orchestrator import get_orchestrator
+from .character_pkg import services as character_api
 
 logger = logging.getLogger("monolith.story")
 
-# --- NEW SYNCHRONOUS COMBAT API FUNCTIONS ---
-
-def start_combat(start_request: se_schemas.CombatStartRequest) -> Dict[str, Any]:
-    """
-    Synchronous API for the client to start a combat encounter.
-
-    Initializes a combat encounter based on the provided request, including determining
-    participants and initiative.
-
-    Args:
-        start_request (se_schemas.CombatStartRequest): The request object containing combat setup details.
-
-    Returns:
-        Dict[str, Any]: A dictionary summarizing the initialized combat encounter.
-    """
-    logger.info(f"[story.sync] start_combat command received: {start_request.model_dump_json(indent=2)}")
-    db = se_db.SessionLocal()
-    try:
-        # Call the (now synchronous) combat handler function
-        db_combat = se_combat.start_combat(db, start_request)
-
-        # Manually build the response dictionary from the DB model
-        participants = []
-        for p in getattr(db_combat, "participants", []):
-            participants.append({
-                "actor_id": p.actor_id,
-                "actor_type": p.actor_type,
-                "initiative_roll": getattr(p, "initiative_roll", 0)
-            })
-
-        response = {
-            "id": getattr(db_combat, "id", None),
-            "location_id": getattr(db_combat, "location_id", None),
-            "status": getattr(db_combat, "status", "error"),
-            "turn_order": getattr(db_combat, "turn_order", []),
-            "current_turn_index": getattr(db_combat, "current_turn_index", 0),
-            "participants": participants
-        }
-        return response
-
-    except Exception as e:
-        logger.exception(f"Failed to start combat: {e}")
-        raise # Re-raise the exception so the client knows it failed
-    finally:
-        db.close()
-
+# ---------------------------------------------------------------------------
+# Core synchronous API functions
+# ---------------------------------------------------------------------------
 
 def add_experience(char_id: str, xp_amount: int) -> Dict[str, Any]:
-    """
-    Adds experience points to a character.
-
-    Also handles level-up logic if the experience threshold is met.
-
-    Args:
-        char_id (str): The unique identifier of the character.
-        xp_amount (int): The amount of experience to add.
-
-    Returns:
-        Dict[str, Any]: The updated character context.
-    """
+    """Add experience points to a character and return updated context."""
     logger.info(f"[story.sync] add_experience command received: char={char_id}, xp={xp_amount}")
     db = se_db.SessionLocal()
     try:
         updated_char = se_experience.add_experience(db, char_id, xp_amount)
-        # We need the full context, not just the character model
         from .character_pkg import services as char_services
         return char_services.get_character_context(db, updated_char).model_dump()
     except Exception as e:
@@ -100,19 +48,8 @@ def add_experience(char_id: str, xp_amount: int) -> Dict[str, Any]:
     finally:
         db.close()
 
-
-# --- SHOP API FUNCTIONS ---
-
 def get_shop_inventory(shop_id: str) -> Dict[str, Any]:
-    """
-    Retrieves the inventory for a specific shop.
-
-    Args:
-        shop_id (str): The unique identifier of the shop.
-
-    Returns:
-        Dict[str, Any]: A dictionary containing the shop's inventory.
-    """
+    """Retrieve inventory for a specific shop."""
     logger.info(f"[story.sync] get_shop_inventory command received: shop_id={shop_id}")
     try:
         return se_shop.get_shop_inventory(shop_id)
@@ -121,20 +58,7 @@ def get_shop_inventory(shop_id: str) -> Dict[str, Any]:
         raise
 
 def buy_item(char_id: str, shop_id: str, item_id: str, quantity: int) -> Dict[str, Any]:
-    """
-    Handles the transaction of a character buying an item from a shop.
-
-    Deducts currency from the character and adds the item to their inventory.
-
-    Args:
-        char_id (str): The unique identifier of the character.
-        shop_id (str): The unique identifier of the shop.
-        item_id (str): The item template identifier.
-        quantity (int): The number of items to purchase.
-
-    Returns:
-        Dict[str, Any]: The updated character context.
-    """
+    """Buy an item from a shop for a character."""
     logger.info(f"[story.sync] buy_item command received: char={char_id}, shop={shop_id}, item={item_id}, qty={quantity}")
     db = se_db.SessionLocal()
     try:
@@ -147,20 +71,7 @@ def buy_item(char_id: str, shop_id: str, item_id: str, quantity: int) -> Dict[st
         db.close()
 
 def sell_item(char_id: str, shop_id: str, item_id: str, quantity: int) -> Dict[str, Any]:
-    """
-    Handles the transaction of a character selling an item to a shop.
-
-    Removes the item from the character's inventory and adds currency.
-
-    Args:
-        char_id (str): The unique identifier of the character.
-        shop_id (str): The unique identifier of the shop.
-        item_id (str): The item template identifier to sell.
-        quantity (int): The number of items to sell.
-
-    Returns:
-        Dict[str, Any]: The updated character context.
-    """
+    """Sell an item to a shop for a character."""
     logger.info(f"[story.sync] sell_item command received: char={char_id}, shop={shop_id}, item={item_id}, qty={quantity}")
     db = se_db.SessionLocal()
     try:
@@ -172,18 +83,8 @@ def sell_item(char_id: str, shop_id: str, item_id: str, quantity: int) -> Dict[s
     finally:
         db.close()
 
-
 def get_dialogue_node(dialogue_id: str, node_id: str) -> Dict[str, Any]:
-    """
-    Retrieves a specific node from a dialogue tree.
-
-    Args:
-        dialogue_id (str): The identifier of the dialogue tree.
-        node_id (str): The identifier of the specific node to retrieve.
-
-    Returns:
-        Dict[str, Any]: The dialogue node data.
-    """
+    """Retrieve a specific node from a dialogue tree."""
     logger.info(f"[story.sync] get_dialogue_node command received: dialogue={dialogue_id}, node={node_id}")
     try:
         return se_dialogue.get_dialogue_node(dialogue_id, node_id)
@@ -192,28 +93,15 @@ def get_dialogue_node(dialogue_id: str, node_id: str) -> Dict[str, Any]:
         raise
 
 def handle_player_action(combat_id: int, actor_id: str, action: se_schemas.PlayerActionRequest) -> Dict[str, Any]:
-    """
-    Processes a player's combat action.
-
-    Args:
-        combat_id (int): The ID of the current combat encounter.
-        actor_id (str): The ID of the actor performing the action.
-        action (se_schemas.PlayerActionRequest): The details of the action to perform.
-
-    Returns:
-        Dict[str, Any]: The result of the action, including combat updates.
-    """
+    """Process a player's combat action."""
     logger.info(f"[story.sync] player_action command received for combat {combat_id}: {actor_id}")
     db = se_db.SessionLocal()
     try:
         combat = se_crud.get_combat_encounter(db, combat_id)
         if not combat:
             raise RuntimeError(f"Combat {combat_id} not found")
-
-        # Call the (now synchronous) combat handler function
         result_schema = se_combat.handle_player_action(db, combat, actor_id, action)
         return result_schema.model_dump()
-
     except Exception as e:
         logger.exception(f"Error handling player action: {e}")
         raise
@@ -221,100 +109,64 @@ def handle_player_action(combat_id: int, actor_id: str, action: se_schemas.Playe
         db.close()
 
 def handle_npc_action(combat_id: int) -> Dict[str, Any]:
-    """
-    Triggers the AI to determine and execute an action for the current NPC turn.
-
-    Args:
-        combat_id (int): The ID of the current combat encounter.
-
-    Returns:
-        Dict[str, Any]: The result of the NPC's action.
-    """
+    """Determine and execute an NPC action for the current turn."""
     logger.info(f"[story.sync] handle_npc_action command received for combat {combat_id}")
     db = se_db.SessionLocal()
     try:
         combat = se_crud.get_combat_encounter(db, combat_id)
         if not combat:
             raise RuntimeError(f"Combat {combat_id} not found")
-
         current_actor_id = combat.turn_order[combat.current_turn_index]
         if not current_actor_id.startswith("npc_"):
-             raise RuntimeError(f"It is not an NPC's turn. Actor: {current_actor_id}")
-
-        # 1. Determine the action
+            raise RuntimeError(f"It is not an NPC's turn. Actor: {current_actor_id}")
         action_request = se_combat.determine_npc_action(db, combat, current_actor_id)
-
-        # 2. Execute the action
         if action_request is None:
-            # NPC chose to wait or is Staggered
             result_schema = se_combat.handle_no_action(db, combat, current_actor_id, reason="is processing...")
         else:
             result_schema = se_combat.handle_player_action(db, combat, current_actor_id, action_request)
-
         return result_schema.model_dump()
-
     except Exception as e:
         logger.exception(f"Error handling NPC action: {e}")
         raise
     finally:
         db.close()
 
-
-# --- EXISTING NARRATIVE/INTERACTION FUNCTIONS ---
-
 def handle_interaction(request: se_schemas.InteractionRequest) -> Dict[str, Any]:
-    """
-    Handles an interaction request between an actor and a target object.
-
-    Args:
-        request (se_schemas.InteractionRequest): The interaction details.
-
-    Returns:
-        Dict[str, Any]: The result of the interaction.
-    """
+    """Handle an interaction request between an actor and a target object."""
     logger.info(f"[story.sync] Handling interaction: Actor '{request.actor_id}' -> Target '{request.target_object_id}'")
+
+    # --- DIRECTOR HOOK: Check for Story Seed ---
+    try:
+        if request.target_object_id.startswith("seed_"):
+            # This is a story seed interaction
+            # We assume campaign_id=1 for single player MVP, or we'd fetch from actor context
+            db = se_db.SessionLocal()
+            try:
+                camp_director = director.get_director(db, campaign_id=1)
+                generated_quest = camp_director.resolve_seed(request.target_object_id)
+
+                # Format response as a narrative message
+                # In a full impl, this would create the quest in DB and notify client.
+                return {
+                    "success": True,
+                    "message": f"QUEST TRIGGERED: {generated_quest['title']}\n{generated_quest['description']}",
+                    "updated_annotations": {"quest_data": generated_quest}
+                }
+            finally:
+                db.close()
+    except Exception as e:
+        logger.error(f"Director hook failed: {e}")
+    # -------------------------------------------
+
     try:
         response_model = se_interaction.handle_interaction(request)
         return response_model.model_dump()
     except Exception as e:
         logger.exception(f"[story.sync] Interaction handling failed: {e}")
-        return {
-            "success": False,
-            "message": f"An unexpected error occurred: {e}",
-            "updated_annotations": None,
-            "items_added": None,
-            "items_removed": None,
-        }
-
-def handle_narrative_prompt(actor_id: str, prompt_text: str) -> Dict[str, Any]:
-    """
-    Generates a narrative response for a user prompt via the AI DM.
-
-    Args:
-        actor_id (str): The ID of the actor providing the prompt.
-        prompt_text (str): The user's input text.
-
-    Returns:
-        Dict[str, Any]: The AI DM's response.
-    """
-    logger.info(f"[story.sync] Narrative prompt from {actor_id}: {prompt_text}")
-    try:
-        response = ai_dm.get_narrative_response(actor_id, prompt_text)
-        return response
-    except Exception as e:
-        logger.exception(f"Call to AI DM module failed: {e}")
-        return {"success": False, "message": "The world feels unresponsive..."}
+        return {"success": False, "message": f"An unexpected error occurred: {e}"}
 
 def get_all_quests(campaign_id: int) -> List[Dict[str, Any]]:
-    """
-    Retrieves all active quests associated with a campaign.
-
-    Args:
-        campaign_id (int): The ID of the campaign.
-
-    Returns:
-        List[Dict[str, Any]]: A list of active quest dictionaries.
-    """
+    """Retrieve all active quests for a campaign."""
     db = se_db.SessionLocal()
     try:
         db_quests = se_crud.get_all_quests(db, campaign_id)
@@ -322,19 +174,8 @@ def get_all_quests(campaign_id: int) -> List[Dict[str, Any]]:
     finally:
         db.close()
 
-
 def rest_at_camp(rest_request: camp_schemas.CampRestRequest) -> Dict[str, Any]:
-    """
-    Processes a camp rest action for a character.
-
-    Recovers resources based on the type of rest and supplies used.
-
-    Args:
-        rest_request (camp_schemas.CampRestRequest): The details of the rest action.
-
-    Returns:
-        Dict[str, Any]: The updated character context.
-    """
+    """Process a camp rest action for a character."""
     logger.info(f"[story.sync] rest_at_camp command received: {rest_request.model_dump_json(indent=2)}")
     db = se_db.SessionLocal()
     try:
@@ -342,33 +183,87 @@ def rest_at_camp(rest_request: camp_schemas.CampRestRequest) -> Dict[str, Any]:
         return updated_character_context.model_dump()
     except Exception as e:
         logger.exception(f"Failed to rest at camp: {e}")
-        raise # Re-raise the exception so the client knows it failed
+        raise
     finally:
         db.close()
 
+def handle_narrative_prompt(actor_id: str, prompt_text: str) -> Dict[str, Any]:
+    """Generate a narrative response using intent classification and deterministic routing.
+    
+    This function implements the AI gatekeeper pattern:
+    1. Classify intent using lightweight keyword matching
+    2. Route deterministic actions to coded logic
+    3. Only call expensive AI for truly narrative/creative requests
+    """
+    logger.info(f"[story.sync] Narrative prompt from {actor_id}: {prompt_text}")
+    try:
+        # Import here to avoid circular dependency
+        from .ai_dm_pkg.keyword_handler import classify_intent
+        
+        # Step 1: Intent Classification (Deterministic Filter)
+        action_intent = classify_intent(prompt_text)
+        logger.debug(f"[story.sync] Intent classified as: {action_intent.intent_type}, deterministic={action_intent.is_deterministic}")
+        
+        # Step 2: Deterministic Routing for known actions
+        if action_intent.is_deterministic:
+            intent_type = action_intent.intent_type
+            
+            if intent_type == "combat_action":
+                # Player typed something like "I attack the goblin"
+                # In production, this would parse the target and route to combat handler
+                return {"success": True, "message": "[Deterministic Combat Action] Use the combat system to attack."}
+            
+            elif intent_type == "shop_interaction":
+                # Player typed "buy potion" or similar
+                return {"success": True, "message": "[Deterministic Shop Action] Use the shop interface to trade."}
+            
+            elif intent_type == "inspect_item":
+                # Player typed "examine door" or similar
+                return {"success": True, "message": "[Deterministic Inspect] Use the inspect command to examine objects."}
+            
+            elif intent_type == "dialogue_action":
+                # Player typed "talk to guard" or similar
+                return {"success": True, "message": "[Deterministic Dialogue] Use the dialogue system to speak with NPCs."}
+            
+            # If we reach here with a deterministic flag but no handler, log warning
+            logger.warning(f"[story.sync] Deterministic intent '{intent_type}' has no handler, falling back to AI")
+        
+        # Step 3: AI Gatekeeper (Legacy check for backward compatibility)
+        orchestrator = get_orchestrator()
+        if not orchestrator.should_ai_be_called(action_intent.action_tags):
+            return {"success": True, "message": "[Simple Query] No AI needed for this request."}
+        
+        # Step 4: Call expensive AI-DM only for narrative/creative requests
+        logger.info(f"[story.sync] Invoking AI-DM for narrative request")
+        response = ai_dm.get_narrative_response(actor_id, prompt_text)
+        return response
+        
+    except Exception as e:
+        logger.exception(f"Call to AI DM module failed: {e}")
+        return {"success": False, "message": "The world feels unresponsive..."}
 
-# --- ASYNC EVENT BUS REGISTRATION (Unused by client, for internal monolith) ---
-
+# ---------------------------------------------------------------------------
+# Async event bus registration (internal use)
+# ---------------------------------------------------------------------------
 async def _on_command_start_combat(topic: str, payload: Dict[str, Any]) -> None:
     bus = get_event_bus()
     logger.info(f"[story] (async) start_combat command received: {payload}")
     try:
         start_req = se_schemas.CombatStartRequest(**payload)
-        # This is async, but we can't call our new sync function.
-        # This async path is for *internal* module calls, not the client.
         db = se_db.SessionLocal()
         try:
             db_combat = se_combat.start_combat(db, start_req)
         finally:
             db.close()
-
         participants = []
         for p in getattr(db_combat, "participants", []):
-            participants.append({ "actor_id": p.actor_id, "actor_type": p.actor_type, "initiative_roll": getattr(p, "initiative_roll", 0) })
+            participants.append({"actor_id": p.actor_id, "actor_type": p.actor_type, "initiative_roll": getattr(p, "initiative_roll", 0)})
         await bus.publish("story.combat_initialized", {
-            "combat_id": getattr(db_combat, "id", None), "location_id": getattr(db_combat, "location_id", None),
-            "turn_order": getattr(db_combat, "turn_order", []), "current_turn_index": getattr(db_combat, "current_turn_index", 0),
-            "participants": participants
+            "combat_id": getattr(db_combat, "id", None),
+            "location_id": getattr(db_combat, "location_id", None),
+            "turn_order": getattr(db_combat, "turn_order", []),
+            "current_turn_index": getattr(db_combat, "current_turn_index", 0),
+            "participants": participants,
         })
     except Exception as e:
         logger.exception(f"Failed to start combat: {e}")
@@ -385,9 +280,7 @@ async def _on_command_player_action(topic: str, payload: Dict[str, Any]) -> None
         return
     try:
         action_req = se_schemas.PlayerActionRequest(**action_data)
-        # Call the *synchronous* API function
         result_dict = handle_player_action(combat_id, actor_id, action_req)
-
         await bus.publish("story.player_action_resolved", {"combat_id": combat_id, "result": result_dict})
     except Exception as e:
         logger.exception(f"Error handling player action: {e}")
@@ -403,18 +296,14 @@ async def _on_command_interact(topic: str, payload: Dict[str, Any]) -> None:
         if "actor_id" not in sanitized and "actor" in sanitized:
             sanitized["actor_id"] = sanitized.pop("actor")
         if "location_id" not in sanitized:
-            sanitiz_loc = 1 # Fallback
-            # Try to get location from actor
+            sanitiz_loc = 1
             try:
                 actor_ctx = character_api.get_character_context(sanitized["actor_id"])
                 sanitiz_loc = actor_ctx.get("current_location_id", 1)
             except Exception:
-                pass # Use fallback
+                pass
             sanitized["location_id"] = sanitiz_loc
-
         req = se_schemas.InteractionRequest(**sanitized)
-
-        # Call the *synchronous* API function
         resp = handle_interaction(req)
         await bus.publish("story.interaction_resolved", resp)
     except Exception as e:
@@ -425,11 +314,28 @@ async def _on_command_advance_narrative(topic: str, payload: Dict[str, Any]) -> 
     bus = get_event_bus()
     logger.info(f"[story] (async) advance_narrative command: {payload}")
     node_id = payload.get("node_id")
+
+    # --- Integration Hook: Quest Completion / Narrative Advance ---
+    # Simplified trigger: If node_id indicates completion
+    if node_id and "complete" in node_id:
+        db = se_db.SessionLocal()
+        try:
+             camp_director = director.get_director(db, campaign_id=1)
+             camp_director.record_event(f"Narrative Advanced: {node_id}")
+
+             # Trigger Simulation Turn
+             events = simulation.run_simulation_turn()
+             logger.info(f"Simulation Turn Processed: {events}")
+
+             # Check if we need to generate new beat?
+             # Handled by next interaction usually or explicit check
+        finally:
+             db.close()
+
     await bus.publish("story.narrative_advanced", {"node_id": node_id, "timestamp": "now"})
 
 def register(orchestrator) -> None:
     bus = get_event_bus()
-    # subscribe to story commands
     asyncio.create_task(bus.subscribe("command.story.start_combat", _on_command_start_combat))
     asyncio.create_task(bus.subscribe("command.story.interact", _on_command_interact))
     asyncio.create_task(bus.subscribe("command.story.advance_narrative", _on_command_advance_narrative))

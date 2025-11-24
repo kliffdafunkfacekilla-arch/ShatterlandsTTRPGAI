@@ -12,17 +12,18 @@ from . import save_manager
 
 logger = logging.getLogger("monolith.save_api")
 
-def save_game(slot_name: str) -> Dict[str, Any]:
+def save_game(slot_name: str, active_character_id: str = None) -> Dict[str, Any]:
     """
     Saves the entire game state to a file.
     :param slot_name: The name for the save slot (e.g., "my_save_1").
+    :param active_character_id: Optional ID of the currently active character.
     :return: A dictionary with {"success": True} or {"success": False, "error": ...}
     """
     if not slot_name:
         return {"success": False, "error": "Save name cannot be empty."}
     try:
         # Calls the internal manager function
-        return save_manager._save_game_internal(slot_name)
+        return save_manager._save_game_internal(slot_name, active_character_id=active_character_id)
     except Exception as e:
         logger.exception(f"save_api: Save game failed for slot '{slot_name}'")
         return {"success": False, "error": str(e)}

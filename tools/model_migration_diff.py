@@ -26,6 +26,14 @@ def find_services() -> List[str]:
     if not os.path.isdir(MONOLITH_DIR):
         return services
     for name in os.listdir(MONOLITH_DIR):
+        # Check for flat structure: modules/world_pkg
+        if name.endswith("_pkg"):
+            pkg_dir = os.path.join(MONOLITH_DIR, name)
+            alembic_dir = os.path.join(pkg_dir, "alembic", "versions")
+            if os.path.isdir(pkg_dir) and os.path.isdir(alembic_dir):
+                services.append(name.replace("_pkg", ""))
+                continue
+
         path = os.path.join(MONOLITH_DIR, name)
         # A module is "stateful" if it has a `_pkg` subdir containing alembic
         pkg_dir = os.path.join(path, f"{name}_pkg")
@@ -39,8 +47,15 @@ def load_model_tables(service_name: str) -> Dict[str, Set[str]]:
     """Import the models module for a service and return a mapping table_name -> set(column_name)."""
     result: Dict[str, Set[str]] = {}
 
-    # Path to the models.py file, e.g., .../modules/world/world_pkg/models.py
-    models_path = os.path.join(MONOLITH_DIR, service_name, f"{service_name}_pkg", 'models.py')
+    # Try flat structure first
+    models_path = os.path.join(MONOLITH_DIR, f"{service_name}_pkg", 'models.py')
+    if not os.path.exists(models_path):
+        # Fallback to nested structure
+        models_path = os.path.join(MONOLITH_DIR, service_name, f"{service_name}_pkg", 'models.py')
+
+    if not os.path.exists(models_path):
+        print(f"[WARN] models.py not found for {service_name} at {models_path}; skipping")
+        return result
 
     if not os.path.exists(models_path):
         print(f"[WARN] models.py not found for {service_name} at {models_path}; skipping")
@@ -107,7 +122,11 @@ def parse_migration_columns(migration_text: str) -> Dict[str, Set[str]]:
 
 def load_migrations(service_name: str) -> Dict[str, Set[str]]:
     """Read all migration files under <service_name>_pkg/alembic/versions."""
-    migrations_dir = os.path.join(MONOLITH_DIR, service_name, f"{service_name}_pkg", "alembic", "versions")
+    # Try flat structure first
+    migrations_dir = os.path.join(MONOLITH_DIR, f"{service_name}_pkg", "alembic", "versions")
+    if not os.path.isdir(migrations_dir):
+        # Fallback to nested structure
+        migrations_dir = os.path.join(MONOLITH_DIR, service_name, f"{service_name}_pkg", "alembic", "versions")
     result: Dict[str, Set[str]] = {}
 
     if not os.path.isdir(migrations_dir):

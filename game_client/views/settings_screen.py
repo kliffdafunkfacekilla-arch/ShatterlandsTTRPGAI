@@ -1,4 +1,5 @@
-# game_client/views/settings_screen.py"""
+# game_client/views/settings_screen.py
+"""
 The Settings screen.
 Allows the user to change audio volume and accessibility options.
 """

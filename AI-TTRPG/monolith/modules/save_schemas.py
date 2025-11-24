@@ -33,6 +33,10 @@ class CharacterSave(BaseModel):
     position_x: int = 1
     position_y: int = 1
     portrait_id: Optional[str] = None
+    
+    # --- ADD THIS LINE ---
+    previous_state: Optional[Dict[str, Any]] = {} # For AI Context Diffing
+    # --- END ADD ---
 
     class Config:
         from_attributes = True
@@ -41,9 +45,16 @@ class CharacterSave(BaseModel):
 class FactionSave(BaseModel):
     id: int
     name: str
-    status: str
-    disposition: Dict[str, Any]
-    resources: int
+    goals: Optional[str] = None
+    strength: int = 100
+    relationship_matrix: Dict[str, Any] = {}
+
+    # Backward compatibility with old save files might be needed if strictly loading old JSON
+    # but since this is a schema for the NEW model structure:
+    # We will assume new saves will use this.
+    # If loading an old save, we might need a migration script or defaults.
+    # The Pydantic model will default 'goals' to None if missing.
+    # But 'strength' and 'relationship_matrix' are new.
 
     class Config:
         from_attributes = True
@@ -125,6 +136,17 @@ class CampaignSave(BaseModel):
     class Config:
         from_attributes = True
 
+class CampaignStateSave(BaseModel):
+    id: int
+    campaign_id: int
+    current_act: int
+    plot_points: Dict[str, Any]
+    narrative_tags: List[str]
+    active_seeds: List[Any]
+
+    class Config:
+        from_attributes = True
+
 class ActiveQuestSave(BaseModel):
     id: int
     title: str
@@ -155,6 +177,7 @@ class SaveGameData(BaseModel):
     items: List[ItemInstanceSave] = []
     traps: List[TrapInstanceSave] = []
     campaigns: List[CampaignSave] = []
+    campaign_states: List[CampaignStateSave] = [] # --- NEW ---
     quests: List[ActiveQuestSave] = []
     flags: List[StoryFlagSave] = []
 
