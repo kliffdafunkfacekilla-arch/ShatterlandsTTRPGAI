@@ -2,6 +2,14 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 
 # --- API Request Model ---
+class MapInjectionRequest(BaseModel):
+    """
+    Specific items or NPCs to force into the generated map.
+    """
+    required_item_ids: List[str] = []
+    required_npc_ids: List[str] = []
+    atmosphere_tags: List[str] = []
+
 class MapGenerationRequest(BaseModel):
     """
     Inputs from the AI DM or story_engine.
@@ -10,6 +18,7 @@ class MapGenerationRequest(BaseModel):
     seed: Optional[str] = None # For reproducible generation
     width: Optional[int] = None # Optional override
     height: Optional[int] = None # Optional override
+    injections: Optional[MapInjectionRequest] = None # --- NEW ---
 
 # --- New: Context Containers ---
 class MapFlavorContext(BaseModel):

@@ -31,6 +31,16 @@ class ActiveQuestUpdate(BaseModel):
     description: Optional[str] = None
     steps: Optional[List[str]] = None
 
+# --- Story Seed ---
+class StorySeed(BaseModel):
+    """
+    A dormant plot point placed in the world.
+    """
+    id: str
+    trigger_type: str # e.g. "npc_talk", "enter_zone"
+    location_type: str # e.g. "forest"
+    data: Optional[Dict[str, Any]] = {} # Extra data
+
 # --- Campaign ---
 class CampaignBase(BaseModel):
     name: str

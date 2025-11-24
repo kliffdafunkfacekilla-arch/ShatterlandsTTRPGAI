@@ -13,23 +13,6 @@ from .. import map as map_api
 
 logger = logging.getLogger("monolith.world.crud")
 
-# --- Faction ---
-def get_faction(db: Session, faction_id: int) -> Optional[models.Faction]:
-    """
-    Retrieves a faction by ID.
-    """
-    return db.query(models.Faction).filter(models.Faction.id == faction_id).first()
-
-def create_faction(db: Session, faction: schemas.FactionCreate) -> models.Faction:
-    """
-    Creates a new faction entry in the database.
-    """
-    db_faction = models.Faction(**faction.dict())
-    db.add(db_faction)
-    db.commit()
-    db.refresh(db_faction)
-    return db_faction
-
 # --- Region ---
 def get_region(db: Session, region_id: int) -> Optional[models.Region]:
     """
