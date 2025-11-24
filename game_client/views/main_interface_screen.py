@@ -1,7 +1,5 @@
-"""
-The Main Game Interface screen.
-Handles the exploration UI and game logic.
-"""
+"The Main Game Interface screen.
+Handles the exploration UI and game logic."
 import logging
 from kivy.app import App
 from kivy.lang import Builder
@@ -323,7 +321,7 @@ class MainInterfaceScreen(Screen):
                 if not db_char:
                     raise Exception(f"Character '{char_name}' not found in database.")
 
-                context = char_services.get_character_context(db, db_char.id)
+                context = char_services.get_character_context(db_char)
                 self.party_contexts.append(context)
                 loaded_contexts.append(context)
 

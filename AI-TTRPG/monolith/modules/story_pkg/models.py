@@ -9,23 +9,6 @@ class Campaign(Base):
     main_plot_summary = Column(Text, nullable=True)
     active_quests = relationship("ActiveQuest", back_populates="campaign")
 
-class CampaignState(Base):
-    """
-    Advanced state tracking for the Campaign Director.
-    """
-    __tablename__ = "campaign_state"
-    id = Column(Integer, primary_key=True, index=True)
-    campaign_id = Column(Integer, ForeignKey("campaigns.id")) # Link to Campaign
-    current_act = Column(Integer, default=1)
-    # Stores major/minor beats structure:
-    # { "major_beats": ["intro", "climax"], "completed_beats": [] }
-    plot_points = Column(JSON, default={})
-    # Narrative tags for context: ["cult", "poison", "ancient_ruins"]
-    narrative_tags = Column(JSON, default=[])
-    # Active Seeds waiting to be triggered:
-    # [{"id": "seed_1", "type": "npc_talk", "location_type": "forest"}]
-    active_seeds = Column(JSON, default=[])
-
 class ActiveQuest(Base):
     __tablename__ = "active_quests"
     id = Column(Integer, primary_key=True, index=True)

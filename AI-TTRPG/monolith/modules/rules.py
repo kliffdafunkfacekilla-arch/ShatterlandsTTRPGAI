@@ -48,22 +48,20 @@ def get_features_for_kingdom(kingdom: str) -> Dict[str, List[str]]:
         features[f_key] = [opt["name"] for opt in options if "name" in opt]
     return features
 
-# Background wrappers
+def get_origin_choices() -> List[Dict[str, Any]]:
+    return data_loader.ORIGIN_CHOICES
 
-def get_origin_choices() -> List[str]:
-    return [item["name"] for item in data_loader.ORIGIN_CHOICES]
+def get_childhood_choices() -> List[Dict[str, Any]]:
+    return data_loader.CHILDHOOD_CHOICES
 
-def get_childhood_choices() -> List[str]:
-    return [item["name"] for item in data_loader.CHILDHOOD_CHOICES]
+def get_coming_of_age_choices() -> List[Dict[str, Any]]:
+    return data_loader.COMING_OF_AGE_CHOICES
 
-def get_coming_of_age_choices() -> List[str]:
-    return [item["name"] for item in data_loader.COMING_OF_AGE_CHOICES]
+def get_training_choices() -> List[Dict[str, Any]]:
+    return data_loader.TRAINING_CHOICES
 
-def get_training_choices() -> List[str]:
-    return [item["name"] for item in data_loader.TRAINING_CHOICES]
-
-def get_devotion_choices() -> List[str]:
-    return [item["name"] for item in data_loader.DEVOTION_CHOICES]
+def get_devotion_choices() -> List[Dict[str, Any]]:
+    return data_loader.DEVOTION_CHOICES
 
 # Logic wrappers
 
@@ -128,12 +126,67 @@ def _get_data(data_key: str) -> Any:
         return {}
     return data_loader.load_json_data(filename)
 
-def register(orchestrator):
-    """Registers the rules module."""
-    logger.info("Rules module registered.")
+    if action_type == "attack_roll":
+        for tag in tags:
+            key = f"contested_check:{tag}"
+            if key in aggregated["roll_bonuses"]:
+                bonuses["attack_roll_bonus"] += aggregated["roll_bonuses"][key]
+        for tag in tags:
+            if tag in aggregated["skill_bonuses"]:
+                bonuses["attack_roll_bonus"] += aggregated["skill_bonuses"][tag]
 
+    elif action_type == "defense_roll":
+        for tag in tags:
+            key = f"contested_check:{tag}"
+            if key in aggregated["roll_bonuses"]:
+                bonuses["defense_roll_bonus"] += aggregated["roll_bonuses"][key]
+        for tag in tags:
+            if tag in aggregated["skill_bonuses"]:
+                bonuses["defense_roll_bonus"] += aggregated["skill_bonuses"][tag]
+
+    elif action_type == "damage_roll":
+        bonuses["damage_bonus"] += aggregated["damage_bonuses"]
+    
+    return bonuses
+
+def get_injury_effects(location: str, severity: str) -> Dict:
+    # Wrapper for safety as combat_handler depends on it
+    # (Actual implementation requires looking up injury effects data which is in INJURY_EFFECTS global)
+    # _get_data("injury_effects")
+    injury_data = _get_data("injury_effects")
+    if not injury_data: return {}
+
+    loc_data = injury_data.get(location, {})
+    sub_loc = loc_data.get("Torso", {}) # Defaulting sub-location
+
+    # Severity string to int mapping
+    sev_int = "1"
+    if severity.lower() == "minor": sev_int = "1"
+    elif severity.lower() == "major": sev_int = "3"
+
+    return sub_loc.get(sev_int, {})
+
+def find_eligible_talents_api(payload: Dict) -> List[Dict]:
+    stats = payload.get("stats", {})
+    skills = payload.get("skills", {})
+    talents = rules_core.find_eligible_talents(
+        stats_in=stats,
+        skills_in=skills,
+        talent_data=_get_data("talent_data"),
+        stats_list=_get_data("stats_list"),
+        all_skills_map=_get_data("all_skills")
+    )
+    return [t.model_dump() for t in talents]
+
+def register(orchestrator) -> None:
+    logger.info("[rules] module registered (self-contained logic)")
 # Load data on import
 try:
     data_loader.load_all_data()
 except Exception as e:
+
     logger.error(f"Failed to load rule data on import: {e}")
+
+
+    logger.error(f"Failed to load rule data on import: {e}")
+ main
