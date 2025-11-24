@@ -27,10 +27,11 @@ except Exception as e:
     logger.exception(f"[map] FATAL: Failed to load map data: {e}")
 
 # --- Public API Functions ---
-def generate_map(tags: List[str], seed: Optional[str] = None) -> Dict[str, Any]:
+def generate_map(tags: List[str], seed: Optional[str] = None, injections: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Generates a new map based on tags.
     This is a synchronous, CPU-bound operation.
+    Now accepts optional 'injections' dictionary (matching MapInjectionRequest).
     """
     logger.info(f"[map] Generating new map with tags: {tags}")
 
@@ -46,6 +47,15 @@ def generate_map(tags: List[str], seed: Optional[str] = None) -> Dict[str, Any]:
     # 2. Determine Seed
     seed_used = seed or str(time.time())
 
+    # 2.5 Prepare Injections
+    injection_request = None
+    if injections:
+        try:
+             # Validate and convert dict to model
+             injection_request = map_models.MapInjectionRequest(**injections)
+        except Exception as e:
+            logger.error(f"Invalid injection request: {e}. Proceeding without injections.")
+
     # 3. Run Generation
     try:
         # We call the core logic directly
@@ -53,7 +63,8 @@ def generate_map(tags: List[str], seed: Optional[str] = None) -> Dict[str, Any]:
             algorithm,
             seed_used,
             width_override=None,
-            height_override=None
+            height_override=None,
+            injections=injection_request
         )
         # Convert Pydantic model to dict for the caller
         return response_model.model_dump()

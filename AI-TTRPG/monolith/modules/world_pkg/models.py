@@ -42,18 +42,6 @@ class TrapInstance(Base):
     # Relationships
     location = relationship("Location", back_populates="trap_instances")
 
-class Faction(Base):
-    """
-    Tracks factions like 'The Silver Hand'.
-    This is high-level data for the AI DM.
-    """
-    __tablename__ = "factions"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True)
-    status = Column(String, default="neutral")
-    disposition = Column(JSON, default={}) # e.g., {"faction_id_2": "war"}
-    resources = Column(Integer, default=100)
-
 class Region(Base):
     """
     Tracks large areas like 'The Dragon's Spine Mountains'.
