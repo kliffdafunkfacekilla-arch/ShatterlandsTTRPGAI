@@ -21,7 +21,7 @@ from .story_pkg import database as se_db
 from .story_pkg import crud as se_crud
 from .story_pkg import models as se_models
 from . import ai_dm
-from .orchestrator import get_orchestrator
+from ..orchestrator import get_orchestrator
 from .character_pkg import services as character_api
 
 logger = logging.getLogger("monolith.story")

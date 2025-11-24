@@ -137,6 +137,11 @@ class CombatScreen(Screen):
 
         self.add_widget(layout)
         Window.bind(on_resize=self.center_layout)
+        
+    def center_layout(self, *args):
+        # Kivy's window binding expects this method to exist.
+        # Add widget positioning logic here later.
+        pass
 
     def _update_text_size(self, instance, value):
         instance.text_size = (instance.width - 20, None)
