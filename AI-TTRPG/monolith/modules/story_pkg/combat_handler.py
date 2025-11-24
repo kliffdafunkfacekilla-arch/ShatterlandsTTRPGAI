@@ -891,6 +891,59 @@ def check_combat_end_condition(db: Session, combat: models.CombatEncounter, log:
         return True
     return False
 
+def _calculate_enemy_xp(enemy_template_id: str, player_level: int) -> int:
+    """Calculate XP reward for defeating an enemy based on difficulty and player level.
+    
+    XP Formula:
+    - Base XP from difficulty tier (common: 10, uncommon: 25, rare: 50, elite: 100, boss: 250)
+    - Level scaling: +10 XP per enemy level above player level (challenging enemies)
+    - Level penalty: -5 XP per level below player (trivial enemies, min 5 XP)
+    
+    Args:
+        enemy_template_id: The NPC template ID (contains difficulty info)
+        player_level: Current player level for scaling
+    
+    Returns:
+        int: XP reward amount
+    """
+    # Parse difficulty from template ID (e.g., "procgen_forest_mammal_aggressive_common_123")
+    # or from explicit difficulty markers
+    difficulty_tiers = {
+        "common": 10,
+        "uncommon": 25,
+        "rare": 50,
+        "elite": 100,
+        "boss": 250,
+    }
+    
+    # Default to common if difficulty not found
+    base_xp = 10
+    for tier, xp_value in difficulty_tiers.items():
+        if tier in enemy_template_id.lower():
+            base_xp = xp_value
+            break
+    
+    # Level scaling (estimate enemy level from difficulty)
+    # Common/Uncommon ~= player level, Rare = +1-2, Elite = +3-5, Boss = +5+
+    enemy_level_estimate = player_level
+    if "rare" in enemy_template_id.lower():
+        enemy_level_estimate = player_level + 2
+    elif "elite" in enemy_template_id.lower():
+        enemy_level_estimate = player_level + 4
+    elif "boss" in enemy_template_id.lower():
+        enemy_level_estimate = player_level + 6
+    
+    level_diff = enemy_level_estimate - player_level
+    if level_diff > 0:
+        # Bonus for challenging enemies
+        base_xp += level_diff * 10
+    elif level_diff < 0:
+        # Penalty for trivial enemies
+        base_xp += level_diff * 5  # Negative, so subtract
+        base_xp = max(5, base_xp)  # Minimum 5  XP
+    
+    return base_xp
+
 def _grant_combat_rewards(db: Session, combat: models.CombatEncounter, log: List[str]):
     """
     Distributes loot and experience points to players after a victory.
@@ -939,11 +992,42 @@ def _grant_combat_rewards(db: Session, combat: models.CombatEncounter, log: List
                 logger.exception(f"Failed to grant loot for {p.actor_id}: {e}")
 
     # --- NEW: Grant XP ---
-    xp_reward = 50 # Placeholder fixed amount per combat
+    # Calculate XP based on defeated enemies
+    total_xp = 0
+    defeated_enemies = []
+    
+    for p in combat.participants:
+        if p.actor_type == "npc":
+            try:
+                _, npc_context = get_actor_context(p.actor_id)
+                if npc_context.get("current_hp", 0) <= 0:  # Enemy defeated
+                    template_id = npc_context.get("template_id")
+                    if template_id:
+                        defeated_enemies.append(template_id)
+            except Exception as e:
+                logger.warning(f"Could not check NPC {p.actor_id} for XP calculation: {e}")
+    
+    # Calculate XP reward
+    if defeated_enemies:
+        # Get player level for scaling
+        try:
+            player_char = services.get_character_by_id(db, primary_player_id)
+            player_level = player_char.level if player_char else 1
+        except:
+            player_level = 1
+        
+        # Calculate XP per enemy based on difficulty
+        for enemy_id in defeated_enemies:
+            enemy_xp = _calculate_enemy_xp(enemy_id, player_level)
+            total_xp += enemy_xp
+            logger.debug(f"Enemy {enemy_id} worth {enemy_xp} XP")
+    
+    # Award XP to all players
     for pid in player_ids:
         try:
-            services.award_xp(db, pid, xp_reward)
-            log.append(f"Player {pid} gained {xp_reward} XP.")
+            services.award_xp(db, pid, total_xp)
+            if total_xp > 0:
+                log.append(f"Player {pid} gained {total_xp} XP.")
         except Exception as e:
             logger.error(f"Failed to award XP to {pid}: {e}")
 

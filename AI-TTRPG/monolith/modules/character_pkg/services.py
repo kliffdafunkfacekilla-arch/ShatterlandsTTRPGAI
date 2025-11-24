@@ -1053,6 +1053,46 @@ def update_character_context(
         logger.warning(f"Update failed: Character {character_id} not found.")
         return None
 
+
+def snapshot_character_state(db: Session, character_id: str) -> bool:
+    """
+    Updates the character's 'previous_state' field with the current values.
+    This should be called AFTER an AI turn or significant event to reset the
+    diff tracking baseline.
+    """
+    char = get_character(db, character_id)
+    if not char:
+        return False
+        
+    try:
+        # Construct the state dictionary to cache
+        # We only cache what we track in _calculate_state_diff
+        state_snapshot = {
+            "current_hp": char.current_hp,
+            "max_hp": char.max_hp,
+            "current_composure": char.current_composure,
+            "max_composure": char.max_composure,
+            "inventory": [item['template_id'] for item in (char.inventory or {}).get('items', [])] if isinstance(char.inventory, dict) else [],
+            # Simplified inventory tracking (just template IDs)
+            "status_effects": char.status_effects or [],
+            "resource_pools": char.resource_pools or {},
+            "location_id": char.current_location_id
+        }
+        
+        char.previous_state = state_snapshot
+        
+        # Force SQLAlchemy to detect change in JSON field
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(char, "previous_state")
+        
+        db.commit()
+        logger.info(f"Snapshotted state for character {character_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to snapshot state for {character_id}: {e}")
+        db.rollback()
+        return False
+
 def create_default_test_character(db: Session, rules_data: dict):
     """
     Creates a hardcoded default character for testing purposes.

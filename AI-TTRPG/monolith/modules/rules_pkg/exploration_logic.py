@@ -60,13 +60,24 @@ def calculate_stealth_score(request: StealthRequest) -> StealthResponse:
     modifier = request.agility_score + request.stealth_skill_rank - request.armor_penalty + request.environmental_modifiers
     total = d20 + modifier
     
-    # Detection DC is usually Passive Awareness of observers
-    # Here we just return the score, caller compares it to DC.
-    # But we can return a "Baseline DC" for average guards (e.g. 15)
+    # Calculate Detection DC based on difficulty tier
+    # Trivial: 5, Easy: 10, Medium: 15, Hard: 20, Extreme: 25
+    dc_map = {
+        "trivial": 5,
+        "easy": 10,
+        "medium": 15,
+        "hard": 20,
+        "extreme": 25
+    }
+    base_dc = dc_map.get(request.difficulty_tier.lower(), 15)
+    
+    # Note: Environmental modifiers in the request apply to the STEALTH ROLL (user bonus).
+    # If we wanted environment to affect DC (detection difficulty), we would adjust base_dc.
+    # For now, we assume 'environmental_modifiers' covers the net advantage.
     
     return StealthResponse(
         stealth_score=total,
-        detection_dc=15 # Placeholder or derived from environment
+        detection_dc=base_dc
     )
 
 # --- MOVEMENT SYSTEM ---

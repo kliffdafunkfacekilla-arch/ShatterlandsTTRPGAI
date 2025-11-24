@@ -25,7 +25,8 @@ def generate_dm_response(
     char_context: Dict[str, Any],
     loc_context: Dict[str, Any],
     recent_log: list = None,
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    request_type: str = "narrative" # Added request_type
 ) -> str:
     """Generate a narrative response from the AI DM using minimal context.
 
@@ -57,7 +58,18 @@ def generate_dm_response(
         # Assemble the full prompt with minimal context
         full_prompt = f"{system_instruction}\n\n{context_text}\n\nPlayer Input: {prompt_text}\n\nYour Task: Respond in valid JSON matching {{\"message\": \"your response here\"}}"
 
+        # --- Metrics: Estimate Prompt Tokens ---
+        # Rough estimate: 1 token ~= 4 chars
+        prompt_tokens = len(full_prompt) // 4
+        
         response = model.generate_content(full_prompt)
+
+        # --- Metrics: Estimate Response Tokens ---
+        response_text = response.text if response.text else ""
+        response_tokens = len(response_text) // 4
+        total_tokens = prompt_tokens + response_tokens
+        
+        logger.info(f"LLM Request ({request_type}): Prompt={prompt_tokens}t, Response={response_tokens}t, Total={total_tokens}t")
 
         # Expect the model to return a JSON string that matches NarrativeResponse
         try:

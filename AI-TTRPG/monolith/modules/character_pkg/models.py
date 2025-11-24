@@ -40,3 +40,7 @@ class Character(Base):
     injuries = Column(JSON)
     position_x = Column(Integer)
     position_y = Column(Integer)
+    
+    # --- ADD THIS COLUMN ---
+    previous_state = Column(JSON, default={}) # For AI Context Diffing
+    # --- END ADD ---

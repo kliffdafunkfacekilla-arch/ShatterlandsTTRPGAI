@@ -104,6 +104,21 @@ def award_xp(char_id: str, amount: int) -> Dict[str, Any]:
     finally:
         db.close()
 
+def snapshot_character_state(char_id: str) -> bool:
+    """
+    Snapshots the character's current state to 'previous_state' for diff tracking.
+    """
+    db = char_db.SessionLocal()
+    try:
+        # Strip prefix if present (internal service expects UUID)
+        uuid_part = char_id.split("_", 1)[1] if char_id.startswith("player_") else char_id
+        return char_services.snapshot_character_state(db, uuid_part)
+    except Exception as e:
+        logger.exception(f"[character.snapshot_state] Error: {e}")
+        return False
+    finally:
+        db.close()
+
 # --- NEW: Progression Endpoints ---
 @router.post("/level-up", response_model=schemas.LevelUpResponse)
 def level_up_character_endpoint(

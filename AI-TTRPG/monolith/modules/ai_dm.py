@@ -75,6 +75,13 @@ def get_narrative_response(actor_id: str, prompt_text: str) -> Dict[str, Any]:
             api_key=api_key
         )
 
+        # 3. Snapshot the state for diff tracking
+        # This ensures the next request only sees changes since this moment
+        try:
+            character_api.snapshot_character_state(actor_id)
+        except Exception as snap_err:
+            logger.warning(f"Failed to snapshot state for {actor_id}: {snap_err}")
+
         return {"success": True, "message": response_message}
 
     except Exception as e:

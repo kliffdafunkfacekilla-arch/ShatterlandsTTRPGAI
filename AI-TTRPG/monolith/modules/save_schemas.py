@@ -33,6 +33,10 @@ class CharacterSave(BaseModel):
     position_x: int = 1
     position_y: int = 1
     portrait_id: Optional[str] = None
+    
+    # --- ADD THIS LINE ---
+    previous_state: Optional[Dict[str, Any]] = {} # For AI Context Diffing
+    # --- END ADD ---
 
     class Config:
         from_attributes = True

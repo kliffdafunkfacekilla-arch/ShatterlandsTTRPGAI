@@ -530,6 +530,7 @@ class NpcTemplateResponse(BaseModel):
     abilities: List[str]
     max_hp: int
     behavior_tags: List[str]
+    equipment: List[str] = [] # Added equipment list (template IDs)
     loot_table_ref: Optional[str] = None
 
 # --- ADDED MODELS for Social, Rest, and Exploration ---
@@ -583,6 +584,7 @@ class StealthRequest(BaseModel):
     stealth_skill_rank: int
     armor_penalty: int
     environmental_modifiers: int
+    difficulty_tier: str = Field(default="medium", description="Difficulty of the observation: 'trivial', 'easy', 'medium', 'hard', 'extreme'.")
 
 class StealthResponse(BaseModel):
     """

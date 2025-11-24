@@ -46,7 +46,7 @@ def _get_active_character_info() -> (str, str):
         if db:
             db.close()
 
-def _save_game_internal(slot_name: str) -> Dict[str, Any]:
+def _save_game_internal(slot_name: str, active_character_id: str = None) -> Dict[str, Any]:
     """Internal function to query all data and write to file."""
     char_session = char_db.SessionLocal()
     world_session = world_db.SessionLocal()
@@ -87,7 +87,18 @@ def _save_game_internal(slot_name: str) -> Dict[str, Any]:
             flags=[StoryFlagSave.from_orm(f) for f in all_flags],
         )
 
-        active_id, active_name = _get_active_character_info()
+        active_id = active_character_id
+        active_name = "Unknown"
+        
+        if active_id:
+            # Find name from loaded chars
+            for c in all_chars:
+                if c.id == active_id:
+                    active_name = c.name
+                    break
+        else:
+            # Fallback to auto-detect
+            active_id, active_name = _get_active_character_info()
 
         save_file = SaveFile(
             save_name=slot_name,

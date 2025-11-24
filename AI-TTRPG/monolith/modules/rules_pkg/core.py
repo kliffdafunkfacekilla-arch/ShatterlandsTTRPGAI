@@ -116,7 +116,10 @@ def generate_npc_template_core(
     behavior_tags = generation_rules.get("behavior_map",{}).get(request.behavior.lower(), [])
 
     # 7. Build Response
-    return {"generated_id": generated_id, "name": name, "description": description, "stats": final_stats, "skills": skills, "abilities": abilities, "max_hp": max_hp, "behavior_tags": behavior_tags, "loot_table_ref": f"{request.kingdom}_{request.difficulty}_loot"}
+    # TODO: Implement actual equipment selection based on loot tables or style
+    equipment = [] 
+    
+    return {"generated_id": generated_id, "name": name, "description": description, "stats": final_stats, "skills": skills, "abilities": abilities, "max_hp": max_hp, "behavior_tags": behavior_tags, "equipment": equipment, "loot_table_ref": f"{request.kingdom}_{request.difficulty}_loot"}
 
 
 def calculate_skill_mt_bonus(rank: int) -> int:
@@ -294,8 +297,7 @@ def calculate_contested_attack(
 
 
 def calculate_damage(damage_data: models.DamageRequest) -> models.DamageResponse:
-    """
-    Calculates the final damage of an attack.
+    """Calculates the final damage of an attack.
 
     This function handles dice rolling, stat bonuses, misc damage bonuses/penalties,
     and the application of the defender's Damage Reduction (DR).
@@ -306,10 +308,6 @@ def calculate_damage(damage_data: models.DamageRequest) -> models.DamageResponse
     Returns:
         models.DamageResponse: The detailed breakdown of the damage calculation.
     """
-
-    # NOTE: We no longer need to look up weapon/armor data here,
-    # as base dice, relevant stat, damage bonus, DR modifier, and base DR
-    # are provided directly in damage_data.
 
     # --- 1. Parse Dice String & Roll ---
     try:
@@ -362,8 +360,7 @@ def calculate_damage(damage_data: models.DamageRequest) -> models.DamageResponse
         damage_roll_details=rolls,
         base_roll_total=roll_total,
         stat_bonus=stat_bonus,
-        misc_bonus=damage_data.attacker_damage_bonus
-        - damage_data.attacker_damage_penalty,  # Reflect net bonus in response
+        misc_bonus=(damage_data.attacker_damage_bonus - damage_data.attacker_damage_penalty),
         subtotal_damage=subtotal,
         damage_reduction_applied=dr_applied,
         final_damage=final_damage,
@@ -379,7 +376,7 @@ def calculate_initiative(stats: models.InitiativeRequest) -> models.InitiativeRe
 
     # Calculate modifiers using the helper function
     mod_b = calculate_modifier(stats.endurance)
-    mod_d = calculate_modifier(stats.reflexes) # CHANGED from stats.agility
+    mod_d = calculate_modifier(stats.reflexes)
     mod_f = calculate_modifier(stats.fortitude)
     mod_h = calculate_modifier(stats.logic)
     mod_j = calculate_modifier(stats.intuition)
@@ -387,7 +384,7 @@ def calculate_initiative(stats: models.InitiativeRequest) -> models.InitiativeRe
 
     modifier_details = {
         "Endurance (B) Mod": mod_b,
-        "Reflexes (D) Mod": mod_d, # CHANGED from Agility
+        "Reflexes (D) Mod": mod_d,
         "Fortitude (F) Mod": mod_f,
         "Logic (H) Mod": mod_h,
         "Intuition (J) Mod": mod_j,
@@ -856,7 +853,11 @@ def apply_passive_modifiers(
         "defense_bonuses": {},
         "immunities": [],
         "ignored_penalties": [],
-        "damage_reduction": {}
+        "damage_reduction": {},
+        "unlocked_actions": [],  # NEW: Abilities unlocked by talents
+        "rule_overrides": [],     # NEW: Transient rule modifications
+        "defense_overrides": {},  # NEW: Defense calculation overrides
+        "derived_stat_mods": {}   # NEW: Derived stat modifications (Speed, etc.)
     }
     
     for talent in talents:
@@ -915,11 +916,35 @@ def apply_passive_modifiers(
             elif m_type == "composure_loss_reduction":
                 aggregated["defense_bonuses"]["composure_dr"] = aggregated["defense_bonuses"].get("composure_dr", 0) + m_value
             elif m_type == "unlock_action":
-                pass
-            elif m_type == "rule_override" or m_type == "defense_override":
-                pass
+                # Unlocks a new action/ability for the character
+                # Store the ability ID for later granting by character service
+                if not aggregated.get("unlocked_actions"):
+                    aggregated["unlocked_actions"] = []
+                aggregated["unlocked_actions"].append(m_target)
+            elif m_type == "rule_override":
+                # Transient rule modification (e.g., "double move speed")
+                # Store the override for immediate application by caller
+                if not aggregated.get("rule_overrides"):
+                    aggregated["rule_overrides"] = []
+                aggregated["rule_overrides"].append({
+                    "rule": m_target,
+                    "modifier": mod,
+                    "value": m_value
+                })
+            elif m_type == "defense_override":
+                # Override defense calculations (e.g., "use Willpower for physical defense")
+                if not aggregated.get("defense_overrides"):
+                    aggregated["defense_overrides"] = {}
+                aggregated["defense_overrides"][m_target or "general"] = {
+                    "modifier": mod,
+                    "value": m_value
+                }
             elif m_type == "derived_stat":
-                pass 
+                # Modify derived stats (Speed, carrying capacity, etc.)
+                if m_target:
+                    if not aggregated.get("derived_stat_mods"):
+                        aggregated["derived_stat_mods"] = {}
+                    aggregated["derived_stat_mods"][m_target] = aggregated["derived_stat_mods"].get(m_target, 0) + m_value 
             
     return aggregated
 
@@ -973,10 +998,58 @@ def calculate_base_vitals(request: models.BaseVitalsRequest) -> models.BaseVital
         pool["current"] = pool["max"]
         pool["reserved"] = 0 # Initialize reserved to 0
 
+
     return models.BaseVitalsResponse(
         max_hp=max_hp,
         max_composure=max_composure,
         resources=resources
+    )
+
+
+def validate_ability_unlock(request: models.AbilityPurchaseRequest) -> models.AbilityPurchaseResponse:
+    """
+    Validates if a character can unlock a specific ability node.
+    Checks:
+    1. Already unlocked?
+    2. Prerequisites met (previous tier)?
+    3. Sufficient AP?
+    """
+    target_id = request.target_ability.to_id()
+    
+    # 1. Check if already unlocked
+    if target_id in request.current_unlocks:
+        return models.AbilityPurchaseResponse(
+            success=False,
+            message=f"Ability '{target_id}' is already unlocked.",
+            remaining_ap=request.available_ap
+        )
+
+    # 2. Check Prerequisites
+    prereq_id = request.target_ability.get_prerequisite_id()
+    if prereq_id:
+        if prereq_id not in request.current_unlocks:
+             return models.AbilityPurchaseResponse(
+                success=False,
+                message=f"Prerequisite not met: Must unlock '{prereq_id}' first.",
+                remaining_ap=request.available_ap
+            )
+
+    # 3. Check AP Cost
+    # Default cost is 1 AP per node
+    cost = 1
+    if request.available_ap < cost:
+        return models.AbilityPurchaseResponse(
+            success=False,
+            message=f"Insufficient Ability Points. Required: {cost}, Available: {request.available_ap}",
+            remaining_ap=request.available_ap
+        )
+
+    # Success
+    return models.AbilityPurchaseResponse(
+        success=True,
+        message=f"Successfully unlocked '{target_id}'.",
+        remaining_ap=request.available_ap - cost,
+        new_unlock=target_id
     )
 
 
