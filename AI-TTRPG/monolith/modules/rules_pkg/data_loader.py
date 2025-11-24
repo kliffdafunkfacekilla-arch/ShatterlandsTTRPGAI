@@ -61,6 +61,7 @@ def _process_kingdom_features() -> Dict[str, Any]:
     )
     return feature_stats_map
 
+<<<<<<< Updated upstream
 def _process_skills() -> (
     tuple[List[str], Dict[str, Dict[str, str]], Dict[str, Dict[str, str]], Dict[str, Any]]
 ):
@@ -70,6 +71,18 @@ def _process_skills() -> (
     skill_categories = stats_data.get("skill_categories", {})
     techniques = stats_data.get("techniques", {})
     all_skills = {}
+=======
+    logger.info("--- Loading Rules Data ---")
+    
+    STATS_AND_SKILLS = load_json_data("stats_and_skills.json")
+    STATS_LIST = STATS_AND_SKILLS.get("stats", [])
+    skill_categories = STATS_AND_SKILLS.get("skill_categories", {})
+    temp_skill_map = {}
+    for category in skill_categories.values():
+        for skill_name, governing_stat in category.items():
+            temp_skill_map[skill_name] = {"governing_stat": governing_stat}
+    SKILL_MAP = temp_skill_map
+>>>>>>> Stashed changes
 
     if not stats_list:
         print("FATAL ERROR: 'stats' list not found or empty in stats_and_skills.json")

@@ -1,7 +1,5 @@
-"""
-The Main Game Interface screen.
-Handles the exploration UI and game logic.
-"""
+"The Main Game Interface screen.
+Handles the exploration UI and game logic."
 import logging
 from kivy.app import App
 from kivy.lang import Builder
@@ -47,12 +45,13 @@ except ImportError as e:
 try:
     from game_client import asset_loader
     from game_client.views.map_view_widget import MapViewWidget
-    from game_client.config import TILE_SIZE
+    from game_client import debug_utils
 except ImportError as e:
     logging.error(f"MAIN_INTERFACE: Failed to import client modules: {e}")
     asset_loader = None
     MapViewWidget = None
-    TILE_SIZE = 64
+
+TILE_SIZE = 64
 
 
 MAIN_INTERFACE_KV = """
@@ -195,6 +194,9 @@ MAIN_INTERFACE_KV = """
                         app.root.get_screen('settings').previous_screen = 'main_interface'
                         app.root.current = 'settings'
                 Button:
+                    text: 'Debug'
+                    on_release: root.show_debug_popup()
+                Button:
                     text: 'Save Game'
                     on_release: root.show_save_popup()
                 Button:
@@ -319,7 +321,7 @@ class MainInterfaceScreen(Screen):
                 if not db_char:
                     raise Exception(f"Character '{char_name}' not found in database.")
 
-                context = char_services.get_character_context(db, db_char.id)
+                context = char_services.get_character_context(db_char)
                 self.party_contexts.append(context)
                 loaded_contexts.append(context)
 
@@ -457,14 +459,21 @@ class MainInterfaceScreen(Screen):
             )
 
             # --- Refresh the specific character in the master list ---
+            # Create a new CharacterContextResponse object from the updated dict
+            # This ensures Kivy properties are updated correctly
+            updated_char_context = CharacterContextResponse(**updated_context_dict)
+
+            # Update the active_character_context
+            self.active_character_context = updated_char_context
+
+            # Update the context in our list (self.party_contexts)
             for i, ctx in enumerate(self.party_contexts):
-                if ctx.id == self.active_character_context.id:
-                    self.party_contexts[i] = CharacterContextResponse(**updated_context_dict)
-                    self.active_character_context = self.party_contexts[i]
+                if ctx.id == char_id: # Use char_id to match the character being moved
+                    self.party_contexts[i] = updated_char_context
                     break
             self.party_list = list(self.party_contexts) # Trigger UI refresh
-            # --- End Refresh ---
 
+            # --- Call the new move function on the map_view_widget ---
             self.map_view_widget.move_active_player_sprite(
                 char_id, tile_x, tile_y, self.get_map_height()
             )
@@ -473,6 +482,42 @@ class MainInterfaceScreen(Screen):
         except Exception as e:
             logging.exception(f"Failed to move player: {e}")
             self.update_log(f"Error: Could not move player.")
+
+    def on_submit_narration(self, *args):
+        pass
+
+    def show_save_popup(self):
+        pass
+
+    def process_story_events(self, events: List[dict]):
+        """
+        Parses and displays a list of StoryEvents from the backend.
+        """
+        if not events:
+            return
+
+        for event in events:
+            # 1. Display the narrative text in the log
+            if event.get("narrative_text"):
+                self.update_log(f"[Event] {event['narrative_text']}")
+
+            # 2. Handle specific consequences (Visual feedback)
+            c_type = event.get("consequence_type")
+            payload = event.get("payload", {})
+
+            if c_type == "WORLD_STATE_CHANGE":
+                if "reputation_mod" in payload:
+                    mod = payload["reputation_mod"]
+                    sign = "+" if mod > 0 else ""
+                    self.update_log(f">> Reputation {sign}{mod}")
+                if "global_morale_debuff" in payload:
+                    self.update_log(f">> Kingdom Morale Decreased!")
+
+            elif c_type == "SPAWN_NPC":
+                npc_id = payload.get("npc_template_id")
+                self.update_log(f">> A {npc_id} appears!")
+                # In a real implementation, we would trigger a map refresh here
+                # self.refresh_map() 
 
     def on_submit_narration(self, instance):
         """Called when the user presses Enter in the DM input box."""
@@ -491,7 +536,16 @@ class MainInterfaceScreen(Screen):
         self.update_log(f"You: {prompt_text}")
         try:
             response = story_api.handle_narrative_prompt(actor_id, prompt_text)
+            
+            # Display the main AI response
             self.update_narration(response.get("message", "An error occurred."))
+            
+            # Process any side-effects/events included in the response
+            # Note: handle_narrative_prompt might need to be updated to return 'events'
+            # For now, we assume the response MIGHT contain them if the backend supports it.
+            if "events" in response:
+                self.process_story_events(response["events"])
+
         except Exception as e:
             logging.exception(f"Error handling narrative prompt: {e}")
             self.update_narration(f"Error: {e}")
@@ -556,6 +610,41 @@ class MainInterfaceScreen(Screen):
             logging.exception(f"Error calling save_game: {e}")
             self.update_log(f"Save failed: {e}")
         self.save_popup.dismiss()
+
+    def show_debug_popup(self):
+        """Shows the debug menu."""
+        if not debug_utils:
+            logging.error("Debug utils not loaded.")
+            return
+
+        content = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
+        
+        btn_teleport = Button(text='Teleport to Construct')
+        btn_teleport.bind(on_release=lambda x: debug_utils.teleport_to_construct(App.get_running_app()))
+        content.add_widget(btn_teleport)
+        
+        btn_spawn_dummy = Button(text='Spawn Dummy')
+        btn_spawn_dummy.bind(on_release=lambda x: debug_utils.spawn_npc(App.get_running_app(), "training_dummy"))
+        content.add_widget(btn_spawn_dummy)
+
+        btn_spawn_goblin = Button(text='Spawn Goblin')
+        btn_spawn_goblin.bind(on_release=lambda x: debug_utils.spawn_npc(App.get_running_app(), "live_goblin"))
+        content.add_widget(btn_spawn_goblin)
+        
+        btn_items = Button(text='Grant Test Items')
+        btn_items.bind(on_release=lambda x: debug_utils.grant_test_items(App.get_running_app()))
+        content.add_widget(btn_items)
+        
+        btn_heal = Button(text='Heal Party')
+        btn_heal.bind(on_release=lambda x: debug_utils.heal_party(App.get_running_app()))
+        content.add_widget(btn_heal)
+        
+        btn_close = Button(text='Close')
+        content.add_widget(btn_close)
+        
+        popup = Popup(title='Debug Menu', content=content, size_hint=(0.5, 0.8))
+        btn_close.bind(on_release=popup.dismiss)
+        popup.open()
 
     def on_touch_down(self, touch):
         """Handle clicks on the map for movement."""

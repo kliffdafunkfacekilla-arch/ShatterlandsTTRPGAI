@@ -81,20 +81,20 @@ def get_features_for_kingdom(kingdom: str) -> Dict[str, List[str]]:
 
     return features
 
-def get_origin_choices() -> List[str]:
-    return [item["name"] for item in data_loader.ORIGIN_CHOICES]
+def get_origin_choices() -> List[Dict[str, Any]]:
+    return data_loader.ORIGIN_CHOICES
 
-def get_childhood_choices() -> List[str]:
-    return [item["name"] for item in data_loader.CHILDHOOD_CHOICES]
+def get_childhood_choices() -> List[Dict[str, Any]]:
+    return data_loader.CHILDHOOD_CHOICES
 
-def get_coming_of_age_choices() -> List[str]:
-    return [item["name"] for item in data_loader.COMING_OF_AGE_CHOICES]
+def get_coming_of_age_choices() -> List[Dict[str, Any]]:
+    return data_loader.COMING_OF_AGE_CHOICES
 
-def get_training_choices() -> List[str]:
-    return [item["name"] for item in data_loader.TRAINING_CHOICES]
+def get_training_choices() -> List[Dict[str, Any]]:
+    return data_loader.TRAINING_CHOICES
 
-def get_devotion_choices() -> List[str]:
-    return [item["name"] for item in data_loader.DEVOTION_CHOICES]
+def get_devotion_choices() -> List[Dict[str, Any]]:
+    return data_loader.DEVOTION_CHOICES
 
 
 # =============================================================================
@@ -391,6 +391,7 @@ def calculate_talent_bonuses(character_context: Dict, action_type: str, tags: Li
             if tag in aggregated["skill_bonuses"]:
                 bonuses["attack_roll_bonus"] += aggregated["skill_bonuses"][tag]
 
+<<<<<<< Updated upstream
     elif action_type == "defense_roll":
         for tag in tags:
             key = f"contested_check:{tag}"
@@ -436,3 +437,10 @@ def find_eligible_talents_api(payload: Dict) -> List[Dict]:
 
 def register(orchestrator) -> None:
     logger.info("[rules] module registered (self-contained logic)")
+=======
+# Load data on import
+try:
+    data_loader.load_all_data()
+except Exception as e:
+    logger.error(f"Failed to load rule data on import: {e}")
+>>>>>>> Stashed changes

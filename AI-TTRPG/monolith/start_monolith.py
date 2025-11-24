@@ -70,6 +70,18 @@ def _run_migrations_for_module(module_name: str, root_path: Path, mode: str):
 
         if not alembic_script_location.exists():
             logger.warning(f"alembic script location not found for '{module_name}' at: {alembic_script_location}. Skipping migrations.")
+            # Fallback to create_all()
+            if mode == "auto":
+                try:
+                    logger.warning(f"Falling back to create_all() for '{module_name}'...")
+                    db_module = importlib.import_module(f"monolith.modules.{module_name}_pkg.database")
+                    engine = getattr(db_module, "engine")
+                    Base = getattr(db_module, "Base")
+                    Base.metadata.create_all(bind=engine)
+                    logger.info(f"create_all() successful for '{module_name}'.")
+                except Exception as create_e:
+                    logger.exception(f"Fallback create_all() ALSO FAILED for '{module_name}': {create_e}")
+                    raise
             return
 
         # Dynamically get the DATABASE_URL from the module's database.py
