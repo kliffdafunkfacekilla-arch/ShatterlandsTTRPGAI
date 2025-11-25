@@ -142,3 +142,43 @@ class PlayerActionResponse(BaseModel):
     # --- BURT'S NEW FIELD ---
     reaction_opportunity: Optional[Dict[str, Any]] = None
     # ------------------------
+
+class WorldStateContext(BaseModel):
+    player_reputation: int
+    kingdom_resource_level: int
+    last_combat_outcome: Optional[str] = None
+    current_location_tags: List[str] = []
+
+class EventConsequenceType(Enum):
+    WORLD_STATE_CHANGE = "world_state_change"
+    SPAWN_NPC = "spawn_npc"
+    START_COMBAT = "start_combat"
+    ADD_QUEST = "add_quest"
+    NO_OP = "no_op"
+    INITIATE_SKILL_CHALLENGE = "initiate_skill_challenge"
+    ADD_QUEST_LOG = "add_quest_log"
+
+class StoryEvent(BaseModel):
+    event_type: str
+    narrative_text: str
+    consequence_type: EventConsequenceType
+    payload: Dict[str, Any] = {}
+
+class EventTriggerType(Enum):
+    REPUTATION_CHANGE = "reputation_change"
+    RESOURCE_LOW = "resource_low"
+    COMBAT_CRITICAL = "combat_critical"
+    PLAYER_ACTION = "player_action"
+
+class InteractionRequest(BaseModel):
+    actor_id: str
+    target_object_id: str
+    interaction_type: str
+    location_id: int
+
+class InteractionResponse(BaseModel):
+    success: bool
+    message: str
+    updated_annotations: Optional[Dict[str, Any]] = None
+    items_added: Optional[List[Dict[str, Any]]] = None
+    items_removed: Optional[List[Dict[str, Any]]] = None

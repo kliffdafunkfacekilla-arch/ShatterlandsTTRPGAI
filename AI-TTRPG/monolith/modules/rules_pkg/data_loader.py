@@ -1,7 +1,9 @@
 import json
 import os
 import logging
-from typing import Any, List, Dict, Optional # <--- THE MISSING KEY
+from typing import Any, List, Dict, Optional
+from pydantic import ValidationError
+from .models_inventory import Item
 
 logger = logging.getLogger("monolith.rules.data_loader")
 
@@ -44,6 +46,10 @@ def load_json_data(filename: str) -> Any:
         logger.error(f"Error decoding {filename}: {e}")
         return {}
 
+def _process_kingdom_features() -> Dict[str, Any]:
+    """Processes kingdom features into a flat map for easy stat lookups."""
+    kingdom_data = load_json_data("kingdom_features.json")
+    feature_stats_map = {}
     for category_data in kingdom_data.values():
         if not isinstance(category_data, dict):
             continue
@@ -64,7 +70,7 @@ def _process_skills() -> (
     tuple[List[str], Dict[str, Dict[str, str]], Dict[str, Dict[str, str]], Dict[str, Any]]
 ):
     """Processes skills AND RETURNS stats list, categories dict, all_skills dict, AND techniques."""
-    stats_data = _load_json("stats_and_skills.json")
+    stats_data = load_json_data("stats_and_skills.json")
     stats_list = stats_data.get("stats", [])
     skill_categories = stats_data.get("skill_categories", {})
     techniques = stats_data.get("techniques", {})
@@ -104,7 +110,6 @@ def _process_skills() -> (
     print(f"Processed {len(techniques)} techniques.")
     return stats_list, skill_categories, all_skills, techniques
 
-# --- ADD THIS NEW HELPER FUNCTION ---
 def _build_ability_map(ability_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Processes the nested ability data into a flat map for fast lookups.
@@ -130,16 +135,15 @@ def _build_ability_map(ability_data: Dict[str, Any]) -> Dict[str, Any]:
 
     print(f"Processed {len(ability_map)} abilities into fast lookup map.")
     return ability_map
-# --- END NEW FUNCTION ---
 
 # --- Main Loading Function ---
 # Global variables to hold the loaded data
 STATS_LIST: List[str] = []
 SKILL_CATEGORIES: Dict[str, List[str]] = {}
 ALL_SKILLS: Dict[str, Dict[str, str]] = {}
-TECHNIQUES: Dict[str, Any] = {} # <-- ADD THIS NEW GLOBAL
+TECHNIQUES: Dict[str, Any] = {}
 ABILITY_DATA: Dict[str, Any] = {}
-ABILITY_MAP: Dict[str, Any] = {} # <-- ADD THIS NEW GLOBAL
+ABILITY_MAP: Dict[str, Any] = {}
 TALENT_DATA: Dict[str, Any] = {}
 FEATURE_STATS_MAP: Dict[str, Any] = {}
 KINGDOM_FEATURES_DATA: Dict[str, Any] = {}
@@ -151,15 +155,12 @@ STATUS_EFFECTS: Dict[str, Any] = {}
 EQUIPMENT_CATEGORY_TO_SKILL_MAP: Dict[str, str] = {}
 NPC_TEMPLATES: Dict[str, Any] = {}
 ITEM_TEMPLATES: Dict[str, Any] = {}
-GENERATION_RULES: Dict[str, Any] = {} # ADDED: New global for NPC rules
-
-# --- ADD NEW BACKGROUND GLOBALS ---
+GENERATION_RULES: Dict[str, Any] = {}
 ORIGIN_CHOICES: List[Dict[str, Any]] = []
 CHILDHOOD_CHOICES: List[Dict[str, Any]] = []
 COMING_OF_AGE_CHOICES: List[Dict[str, Any]] = []
 TRAINING_CHOICES: List[Dict[str, Any]] = []
 DEVOTION_CHOICES: List[Dict[str, Any]] = []
-# --- END ADD ---
 
 def load_data() -> Dict[str, Any]:
     """Loads all rules data and returns it in a dictionary."""
@@ -174,7 +175,7 @@ def load_data() -> Dict[str, Any]:
         STATS_LIST, SKILL_CATEGORIES, ALL_SKILLS, TECHNIQUES = _process_skills()
 
         # Load abilities
-        ABILITY_DATA = _load_json("abilities.json")
+        ABILITY_DATA = load_json_data("abilities.json")
         if not isinstance(ABILITY_DATA, dict):
             print(
                 f"--- WARNING: ABILITY_DATA did NOT load as a dictionary. Type: {type(ABILITY_DATA)} ---"
@@ -186,7 +187,7 @@ def load_data() -> Dict[str, Any]:
         # --- END NEW ---
 
         # Load talents
-        TALENT_DATA = _load_json("talents.json")
+        TALENT_DATA = load_json_data("talents.json")
         if not isinstance(TALENT_DATA, dict):
             print(
                 f"--- WARNING: TALENT_DATA did NOT load as a dictionary. Type: {type(TALENT_DATA)} ---"
@@ -197,51 +198,34 @@ def load_data() -> Dict[str, Any]:
         FEATURE_STATS_MAP = _process_kingdom_features()
 
         # Load kingdom features (full structure for creation)
-        KINGDOM_FEATURES_DATA = _load_json("kingdom_features.json")
+        KINGDOM_FEATURES_DATA = load_json_data("kingdom_features.json")
 
         # Load combat data
-        MELEE_WEAPONS = _load_json("melee_weapons.json")
-        RANGED_WEAPONS = _load_json("ranged_weapons.json")
-        ARMOR = _load_json("armor.json")
+        MELEE_WEAPONS = load_json_data("melee_weapons.json")
+        RANGED_WEAPONS = load_json_data("ranged_weapons.json")
+        ARMOR = load_json_data("armor.json")
 
         # Load skill mappings
-        EQUIPMENT_CATEGORY_TO_SKILL_MAP = _load_json("skill_mappings.json")
+        EQUIPMENT_CATEGORY_TO_SKILL_MAP = load_json_data("skill_mappings.json")
 
         # Load injury data
-        INJURY_EFFECTS = _load_json("injury_effects.json")
+        INJURY_EFFECTS = load_json_data("injury_effects.json")
 
         # Load Status Effects
-        status_file = os.path.join(DATA_DIR, "status_effects.json")
-        try:
-            if os.path.exists(status_file):
-                with open(status_file, "r", encoding="utf-8") as f:
-                    STATUS_EFFECTS = json.load(f)
-                print(
-                    f"Loaded {len(STATUS_EFFECTS)} status effect definitions from status_effects.json."
-                )
-            else:
-                print(
-                    f"WARNING: status_effects.json not found at {status_file}. Status lookup will fail."
-                )
-                STATUS_EFFECTS = {}
-        except json.JSONDecodeError as e:
-            print(f"ERROR decoding status_effects.json: {e}. Status lookup will fail.")
-            STATUS_EFFECTS = {}
-        except Exception as e:
-            print(f"ERROR loading status_effects.json: {e}. Status lookup will fail.")
-            STATUS_EFFECTS = {}
+        STATUS_EFFECTS = load_json_data("status_effects.json")
+
 
         # --- LOAD NEW BACKGROUND CHOICES ---
-        ORIGIN_CHOICES = _load_json("origin_choices.json")
-        CHILDHOOD_CHOICES = _load_json("childhood_choices.json")
-        COMING_OF_AGE_CHOICES = _load_json("coming_of_age_choices.json")
-        TRAINING_CHOICES = _load_json("training_choices.json")
-        DEVOTION_CHOICES = _load_json("devotion_choices.json")
+        ORIGIN_CHOICES = load_json_data("origin_choices.json")
+        CHILDHOOD_CHOICES = load_json_data("childhood_choices.json")
+        COMING_OF_AGE_CHOICES = load_json_data("coming_of_age_choices.json")
+        TRAINING_CHOICES = load_json_data("training_choices.json")
+        DEVOTION_CHOICES = load_json_data("devotion_choices.json")
         # --- END LOAD ---
 
-        NPC_TEMPLATES = _load_json("npc_templates.json")
-        ITEM_TEMPLATES = _load_json("item_templates.json")
-        GENERATION_RULES = _load_json("generation_rules.json") # ADDED: Load NPC rules
+        NPC_TEMPLATES = load_json_data("npc_templates.json")
+        ITEM_TEMPLATES = load_json_data("item_templates.json")
+        GENERATION_RULES = load_json_data("generation_rules.json") # ADDED: Load NPC rules
 
         loaded_data = {
             "stats_list": STATS_LIST,
@@ -321,38 +305,3 @@ def get_item_template(item_id: str) -> Optional[Item]:
     except ValidationError as e:
         print(f"ERROR: Pydantic validation failed for item '{item_id}': {e}")
         return None
-
-    SKILL_MAP = STATS_AND_SKILLS.get("skills", {})
-
-    # --- THE CRITICAL FIX: Load Kingdom Features ---
-    KINGDOM_FEATURES = load_json_data("kingdom_features.json")
-    
-    ABILITY_DATA = load_json_data("abilities.json")
-    TALENT_DATA = load_json_data("talents.json")
-    STATUS_EFFECTS = load_json_data("status_effects.json")
-    ITEM_TEMPLATES = load_json_data("item_templates.json")
-    LOOT_TABLES = load_json_data("loot_tables.json")
-    NPC_TEMPLATES = load_json_data("npc_templates.json")
-    
-    MELEE_WEAPONS = load_json_data("melee_weapons.json")
-    RANGED_WEAPONS = load_json_data("ranged_weapons.json")
-    ARMOR_DATA = load_json_data("armor.json")
-    SKILL_MAPPINGS = load_json_data("skill_mappings.json")
-
-    # Load Lists (Handle list vs dict structure safely)
-    def load_list(fname):
-        d = load_json_data(fname)
-        if isinstance(d, list): return d
-        return []
-
-    ORIGIN_CHOICES = load_list("origin_choices.json")
-    CHILDHOOD_CHOICES = load_list("childhood_choices.json")
-    COMING_OF_AGE_CHOICES = load_list("coming_of_age_choices.json")
-    TRAINING_CHOICES = load_list("training_choices.json")
-    DEVOTION_CHOICES = load_list("devotion_choices.json")
-    
-    logger.info("--- Rules Data Load Complete ---")
-
-def get_item_template(template_id: str) -> Optional[Dict[str, Any]]:
-    return ITEM_TEMPLATES.get(template_id)
-main
