@@ -15,6 +15,8 @@ from .character_pkg import database as char_db
 from .character_pkg import models as char_models
 from .world_pkg import database as world_db
 from .world_pkg import models as world_models
+from .simulation_pkg import database as sim_db
+from .simulation_pkg import models as sim_models
 from .story_pkg import database as story_db
 from .story_pkg import models as story_models
 
@@ -64,6 +66,7 @@ def _save_game_internal(slot_name: str, active_character_id: str = None, campaig
     char_session = char_db.SessionLocal()
     world_session = world_db.SessionLocal()
     story_session = story_db.SessionLocal()
+    sim_session = sim_db.SessionLocal()
 
     try:
         logger.info(f"--- Starting Save Game process for slot: {slot_name} ---")
@@ -139,6 +142,7 @@ def _save_game_internal(slot_name: str, active_character_id: str = None, campaig
             items=[ItemInstanceSave.from_orm(i) for i in all_items],
             traps=[TrapInstanceSave.from_orm(t) for t in all_traps],
             campaigns=[CampaignSave.from_orm(c) for c in all_campaigns],
+            campaign_states=[CampaignStateSave.from_orm(c) for c in all_campaign_states],
             quests=[ActiveQuestSave.from_orm(q) for q in all_quests],
             flags=[StoryFlagSave.from_orm(f) for f in all_flags],
         )
@@ -179,6 +183,7 @@ def _save_game_internal(slot_name: str, active_character_id: str = None, campaig
         char_session.close()
         world_session.close()
         story_session.close()
+        sim_session.close()
 
 def _load_game_internal(slot_name: str) -> Dict[str, Any]:
     """Internal function to read file, wipe DBs, and repopulate."""
@@ -190,6 +195,7 @@ def _load_game_internal(slot_name: str) -> Dict[str, Any]:
     char_session = char_db.SessionLocal()
     world_session = world_db.SessionLocal()
     story_session = story_db.SessionLocal()
+    sim_session = sim_db.SessionLocal()
 
     try:
         logger.info(f"--- Starting Load Game process from: {filepath} ---")
@@ -208,6 +214,7 @@ def _load_game_internal(slot_name: str) -> Dict[str, Any]:
         story_session.query(story_models.StoryFlag).delete()
         story_session.query(story_models.CombatParticipant).delete()
         story_session.query(story_models.CombatEncounter).delete()
+        story_session.query(story_models.CampaignState).delete()
         story_session.query(story_models.Campaign).delete()
         # World
         world_session.query(world_models.ItemInstance).delete()
@@ -217,7 +224,9 @@ def _load_game_internal(slot_name: str) -> Dict[str, Any]:
         world_session.query(world_models.Location).delete()
         world_session.query(world_models.Map).delete()
         world_session.query(world_models.Region).delete()
-        world_session.query(world_models.Faction).delete()
+        # world_session.query(world_models.Faction).delete() # MOVED
+        sim_session.query(sim_models.Faction).delete()
+
         # Character
         char_session.query(char_models.Character).delete()
 
@@ -229,7 +238,14 @@ def _load_game_internal(slot_name: str) -> Dict[str, Any]:
 
         # World
         for faction_data in data.factions:
-            world_session.add(world_models.Faction(**faction_data.model_dump()))
+            # Check fields - sim_models.Faction has different fields than old world_models.Faction
+            # This might fail if the schema in save file doesn't match.
+            # But we assume the save file matches the Pydantic schema FactionSave.
+            # We need to ensure sim_models.Faction is compatible with FactionSave.
+            sim_session.add(sim_models.Faction(**faction_data.model_dump()))
+
+        sim_session.commit()
+
         for region_data in data.regions:
             world_session.add(world_models.Region(**region_data.model_dump()))
         # Commit regions/factions so locations can link to them
@@ -252,6 +268,9 @@ def _load_game_internal(slot_name: str) -> Dict[str, Any]:
             story_session.add(story_models.Campaign(**camp_data.model_dump()))
         story_session.commit() # Commit campaigns so quests can link
 
+        for camp_state_data in data.campaign_states:
+            story_session.add(story_models.CampaignState(**camp_state_data.model_dump()))
+
         for quest_data in data.quests:
             story_session.add(story_models.ActiveQuest(**quest_data.model_dump()))
         for flag_data in data.flags:
@@ -262,6 +281,7 @@ def _load_game_internal(slot_name: str) -> Dict[str, Any]:
         char_session.commit()
         world_session.commit()
         story_session.commit()
+        sim_session.commit()
 
         logger.info("--- Load Game complete ---")
         return {"success": True, "name": save_file.save_name, "active_character_name": save_file.active_character_name}
@@ -271,8 +291,10 @@ def _load_game_internal(slot_name: str) -> Dict[str, Any]:
         char_session.rollback()
         world_session.rollback()
         story_session.rollback()
+        sim_session.rollback()
         return {"success": False, "error": str(e)}
     finally:
         char_session.close()
         world_session.close()
         story_session.close()
+        sim_session.close()

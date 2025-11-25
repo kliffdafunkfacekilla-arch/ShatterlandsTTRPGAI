@@ -7,9 +7,12 @@ This repository contains the backend "Monolith" for the Shatterlands TTRPG syste
 The monolith is organized into distinct packages (modules) representing different domains of the game:
 
 - **`character_pkg`**: Manages player character data, stats, inventory, talents, and progression. Handles core logic like `apply_passive_modifiers` for derived stats.
-- **`story_pkg`**: Contains the `combat_handler` and quest/campaign management.
+- **`story_pkg`**: Contains the `combat_handler`, quest/campaign management, and the **Campaign Director**.
     - **Combat Engine**: A turn-based, data-driven combat system. Handles actions, effects, status management (DOTs, buffs/debuffs), and reactions.
+    - **Campaign Director**: An AI-driven system that manages plot pacing, story beats, and dynamic quest generation based on world state.
+- **`simulation_pkg`**: Manages the high-level world simulation (Factions, Resources, Tension). It runs a background turn cycle that evolves the world state independently of the player.
 - **`world_pkg`**: Manages NPCs, locations, and map data.
+- **`map_pkg`**: Handles procedural map generation using algorithms like Cellular Automata. Supports **Map Injections** to force-place items or NPCs into generated maps based on story requirements.
 - **`rules_pkg`**: The source of truth for game rules. Loads data from JSON templates (`abilities.json`, `item_templates.json`, `talents.json`) and provides calculation logic for stats and modifiers.
 - **`camp_pkg`**: (In Development) Manages resting, crafting, and downtime activities.
 
@@ -18,11 +21,15 @@ The monolith is organized into distinct packages (modules) representing differen
 - **Data-Driven Abilities**: Combat abilities and items are defined in JSON and processed by a central effect router in `combat_handler.py`.
 - **Passive Modifier System**: A unified `PassiveModifier` system aggregates bonuses from equipment and talents to calculate final character stats.
 - **Event-Based Reactions**: The combat engine supports complex reaction triggers (e.g., attacks of opportunity, defensive spells) via `_check_and_trigger_reactions`.
-- **Persistence**: All game state (characters, world, combat) is persisted via SQLAlchemy (SQLite by default).
+- **Dynamic World Simulation**: A persistent simulation tracks faction conflicts and resource shifts, providing context for the AI Director.
+- **AI-Driven Storytelling**: The Campaign Director uses LLM integration to generate narrative beats and quests that react to player actions and simulation state.
+- **Persistence**: All game state (characters, world, combat, simulation) is persisted via SQLAlchemy (SQLite by default).
 
 ## Development Status
 
 ### Active Areas
+- **World Simulation**: Faction and Resource models are implemented with basic turn logic.
+- **Campaign Director**: Pacing checks and AI-based beat generation are functional.
 - **Combat System**: Core loop is functional. Area of Effect (AoE), status effects, and basic AI are implemented.
 - **Inventory**: Equipment slots and passive stat application are working.
 - **Talents**: Talent trees are loadable and apply static modifiers.

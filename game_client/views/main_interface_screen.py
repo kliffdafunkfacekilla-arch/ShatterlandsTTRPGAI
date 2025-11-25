@@ -1,7 +1,5 @@
-"""
-The Main Game Interface screen.
-Handles the exploration UI and game logic.
-"""
+"""The Main Game Interface screen.
+Handles the exploration UI and game logic."""
 import logging
 from kivy.app import App
 from kivy.lang import Builder
@@ -56,7 +54,7 @@ except ImportError as e:
 TILE_SIZE = 64
 
 
-MAIN_INTERFACE_KV = """
+MAIN_INTERFACE_KV = '''
 <MainInterfaceScreen>:
     log_label: log_label
     narration_label: narration_label
@@ -216,7 +214,7 @@ MAIN_INTERFACE_KV = """
                 Button:
                     text: 'Shop'
                     on_release: app.root.current = 'shop_screen'
-"""
+'''
 Builder.load_string(MAIN_INTERFACE_KV)
 
 class MainInterfaceScreen(Screen):
@@ -323,7 +321,7 @@ class MainInterfaceScreen(Screen):
                 if not db_char:
                     raise Exception(f"Character '{char_name}' not found in database.")
 
-                context = char_services.get_character_context(db, db_char.id)
+                context = char_services.get_character_context(db_char)
                 self.party_contexts.append(context)
                 loaded_contexts.append(context)
 

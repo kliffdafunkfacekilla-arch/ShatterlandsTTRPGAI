@@ -1,4 +1,5 @@
 import logging
+from functools import partial
 from kivy.app import App
 from kivy.uix.screenmanager import Screen
 from kivy.uix.boxlayout import BoxLayout
@@ -150,10 +151,6 @@ class CharacterCreationScreen(Screen):
         self.talent_spinner.bind(text=self.on_talent_select)
         form_layout.add_widget(self.talent_spinner)
 
-        # Placeholder for dynamic feature spinners – they will be added to self.form_layout later
-        # Feature spinners will be loaded dynamically based on selected kingdom
-
-
         scroll.add_widget(form_layout)
         root.add_widget(scroll)
 
@@ -169,8 +166,6 @@ class CharacterCreationScreen(Screen):
 
         self.add_widget(root)
 
-    # ---------------------------------------------------------------------
-    # ---------------------------------------------------------------------
     def load_feature_spinners(self, kingdom):
         """Load spinners for each feature based on the selected kingdom."""
         # Clear any existing feature spinners
