@@ -126,33 +126,8 @@ def _get_data(data_key: str) -> Any:
         return {}
     return data_loader.load_json_data(filename)
 
-    if action_type == "attack_roll":
-        for tag in tags:
-            key = f"contested_check:{tag}"
-            if key in aggregated["roll_bonuses"]:
-                bonuses["attack_roll_bonus"] += aggregated["roll_bonuses"][key]
-        for tag in tags:
-            if tag in aggregated["skill_bonuses"]:
-                bonuses["attack_roll_bonus"] += aggregated["skill_bonuses"][tag]
-
-    elif action_type == "defense_roll":
-        for tag in tags:
-            key = f"contested_check:{tag}"
-            if key in aggregated["roll_bonuses"]:
-                bonuses["defense_roll_bonus"] += aggregated["roll_bonuses"][key]
-        for tag in tags:
-            if tag in aggregated["skill_bonuses"]:
-                bonuses["defense_roll_bonus"] += aggregated["skill_bonuses"][tag]
-
-    elif action_type == "damage_roll":
-        bonuses["damage_bonus"] += aggregated["damage_bonuses"]
-    
-    return bonuses
-
 def get_injury_effects(location: str, severity: str) -> Dict:
     # Wrapper for safety as combat_handler depends on it
-    # (Actual implementation requires looking up injury effects data which is in INJURY_EFFECTS global)
-    # _get_data("injury_effects")
     injury_data = _get_data("injury_effects")
     if not injury_data: return {}
 
@@ -169,7 +144,7 @@ def get_injury_effects(location: str, severity: str) -> Dict:
 def find_eligible_talents_api(payload: Dict) -> List[Dict]:
     stats = payload.get("stats", {})
     skills = payload.get("skills", {})
-    talents = rules_core.find_eligible_talents(
+    talents = talent_logic.find_eligible_talents(
         stats_in=stats,
         skills_in=skills,
         talent_data=_get_data("talent_data"),
@@ -180,13 +155,9 @@ def find_eligible_talents_api(payload: Dict) -> List[Dict]:
 
 def register(orchestrator) -> None:
     logger.info("[rules] module registered (self-contained logic)")
+
 # Load data on import
 try:
-    data_loader.load_all_data()
+    data_loader.load_data()
 except Exception as e:
-
     logger.error(f"Failed to load rule data on import: {e}")
-
-
-    logger.error(f"Failed to load rule data on import: {e}")
- main

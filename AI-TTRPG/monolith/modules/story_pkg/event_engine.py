@@ -40,8 +40,7 @@ EVENT_RULES: List[Rule] = [
             and ctx.player_reputation < -5  # Only triggers if player has low reputation
         ),
         "generator": lambda ctx: StoryEvent(
-            event_id="BANDIT_AMBUSH",
-            trigger_type=EventTriggerType.REPUTATION_CHANGE,
+            event_type="BANDIT_AMBUSH",
             consequence_type=EventConsequenceType.SPAWN_NPC,
             narrative_text="A group of disgruntled bandits emerges from the shadows, intent on collecting the bounty on your head.",
             payload={"npc_type": "bandit_leader", "count": 3, "difficulty_mod": 1.2}
@@ -56,8 +55,7 @@ EVENT_RULES: List[Rule] = [
             and "mine" in ctx.current_location_tags
         ),
         "generator": lambda ctx: StoryEvent(
-            event_id="SILVER_DEPOSIT_FOUND",
-            trigger_type=EventTriggerType.RESOURCE_LOW,
+            event_type="SILVER_DEPOSIT_FOUND",
             consequence_type=EventConsequenceType.INITIATE_SKILL_CHALLENGE,
             narrative_text="You discover a promising, unexploited vein of silver ore. Extracting it requires finesse.",
             payload={"skill_check": "Mining", "difficulty": 15}
@@ -71,8 +69,7 @@ EVENT_RULES: List[Rule] = [
             ctx.last_combat_outcome == "DEFEAT"
         ),
         "generator": lambda ctx: StoryEvent(
-            event_id="PLAYER_DEFEATED",
-            trigger_type=EventTriggerType.COMBAT_CRITICAL,
+            event_type="PLAYER_DEFEATED",
             consequence_type=EventConsequenceType.WORLD_STATE_CHANGE,
             narrative_text="Your recent defeat resonates through the region; rival factions will be emboldened.",
             payload={"global_morale_debuff": 5, "quest_status_update": "The path ahead is harder."}
@@ -87,8 +84,7 @@ EVENT_RULES: List[Rule] = [
             and ctx.player_reputation > 10
         ),
         "generator": lambda ctx: StoryEvent(
-            event_id="CRITICAL_HIT_MORALE_BOOST",
-            trigger_type=EventTriggerType.COMBAT_CRITICAL,
+            event_type="CRITICAL_HIT_MORALE_BOOST",
             consequence_type=EventConsequenceType.WORLD_STATE_CHANGE,
             narrative_text="Your devastating blow inspires nearby allies! Word of your prowess spreads.",
             payload={"reputation_bonus": 2, "party_morale_boost": 10}
@@ -103,9 +99,8 @@ EVENT_RULES: List[Rule] = [
             and "town" in ctx.current_location_tags
         ),
         "generator": lambda ctx: StoryEvent(
-            event_id="RESOURCE_SHORTAGE_QUEST",
-            trigger_type=EventTriggerType.RESOURCE_LOW,
-            consequence_type=EventConsequenceType.ADD_QUEST_LOG,
+            event_type="RESOURCE_SHORTAGE_QUEST",
+            consequence_type=EventConsequenceType.ADD_QUEST,
             narrative_text="The townsfolk are desperate for supplies. A merchant approaches with an urgent request.",
             payload={
                 "quest_id": "supply_run_001",
@@ -154,12 +149,12 @@ def check_and_generate_events(context: WorldStateContext) -> List[StoryEvent]:
                 # Condition is met and chance roll passed: generate event
                 event = rule["generator"](context)
                 events.append(event)
-                logger.info(f"Generated event: {event.event_id}")
+                logger.info(f"Generated event: {event.event_type}")
 
                 # Best Practice: Stop processing low-priority events after a high-priority event is triggered.
                 # This prevents event spam and ensures narrative coherence.
                 if rule["priority"] >= 5:
-                    logger.debug(f"Breaking after high-priority event: {event.event_id}")
+                    logger.debug(f"Breaking after high-priority event: {event.event_type}")
                     break
 
         except Exception as e:
@@ -170,8 +165,7 @@ def check_and_generate_events(context: WorldStateContext) -> List[StoryEvent]:
     if not events:
         logger.debug("No events triggered, generating neutral ambient flavor")
         events.append(StoryEvent(
-            event_id="AMBIENT_FLAVOR_NEUTRAL",
-            trigger_type=EventTriggerType.PLAYER_ACTION,
+            event_type="AMBIENT_FLAVOR_NEUTRAL",
             consequence_type=EventConsequenceType.WORLD_STATE_CHANGE,
             narrative_text="The immediate area is quiet, offering a moment of respite.",
             payload={"player_stamina_regenerate": 1}
@@ -200,7 +194,7 @@ if __name__ == '__main__':
     generated_events = check_and_generate_events(mock_context_low_rep)
     
     for event in generated_events:
-        print(f"\n[EVENT: {event.event_id}] ({event.trigger_type.value})")
+        print(f"\n[EVENT: {event.event_type}] ({event.trigger_type.value})")
         print(f"  Narrative: {event.narrative_text}")
         print(f"  Payload: {event.payload}")
 
@@ -219,7 +213,7 @@ if __name__ == '__main__':
     generated_events = check_and_generate_events(mock_context_safe)
     
     for event in generated_events:
-        print(f"\n[EVENT: {event.event_id}] ({event.trigger_type.value})")
+        print(f"\n[EVENT: {event.event_type}] ({event.trigger_type.value})")
         print(f"  Narrative: {event.narrative_text}")
         print(f"  Payload: {event.payload}")
 
@@ -238,7 +232,7 @@ if __name__ == '__main__':
     generated_events = check_and_generate_events(mock_context_crit)
     
     for event in generated_events:
-        print(f"\n[EVENT: {event.event_id}] ({event.trigger_type.value})")
+        print(f"\n[EVENT: {event.event_type}] ({event.trigger_type.value})")
         print(f"  Narrative: {event.narrative_text}")
         print(f"  Payload: {event.payload}")
 
@@ -257,6 +251,6 @@ if __name__ == '__main__':
     generated_events = check_and_generate_events(mock_context_defeat)
     
     for event in generated_events:
-        print(f"\n[EVENT: {event.event_id}] ({event.trigger_type.value})")
+        print(f"\n[EVENT: {event.event_type}] ({event.trigger_type.value})")
         print(f"  Narrative: {event.narrative_text}")
         print(f"  Payload: {event.payload}")

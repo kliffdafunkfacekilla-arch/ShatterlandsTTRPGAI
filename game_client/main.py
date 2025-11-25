@@ -24,9 +24,7 @@ try:
     from monolith.modules import register_all
     from game_client import asset_loader
 
-    # --- ADD THIS IMPORT ---
     from game_client import settings_manager
-    # --- END ADD ---
 
 except ImportError as e:
     # We can't log here yet, as logging isn't configured.
@@ -51,9 +49,7 @@ from views.inventory_screen import InventoryScreen
 from views.quest_log_screen import QuestLogScreen
 from views.dialogue_screen import DialogueScreen
 from views.shop_screen import ShopScreen
-# --- ADD THIS IMPORT ---
 from views.settings_screen import SettingsScreen
-# --- END ADD ---
 
 
 # --- 6. THE MAIN APP CLASS (Unchanged from refactor) ---
@@ -65,12 +61,10 @@ class ShatterlandsClientApp(App):
     """
     game_settings = {}
 
-    # --- ADD THIS ---
     # Make settings and managers globally accessible via the app instance
     app_settings = {}
     # settings_manager will be assigned in main()
     # audio_manager will be assigned in Phase 4
-    # --- END ADD ---
 
     def build(self):
         """
@@ -98,9 +92,7 @@ class ShatterlandsClientApp(App):
         sm.add_widget(DialogueScreen(name='dialogue_screen'))
         sm.add_widget(ShopScreen(name='shop_screen'))
 
-        # --- ADD THIS LINE ---
         sm.add_widget(SettingsScreen(name='settings'))
-        # --- END ADD ---
 
         sm.current = 'main_menu'
         return sm
@@ -135,11 +127,9 @@ async def main():
         asset_loader.initialize_assets()
         logger.info("Asset loader initialized.")
 
-        # --- ADD THIS ---
         # --- Initialize Settings Manager (Synchronous) ---
         app_instance.app_settings = settings_manager.load_settings()
         logger.info("Settings manager initialized and settings loaded.")
-        # --- END ADD ---
 
     except Exception as e:
         logger.exception(f"FATAL: An error occurred during startup: {e}")

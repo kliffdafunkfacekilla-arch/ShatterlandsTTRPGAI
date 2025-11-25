@@ -1,6 +1,5 @@
 import logging
 from functools import partial
- main
 from kivy.app import App
 from kivy.uix.screenmanager import Screen
 from kivy.uix.boxlayout import BoxLayout
@@ -47,14 +46,6 @@ class CharacterCreationScreen(Screen):
         """Called when the screen is displayed. Load initial data."""
         if rules_api:
             try:
-                # Perform the Dry Run
-                preview = rules_api.calculate_creation_preview(self.choices)
-                self.title_label.color = (1, 1, 1, 1) # Reset color
-                self.build_step_2(preview)
-            except Exception as e:
-                logging.exception(f"Preview calculation failed: {e}")
-                self.title_label.text = "Error Calculating Stats"
-
                 # Load Kingdoms
                 kingdoms = rules_api.get_all_kingdoms()
                 self.kingdom_spinner.values = tuple(kingdoms) if kingdoms else ('No Kingdoms Found',)
@@ -91,7 +82,6 @@ class CharacterCreationScreen(Screen):
                 
             except Exception as e:
                 logging.error(f"Failed to load initial rules data: {e}")
- main
 
     # ---------------------------------------------------------------------
     # UI Construction
@@ -161,10 +151,6 @@ class CharacterCreationScreen(Screen):
         self.talent_spinner.bind(text=self.on_talent_select)
         form_layout.add_widget(self.talent_spinner)
 
-        # Placeholder for dynamic feature spinners – they will be added to self.form_layout later
-        # Feature spinners will be loaded dynamically based on selected kingdom
-
-
         scroll.add_widget(form_layout)
         root.add_widget(scroll)
 
@@ -180,8 +166,6 @@ class CharacterCreationScreen(Screen):
 
         self.add_widget(root)
 
-    # ---------------------------------------------------------------------
-    # ---------------------------------------------------------------------
     def load_feature_spinners(self, kingdom):
         """Load spinners for each feature based on the selected kingdom."""
         # Clear any existing feature spinners
