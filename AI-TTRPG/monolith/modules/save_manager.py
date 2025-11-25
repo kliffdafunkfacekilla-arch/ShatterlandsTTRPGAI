@@ -86,14 +86,33 @@ def _save_game_internal(slot_name: str, active_character_id: str = None, campaig
                 story_models.ActiveQuest.campaign_id == campaign_id
             ).all()
             
-            # World data: For now, save all (future: add campaign_id to world tables)
-            logger.info("Querying world data (all - campaign scoping pending)...")
-            all_factions = world_session.query(world_models.Faction).all()
-            all_regions = world_session.query(world_models.Region).all()
-            all_locations = world_session.query(world_models.Location).all()
-            all_npcs = world_session.query(world_models.NpcInstance).all()
-            all_items = world_session.query(world_models.ItemInstance).all()
-            all_traps = world_session.query(world_models.TrapInstance).all()
+            # World data: Filter by campaign_id
+            logger.info("Querying world data for campaign...")
+            all_factions = world_session.query(world_models.Faction).filter(
+                world_models.Faction.campaign_id == campaign_id
+            ).all()
+            all_regions = world_session.query(world_models.Region).filter(
+                world_models.Region.campaign_id == campaign_id
+            ).all()
+            all_locations = world_session.query(world_models.Location).filter(
+                world_models.Location.campaign_id == campaign_id
+            ).all()
+            # NPCs and Items are scoped via their location's campaign
+            location_ids = [loc.id for loc in all_locations]
+            if location_ids:
+                all_npcs = world_session.query(world_models.NpcInstance).filter(
+                    world_models.NpcInstance.location_id.in_(location_ids)
+                ).all()
+                all_items = world_session.query(world_models.ItemInstance).filter(
+                    world_models.ItemInstance.location_id.in_(location_ids)
+                ).all()
+                all_traps = world_session.query(world_models.TrapInstance).filter(
+                    world_models.TrapInstance.location_id.in_(location_ids)
+                ).all()
+            else:
+                all_npcs = []
+                all_items = []
+                all_traps = []
             all_flags = story_session.query(story_models.StoryFlag).all()
         else:
             # Backward compatibility: save all data if no campaign_id specified

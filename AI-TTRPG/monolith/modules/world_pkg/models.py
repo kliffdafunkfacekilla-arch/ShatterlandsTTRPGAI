@@ -49,6 +49,7 @@ class Faction(Base):
     """
     __tablename__ = "factions"
     id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, nullable=True, index=True)  # Campaign scoping
     name = Column(String, unique=True, index=True)
     status = Column(String, default="neutral")
     disposition = Column(JSON, default={}) # e.g., {"faction_id_2": "war"}
@@ -61,6 +62,7 @@ class Region(Base):
     """
     __tablename__ = "regions"
     id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, nullable=True, index=True)  # Campaign scoping
     name = Column(String, unique=True, index=True)
     current_weather = Column(String, default="clear")
     environmental_effects = Column(JSON, default=[]) # e.g., ["blight_level_2"]
@@ -79,6 +81,7 @@ class Location(Base):
     """
     __tablename__ = "locations"
     id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, nullable=True, index=True)  # Campaign scoping
     name = Column(String, index=True)
     tags = Column(JSON, default=[]) # e.g., ["forest", "outside", "hostile"]
     exits = Column(JSON, default={}) # e.g., {"north": "location_id_2"}
