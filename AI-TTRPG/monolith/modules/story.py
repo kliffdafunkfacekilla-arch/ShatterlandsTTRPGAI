@@ -20,7 +20,11 @@ from .camp_pkg import schemas as camp_schemas
 from .story_pkg import database as se_db
 from .story_pkg import crud as se_crud
 from .story_pkg import models as se_models
+from .story_pkg import director # Import the director
 from . import ai_dm
+# from ..simulation import run_simulation_turn # This relative import is failing in tests
+# We can import it from the module if we are running from monolith root
+from . import simulation # It is in the same directory 'modules'
 from ..orchestrator import get_orchestrator
 from .character_pkg import services as character_api
 
@@ -127,9 +131,92 @@ def handle_npc_action(combat_id: int) -> Dict[str, Any]:
     finally:
         db.close()
 
+def get_active_quest_requirements(location_id: int) -> Dict[str, Any]:
+    """
+    Returns a map injection request if any active quest requires items/NPCs in this location.
+    """
+    db = se_db.SessionLocal()
+    try:
+        quests = se_crud.get_all_quests(db, campaign_id=1) # MVP assumption
+
+        required_items = []
+        required_npcs = []
+
+        if quests:
+            for q in quests:
+                # Filter logic: Only inject if quest is active and targeted at this location
+                # Since we don't have location_id on quest, we rely on tags/description
+                # Or we inject globally for MVP but only if "inject" keyword is present
+
+                desc = q.description or ""
+
+                # Improved parsing: check for location constraint in description
+                # syntax: "loc:123 inject_item:xyz"
+                # If no loc specified, inject globally (or assume global quest)
+
+                target_loc = None
+                if "loc:" in desc:
+                    try:
+                        parts = desc.split("loc:")
+                        target_loc_str = parts[1].split()[0].strip()
+                        target_loc = int(target_loc_str)
+                    except:
+                        pass
+
+                if target_loc is not None and target_loc != location_id:
+                    continue # Skip if not for this location
+
+                # Look for items
+                if "inject_item:" in desc:
+                    parts = desc.split("inject_item:")
+                    if len(parts) > 1:
+                        item_id = parts[1].split()[0].strip()
+                        required_items.append(item_id)
+
+                # Look for NPCs
+                if "inject_npc:" in desc:
+                    parts = desc.split("inject_npc:")
+                    if len(parts) > 1:
+                        npc_id = parts[1].split()[0].strip()
+                        required_npcs.append(npc_id)
+
+        if required_items or required_npcs:
+            return {
+                "required_item_ids": required_items,
+                "required_npc_ids": required_npcs,
+                "atmosphere_tags": ["quest_active"]
+            }
+        return None
+    finally:
+        db.close()
+
 def handle_interaction(request: se_schemas.InteractionRequest) -> Dict[str, Any]:
     """Handle an interaction request between an actor and a target object."""
     logger.info(f"[story.sync] Handling interaction: Actor '{request.actor_id}' -> Target '{request.target_object_id}'")
+
+    # --- DIRECTOR HOOK: Check for Story Seed ---
+    try:
+        if request.target_object_id.startswith("seed_"):
+            # This is a story seed interaction
+            # We assume campaign_id=1 for single player MVP, or we'd fetch from actor context
+            db = se_db.SessionLocal()
+            try:
+                camp_director = director.get_director(db, campaign_id=1)
+                generated_quest = camp_director.resolve_seed(request.target_object_id)
+
+                # Format response as a narrative message
+                # In a full impl, this would create the quest in DB and notify client.
+                return {
+                    "success": True,
+                    "message": f"QUEST TRIGGERED: {generated_quest['title']}\n{generated_quest['description']}",
+                    "updated_annotations": {"quest_data": generated_quest}
+                }
+            finally:
+                db.close()
+    except Exception as e:
+        logger.error(f"Director hook failed: {e}")
+    # -------------------------------------------
+
     try:
         response_model = se_interaction.handle_interaction(request)
         return response_model.model_dump()
@@ -286,6 +373,24 @@ async def _on_command_advance_narrative(topic: str, payload: Dict[str, Any]) -> 
     bus = get_event_bus()
     logger.info(f"[story] (async) advance_narrative command: {payload}")
     node_id = payload.get("node_id")
+
+    # --- Integration Hook: Quest Completion / Narrative Advance ---
+    # Simplified trigger: If node_id indicates completion
+    if node_id and "complete" in node_id:
+        db = se_db.SessionLocal()
+        try:
+             camp_director = director.get_director(db, campaign_id=1)
+             camp_director.record_event(f"Narrative Advanced: {node_id}")
+
+             # Trigger Simulation Turn
+             events = simulation.run_simulation_turn()
+             logger.info(f"Simulation Turn Processed: {events}")
+
+             # Check if we need to generate new beat?
+             # Handled by next interaction usually or explicit check
+        finally:
+             db.close()
+
     await bus.publish("story.narrative_advanced", {"node_id": node_id, "timestamp": "now"})
 
 def register(orchestrator) -> None:

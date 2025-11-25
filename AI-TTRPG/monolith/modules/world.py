@@ -17,6 +17,9 @@ from .world_pkg import crud as we_crud
 from .world_pkg import database as we_db
 from .world_pkg import schemas as we_schemas
 
+# Import story to access director or active quests
+from . import story
+
 logger = logging.getLogger("monolith.world")
 
 def get_world_location_context(location_id: int) -> Dict[str, Any]:
@@ -25,15 +28,89 @@ def get_world_location_context(location_id: int) -> Dict[str, Any]:
 
     This includes its description, map data, and other metadata.
 
+    Checks story system for map injections (Phase 4 integration).
+
     Args:
         location_id (int): The unique identifier of the location.
 
     Returns:
         Dict[str, Any]: The location context dictionary.
     """
-    # --- REMOVED ASYNC AND _client ---
+    # --- Map Injection Logic ---
+    # We check if the story system has any active quests that require injections for this location
+    # Note: For MVP we can just ask for active quest requirements.
+    # In a full system, we might query 'story_pkg' directly, but here we use the story module adapter.
+
+    # But wait, 'get_location_context' in 'world_pkg/crud.py' calls 'map_api.generate_map'.
+    # We can't inject INTO that call from HERE if the map is already generated.
+    # The map generation happens lazily inside 'we_crud.get_location_context'.
+
+    # If the map is NOT generated yet, crud will call map_api.
+    # We need to intercept that call or pass injections to crud.
+
+    # The `we_crud.get_location_context` signature is fixed in the crud file.
+    # However, I can't easily change the crud signature without refactoring 'world_pkg'.
+    # But wait, I'm the one editing files. I can modify `world_pkg/crud.py` to accept injections!
+    # But for now, let's see if we can do it via the `we_crud.get_location_context` call.
+    # Currently it takes (db, location_id).
+
+    # If I want to support injections, I should update `world_pkg/crud.py`'s `get_location_context`
+    # to take an optional `injections` parameter.
+
+    # Let's do that first (implied step: modify crud to support injection pass-through).
+    # Since I'm in `monolith/modules/world.py`, I can't change `crud.py` with this block.
+    # I will stick to what I can do here.
+    # If `crud.py` generates the map internally, I can't inject unless I modify `crud.py`.
+
+    # Wait, Phase 4.1 says: "Modify File: monolith/modules/world.py ... Call map.generate_map(..., injections=request)."
+    # But `world.py` calls `we_crud.get_location_context`.
+    # And `we_crud.get_location_context` calls `map_api.generate_map`.
+
+    # So I MUST modify `world_pkg/crud.py` to accept injections.
+    # I'll handle that in a separate step or just update `world.py` assuming I'll fix `crud.py`.
+    # Actually, I can implement the logic here in `world.py` if I move the map generation logic out of crud,
+    # OR I update crud. Updating crud is cleaner.
+
+    # For this block, I will just keep the existing call and plan to update crud next.
+    # Or I can try to hack it:
+    # 1. Get location.
+    # 2. If no map, determine injections.
+    # 3. Call map gen myself?
+    # 4. Update location.
+    # 5. Then call crud.get_location_context.
+
+    # This avoids changing crud signature.
+
     db = we_db.SessionLocal()
     try:
+        # Check if map needs generation
+        loc = we_crud.get_location(db, location_id)
+        if loc and not loc.generated_map_data:
+             # It needs generation. Let's check for injections.
+             # We need to get active quests.
+             tags = loc.tags or ["generic"]
+
+             # --- Determine Injections from Quests ---
+             injection_req = story.get_active_quest_requirements(location_id)
+             if injection_req:
+                 logger.info(f"Injecting into map {location_id}: {injection_req}")
+
+             # Manually trigger generation via map_api
+             from . import map as map_api
+
+             # generate map
+             map_data = map_api.generate_map(tags, injections=injection_req)
+
+             # save it using crud
+             update_schema = we_schemas.LocationMapUpdate(
+                generated_map_data=map_data.get("map_data"),
+                map_seed=map_data.get("seed_used"),
+                spawn_points=map_data.get("spawn_points")
+             )
+             we_crud.update_location_map(db, location_id, update_schema)
+
+             # Now `get_location_context` will find the map and return it.
+
         ctx = we_crud.get_location_context(db, location_id)
         if not ctx:
             raise Exception(f"Location {location_id} not found")
