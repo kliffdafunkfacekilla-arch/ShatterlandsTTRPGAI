@@ -88,36 +88,14 @@ def get_world_location_context(location_id: int) -> Dict[str, Any]:
         if loc and not loc.generated_map_data:
              # It needs generation. Let's check for injections.
              # We need to get active quests.
-             # Assuming single campaign id 1.
-             quests = story.get_all_quests(1)
-
-             injections = {}
-             # Simple logic: if any quest has "Step X", inject a specific item?
-             # The prompt says "If requirements exist ... create MapInjectionRequest".
-             # We'll mock this logic or check specific quest fields if they existed.
-             # For MVP, let's inject a "Quest Marker" if there is an active quest.
-
-             # Actually, let's look for a dummy requirement in quests.
-             # Since we don't have a rich "Quest Requirement" model yet, we'll skip complex logic.
-             # But let's say if we have a seed active or a quest active, we inject something.
-             pass
-
-             # But to truly follow "Call map.generate_map(..., injections=request)",
-             # I should probably just let `crud` do it if I update it.
-             # Using the "Hack" method:
-
              tags = loc.tags or ["generic"]
 
-             # Example Injection Logic
-             injection_req = None
-             if len(quests) > 0:
-                 # Inject a quest item?
-                 # injection_req = {"required_item_ids": ["quest_item_1"]}
-                 pass
+             # --- Determine Injections from Quests ---
+             injection_req = story.get_active_quest_requirements(location_id)
+             if injection_req:
+                 logger.info(f"Injecting into map {location_id}: {injection_req}")
 
-             # Manually trigger generation via map_api (which is imported in crud, but accessible via 'from . import map')
-             # actually map_api is at `monolith/modules/map.py`.
-             # I can import it here.
+             # Manually trigger generation via map_api
              from . import map as map_api
 
              # generate map

@@ -10,9 +10,9 @@ from sqlalchemy.orm import sessionmaker
 # .parents[0] = simulation_pkg
 # .parents[1] = modules
 # .parents[2] = monolith
-# .parents[3] = AI-TTRPG (where simulation.db will be)
+# .parents[3] = AI-TTRPG (where world.db is)
 BASE_DIR = Path(__file__).resolve().parents[3]
-DB_PATH = BASE_DIR / "simulation.db"
+DB_PATH = BASE_DIR / "world.db"
 
 # Ensure the parent directory exists (though it should be the root)
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)

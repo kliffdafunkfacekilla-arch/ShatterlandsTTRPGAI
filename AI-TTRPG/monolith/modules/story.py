@@ -131,6 +131,65 @@ def handle_npc_action(combat_id: int) -> Dict[str, Any]:
     finally:
         db.close()
 
+def get_active_quest_requirements(location_id: int) -> Dict[str, Any]:
+    """
+    Returns a map injection request if any active quest requires items/NPCs in this location.
+    """
+    db = se_db.SessionLocal()
+    try:
+        quests = se_crud.get_all_quests(db, campaign_id=1) # MVP assumption
+
+        required_items = []
+        required_npcs = []
+
+        if quests:
+            for q in quests:
+                # Filter logic: Only inject if quest is active and targeted at this location
+                # Since we don't have location_id on quest, we rely on tags/description
+                # Or we inject globally for MVP but only if "inject" keyword is present
+
+                desc = q.description or ""
+
+                # Improved parsing: check for location constraint in description
+                # syntax: "loc:123 inject_item:xyz"
+                # If no loc specified, inject globally (or assume global quest)
+
+                target_loc = None
+                if "loc:" in desc:
+                    try:
+                        parts = desc.split("loc:")
+                        target_loc_str = parts[1].split()[0].strip()
+                        target_loc = int(target_loc_str)
+                    except:
+                        pass
+
+                if target_loc is not None and target_loc != location_id:
+                    continue # Skip if not for this location
+
+                # Look for items
+                if "inject_item:" in desc:
+                    parts = desc.split("inject_item:")
+                    if len(parts) > 1:
+                        item_id = parts[1].split()[0].strip()
+                        required_items.append(item_id)
+
+                # Look for NPCs
+                if "inject_npc:" in desc:
+                    parts = desc.split("inject_npc:")
+                    if len(parts) > 1:
+                        npc_id = parts[1].split()[0].strip()
+                        required_npcs.append(npc_id)
+
+        if required_items or required_npcs:
+            return {
+                "required_item_ids": required_items,
+                "required_npc_ids": required_npcs,
+                "atmosphere_tags": ["quest_active"]
+            }
+        return None
+    finally:
+        db.close()
+
 def handle_interaction(request: se_schemas.InteractionRequest) -> Dict[str, Any]:
     """Handle an interaction request between an actor and a target object."""
     logger.info(f"[story.sync] Handling interaction: Actor '{request.actor_id}' -> Target '{request.target_object_id}'")
