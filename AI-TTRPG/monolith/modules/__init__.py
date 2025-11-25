@@ -37,3 +37,4 @@ def register_all(orchestrator) -> None:
     character.register(orchestrator)
     save_api.register(orchestrator)
     ai_dm.register(orchestrator)
+    simulation.register(orchestrator)

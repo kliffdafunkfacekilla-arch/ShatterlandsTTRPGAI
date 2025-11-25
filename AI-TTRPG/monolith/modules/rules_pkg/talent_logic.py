@@ -1,10 +1,26 @@
 # AI-TTRPG/monolith/modules/rules_pkg/talent_logic.py
 from typing import Dict, List, Any, Optional
 import logging
+import json
+import os
 from . import data_loader
 from .models_inventory import PassiveModifier
 
 logger = logging.getLogger("monolith.rules.talent_logic")
+
+# Load talent tier configuration
+TALENT_TIER_CONFIG = {}
+_config_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "talent_tiers.json")
+if os.path.exists(_config_path):
+    try:
+        with open(_config_path, 'r') as f:
+            TALENT_TIER_CONFIG = json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load talent_tiers.json: {e}")
+        TALENT_TIER_CONFIG = {"tier_requirements": {}}
+else:
+    logger.warning(f"talent_tiers.json not found at {_config_path}, using empty config")
+    TALENT_TIER_CONFIG = {"tier_requirements": {}}
 
 def calculate_talent_bonuses(
     character_context: Dict[str, Any],
@@ -159,14 +175,14 @@ def find_eligible_talents(stats: Dict[str, int], skills: Dict[str, Any]) -> List
                 skill_rank = skills[skill_name].get("rank", 0)
                 for talent in skill_group.get("talents", []):
                     tier = talent.get("tier", "")
-                    # Assuming MT3 requires rank 1, MT5 requires rank 2, MT7 requires rank 3
-                    required_rank = 0
-                    if tier == "MT3":
-                        required_rank = 1
-                    elif tier == "MT5":
-                        required_rank = 2
-                    elif tier == "MT7":
-                        required_rank = 3
+                    # Use data-driven tier configuration
+                    tier_config = TALENT_TIER_CONFIG.get("tier_requirements", {}).get(tier)
+                    if tier_config:
+                        required_rank = tier_config.get("required_rank", 0)
+                    else:
+                        # Fallback for undefined tiers
+                        logger.warning(f"Unknown tier '{tier}' for talent, defaulting to rank 0")
+                        required_rank = 0
 
                     if skill_rank >= required_rank:
                         eligible_talents.append(talent)

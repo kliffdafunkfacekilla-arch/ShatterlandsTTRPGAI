@@ -7,6 +7,8 @@ from . import crud, models, schemas, services
 # --- MODIFIED/ADDED IMPORTS ---
 from ..rules_pkg import core as rules_core
 from ..story_pkg import database as story_db
+from ..world_pkg import database as world_db
+from ..world_pkg import models as world_models
 # --- END MODIFIED/ADDED IMPORTS ---
 import random
 import re
@@ -18,6 +20,73 @@ logger = logging.getLogger("monolith.story.combat")
 # ----------------------------------------------------
 # --- NEW CORE MOVEMENT AND AOE HELPERS (REQUIRED) ---
 # ----------------------------------------------------
+
+def _get_map_dimensions_and_data(location_id: int) -> Tuple[int, int, List[List[int]], List[int]]:
+    """
+    Retrieves map dimensions and tile data for pathfinding.
+    
+    Args:
+        location_id: The ID of the location to get map data for.
+    
+    Returns:
+        Tuple of (width, height, map_data, impassable_ids)
+        - width: Grid width in tiles
+        - height: Grid height in tiles
+        - map_data: 2D array of tile IDs [y][x]
+        - impassable_ids: List of tile IDs that block movement (e.g., walls, water)
+    
+    Raises:
+        RuntimeError: If location or map data is not found
+    """
+    db = None
+    try:
+        db = world_db.SessionLocal()
+        location = db.query(world_models.Location).filter(world_models.Location.id == location_id).first()
+        
+        if not location:
+            raise RuntimeError(f"Location {location_id} not found in database")
+        
+        if not location.generated_map_data:
+            raise RuntimeError(f"Location {location_id} has no generated map data")
+        
+        # Parse the generated map data
+        # Expected format: {"tiles": [[...]], "width": N, "height": M, ...}
+        map_data_json = location.generated_map_data
+        
+        if isinstance(map_data_json, dict):
+            # Extract tile grid
+            tiles = map_data_json.get("tiles", [])
+            width = map_data_json.get("width", len(tiles[0]) if tiles else 0)
+            height = map_data_json.get("height", len(tiles))
+            
+            # Define impassable tile IDs
+            # Typically: 1 = wall, 2 = water, etc.
+            # 0 = floor/passable is typically the default
+            impassable_ids = map_data_json.get("impassable", [1, 2, 3])  # Default walls, water, obstacles
+        
+        elif isinstance(map_data_json, list):
+            # Simpler format: just a 2D array
+            tiles = map_data_json
+            height = len(tiles)
+            width = len(tiles[0]) if tiles else 0
+            impassable_ids = [1, 2, 3]  # Default impassable tiles
+        
+        else:
+            raise RuntimeError(f"Invalid map data format for location {location_id}")
+        
+        if not tiles or width == 0 or height == 0:
+            raise RuntimeError(f"Location {location_id} has invalid map dimensions")
+        
+        return width, height, tiles, impassable_ids
+    
+    except Exception as e:
+        logger.error(f"Failed to get map data for location {location_id}: {e}")
+        raise RuntimeError(f"Could not load map data: {e}")
+    
+    finally:
+        if db:
+            db.close()
+
 
 def _find_next_step(start_coords: List[int], end_coords: List[int], location_id: int, log: List[str]) -> Optional[List[int]]:
     """
@@ -531,48 +600,9 @@ def _handle_effect_move_target_roll(
         return False
     else:
         log.append(f"{target_id} FAILED to resist ({total} vs DC {dc})!")
-        return _handle_effect_move_target(target_id, log, effect)
-
-def _handle_effect_move_target(
-    target_id: str,
-    log: List[str],
-    effect: Dict) -> bool:
-    """
-    Forcibly moves a target a specified distance.
-
-    Note: Currently assumes a push directly along the Y-axis for simplicity (needs vector logic).
-
-    Args:
-        target_id: Target ID.
-        log: Combat log.
-        effect: Effect definition with 'distance'.
-
-    Returns:
-        bool: True if moved.
-    """
-    if target_id.startswith("npc_"):
-        try:
-            distance = effect.get("distance", 1)
-            npc_instance_id = int(target_id.split('_')[1])
-            _, defender_context = get_actor_context(target_id)
-            current_coords = defender_context.get("coordinates", [1, 1])
-            loc_id = defender_context.get("location_id")
-
-            new_x, new_y = current_coords[0], current_coords[1] + distance
-
-            if not _is_passable_and_in_bounds(loc_id, new_x, new_y, log):
-                log.append(f"Target move stopped by obstacle or boundary.")
-                return False
-
-            services.world_api.update_npc_state(npc_instance_id, {"coordinates": [new_x, new_y]})
-            log.append(f"{target_id} is pushed {distance}m to ({new_x}, {new_y})!")
-            return True
-        except Exception as e:
-            log.append(f"Failed to move target: {e}")
-            return False
-    else:
-        log.append(f"Cannot move {target_id} (only NPCs can be forcibly moved in combat).")
-        return False
+        # Get source coordinates for vector calculation
+        source_coords = _get_actor_coords(attacker_context) if attacker_context else None
+        return _handle_effect_move_target(target_id, log, effect, source_coords)
 
 def _handle_effect_move_self(
     actor_id: str,
@@ -1469,14 +1499,101 @@ def _handle_effect_random_stat_debuff(target_id: str, log: List[str], effect: Di
 
 def _handle_effect_reaction_damage(
     actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Replaced Stub: Logs reaction damage without full implementation."""
-    log.append(f"REACTION: Triggered '{effect.get('trigger', 'Damage Reaction')}', but full implementation is pending. (Action proceeds)")
+    """
+    Handles damage reflection reactions (e.g., thorns damage, retaliation).
+    
+    When triggered, applies damage back to the attacker.
+    
+    Args:
+        actor_id: The attacker ID (who triggered the reaction)
+        target_id: The reactor ID (who is responding)
+        attacker_context: Attacker's data
+        defender_context: Defender's data
+        log: Combat log
+        effect: Effect definition with 'amount' (damage to reflect)
+    
+    Returns:
+        bool: True if damage was applied
+    """
+    amount_str = effect.get("amount", "1d6")
+    reflect_damage = _roll_dice_string(amount_str)
+    
+    if reflect_damage > 0:
+        log.append(f"REACTION: {target_id} reflects {reflect_damage} damage back at {actor_id}!")
+        
+        if actor_id.startswith("player_"):
+            services.apply_damage_to_character(actor_id, reflect_damage)
+        elif actor_id.startswith("npc_"):
+            npc_instance_id = int(actor_id.split("_")[1])
+            new_hp = attacker_context.get("current_hp", 0) - reflect_damage
+            services.apply_damage_to_npc(npc_instance_id, max(0, new_hp))
+        
+        return True
+    
     return False
 def _handle_effect_reaction_move_ally(
     actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Replaced Stub: Logs reaction move without full implementation."""
-    log.append(f"REACTION: Triggered '{effect.get('trigger', 'Move Ally Reaction')}', but full implementation is pending. (Action proceeds)")
-    return False
+    """
+    Handles ally repositioning reactions (e.g., pulling an ally to safety).
+    
+    Moves a specified ally a certain distance in a direction.
+    
+    Args:
+        actor_id: The attacker ID (who triggered the reaction)
+        target_id: The reactor ID (who is responding)
+        attacker_context: Attacker's data
+        defender_context: Defender's data
+        log: Combat log
+        effect: Effect definition with 'target_ally_id', 'distance'
+    
+    Returns:
+        bool: True if ally was moved
+    """
+    ally_id = effect.get("target_ally_id")
+    distance = effect.get("distance", 1)
+    
+    if not ally_id:
+        log.append(f"REACTION: Move Ally failed - no ally specified.")
+        return False
+    
+    try:
+        _, ally_context = get_actor_context(ally_id)
+        current_coords = _get_actor_coords(ally_context)
+        reactor_coords = _get_actor_coords(defender_context)
+        
+        if not current_coords or not reactor_coords:
+            log.append(f"REACTION: Move Ally failed - missing coordinates.")
+            return False
+        
+        # Calculate vector from ally toward reactor (pull to safety)
+        dx = reactor_coords[0] - current_coords[0]
+        dy = reactor_coords[1] - current_coords[1]
+        dist = max(abs(dx), abs(dy))
+        
+        if dist > 0:
+            # Normalize and scale
+            move_x = int((dx / dist) * distance)
+            move_y = int((dy / dist) * distance)
+            new_x = current_coords[0] + move_x
+            new_y = current_coords[1] + move_y
+        else:
+            # Already at same position
+            return False
+        
+        # Update ally position
+        if ally_id.startswith("player_"):
+            loc_id = ally_context.get("current_location_id")
+            services.character_api.update_character_location(ally_id, loc_id, [new_x, new_y])
+        elif ally_id.startswith("npc_"):
+            npc_instance_id = int(ally_id.split("_")[1])
+            services.world_api.update_npc_state(npc_instance_id, {"coordinates": [new_x, new_y]})
+        
+        log.append(f"REACTION: {target_id} pulls {ally_id} {distance}m to ({new_x}, {new_y})!")
+        return True
+        
+    except Exception as e:
+        log.append(f"REACTION: Move Ally failed - {e}")
+        return False
 def _handle_effect_reaction_contest(
     actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
     """Replaced Stub: Logs reaction contest without full implementation."""
@@ -1533,9 +1650,61 @@ def _handle_effect_create_trap(
 
 def _handle_effect_special_move(
     actor_id: str, target_id: str, attacker_context: Dict, defender_context: Dict, log: List[str], effect: Dict) -> bool:
-    """Replaced Stub: Logs special move without full implementation."""
+    """
+    Handles special moves with narrative/custom effects.
+    
+    Processes custom ability effects based on ability data, supporting:
+    - Status application
+    - Stat modifications
+    - Narrative text
+    
+    Args:
+        actor_id: Caster ID
+        target_id: Target ID
+        attacker_context: Caster's data
+        defender_context: Target's data
+        log: Combat log
+        effect: Effect definition with 'effect_id', 'narrative', 'custom_effects'
+    
+    Returns:
+        bool: True if executed
+    """
     effect_id = effect.get("effect_id", "unknown_move")
-    log.append(f"SPECIAL ACTION: {effect_id} executed. Custom logic handling is needed for narrative effects.")
+    narrative = effect.get("narrative", f"{actor_id} performs {effect_id}!")
+    custom_effects = effect.get("custom_effects", [])
+    
+    log.append(f"SPECIAL: {narrative}")
+    
+    # Process any custom sub-effects
+    if custom_effects:
+        for custom_effect in custom_effects:
+            effect_type = custom_effect.get("type")
+            
+            if effect_type == "apply_status":
+                status_id = custom_effect.get("status_id")
+                if status_id:
+                    services.apply_status_to_target(target_id, status_id)
+                    log.append(f" -> {target_id} gains status: {status_id}")
+            
+            elif effect_type == "stat_buff":
+                stat_name = custom_effect.get("stat")
+                bonus = custom_effect.get("bonus", 0)
+                duration = custom_effect.get("duration", 1)
+                log.append(f" -> {target_id} gains +{bonus} {stat_name} for {duration} turns")
+                # Note: Actual stat buff tracking would require combat state enhancement
+            
+            elif effect_type == "heal":
+                amount_str = custom_effect.get("amount", "1d6")
+                heal_amount = _roll_dice_string(amount_str)
+                if target_id.startswith("player_"):
+                    services.heal_character(target_id, heal_amount)
+                elif target_id.startswith("npc_"):
+                    npc_instance_id = int(target_id.split("_")[1])
+                    _, target_ctx = get_actor_context(target_id)
+                    new_hp = min(target_ctx.get("current_hp", 0) + heal_amount, target_ctx.get("max_hp", 99))
+                    services.apply_damage_to_npc(npc_instance_id, new_hp)
+                log.append(f" -> {target_id} heals for {heal_amount} HP")
+    
     return True
 
 # --- ADD THESE NEW HANDLERS ---

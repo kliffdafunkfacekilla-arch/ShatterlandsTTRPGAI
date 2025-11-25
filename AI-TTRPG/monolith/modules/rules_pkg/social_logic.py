@@ -90,7 +90,8 @@ def resolve_social_exchange(request: SocialEncounterRequest) -> SocialEncounterR
         composure_damage = 3 + (request.attacker_stat_score // 2)
     elif attacker_d20 == 1:
         outcome = "Critical Failure"
-        # Attacker may take composure damage on fumble
+        # Attacker takes composure damage on fumble (1d4)
+        composure_damage = -(random.randint(1, 4))  # Negative value indicates attacker loses composure
     elif defender_d20 == 20:
         outcome = "Critical Defense"
         # Defender completely shuts down the attempt

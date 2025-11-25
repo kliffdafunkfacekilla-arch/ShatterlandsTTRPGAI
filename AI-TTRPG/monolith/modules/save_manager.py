@@ -28,14 +28,21 @@ def _get_save_path(slot_name: str) -> str:
     filename = "".join(c for c in slot_name if c.isalnum() or c in ('_','-')) + ".json"
     return os.path.join(SAVE_DIR, filename)
 
-def _get_active_character_info() -> (str, str):
-    """Fetches the ID and name of the first active character."""
-    # This is a simple placeholder. In a multi-character setup,
-    # the client would pass this info to the save function.
+def _get_active_character_info(campaign_id: int = None) -> (str, str):
+    """Fetches the ID and name of the first active character for a campaign.
+    
+    Args:
+        campaign_id: Optional campaign ID to filter by
+    """
     db = None
     try:
         db = char_db.SessionLocal()
-        char = db.query(char_models.Character).first()
+        query = db.query(char_models.Character)
+        
+        if campaign_id:
+            query = query.filter(char_models.Character.campaign_id == campaign_id)
+        
+        char = query.first()
         if char:
             return char.id, char.name
         return None, None
@@ -46,8 +53,14 @@ def _get_active_character_info() -> (str, str):
         if db:
             db.close()
 
-def _save_game_internal(slot_name: str, active_character_id: str = None) -> Dict[str, Any]:
-    """Internal function to query all data and write to file."""
+def _save_game_internal(slot_name: str, active_character_id: str = None, campaign_id: int = None) -> Dict[str, Any]:
+    """Internal function to query campaign-scoped data and write to file.
+    
+    Args:
+        slot_name: Name of save slot
+        active_character_id: ID of active character
+        campaign_id: Campaign ID to filter by (if None, saves all data for backward compatibility)
+    """
     char_session = char_db.SessionLocal()
     world_session = world_db.SessionLocal()
     story_session = story_db.SessionLocal()
@@ -55,22 +68,46 @@ def _save_game_internal(slot_name: str, active_character_id: str = None) -> Dict
     try:
         logger.info(f"--- Starting Save Game process for slot: {slot_name} ---")
 
-        # --- 1. Query all data ---
-        logger.info("Querying character data...")
-        all_chars = char_session.query(char_models.Character).all()
-
-        logger.info("Querying world data...")
-        all_factions = world_session.query(world_models.Faction).all()
-        all_regions = world_session.query(world_models.Region).all()
-        all_locations = world_session.query(world_models.Location).all()
-        all_npcs = world_session.query(world_models.NpcInstance).all()
-        all_items = world_session.query(world_models.ItemInstance).all()
-        all_traps = world_session.query(world_models.TrapInstance).all()
-
-        logger.info("Querying story data...")
-        all_campaigns = story_session.query(story_models.Campaign).all()
-        all_quests = story_session.query(story_models.ActiveQuest).all()
-        all_flags = story_session.query(story_models.StoryFlag).all()
+        # --- 1. Query campaign-scoped data ---
+        if campaign_id:
+            logger.info(f"Querying data for campaign_id: {campaign_id}")
+            
+            # Query only data belonging to this campaign
+            logger.info("Querying character data...")
+            all_chars = char_session.query(char_models.Character).filter(
+                char_models.Character.campaign_id == campaign_id
+            ).all()
+            
+            logger.info("Querying story data...")
+            all_campaigns = story_session.query(story_models.Campaign).filter(
+                story_models.Campaign.id == campaign_id
+            ).all()
+            all_quests = story_session.query(story_models.ActiveQuest).filter(
+                story_models.ActiveQuest.campaign_id == campaign_id
+            ).all()
+            
+            # World data: For now, save all (future: add campaign_id to world tables)
+            logger.info("Querying world data (all - campaign scoping pending)...")
+            all_factions = world_session.query(world_models.Faction).all()
+            all_regions = world_session.query(world_models.Region).all()
+            all_locations = world_session.query(world_models.Location).all()
+            all_npcs = world_session.query(world_models.NpcInstance).all()
+            all_items = world_session.query(world_models.ItemInstance).all()
+            all_traps = world_session.query(world_models.TrapInstance).all()
+            all_flags = story_session.query(story_models.StoryFlag).all()
+        else:
+            # Backward compatibility: save all data if no campaign_id specified
+            logger.info("Querying all data (no campaign filter)...")
+            all_chars = char_session.query(char_models.Character).all()
+            all_factions = world_session.query(world_models.Faction).all()
+            all_regions = world_session.query(world_models.Region).all()
+            all_locations = world_session.query(world_models.Location).all()
+            all_npcs = world_session.query(world_models.NpcInstance).all()
+            all_items = world_session.query(world_models.ItemInstance).all()
+            all_traps = world_session.query(world_models.TrapInstance).all()
+            all_campaigns = story_session.query(story_models.Campaign).all()
+            all_quests = story_session.query(story_models.ActiveQuest).all()
+            all_flags = story_session.query(story_models.StoryFlag).all()
 
         # --- 2. Serialize data using Pydantic Schemas ---
         logger.info("Serializing data...")

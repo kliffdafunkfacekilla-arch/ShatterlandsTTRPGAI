@@ -1,0 +1,85 @@
+{
+  "tier_requirements": {
+    "MT1": {
+      "required_rank": 0,
+      "description": "Minor Tier 1 - Entry level minor talent"
+    },
+    "MT2": {
+      "required_rank": 0,
+      "description": "Minor Tier 2 - Basic minor talent"
+    },
+    "MT3": {
+      "required_rank": 1,
+      "description": "Minor Tier 3 - Requires Apprentice rank"
+    },
+    "MT4": {
+      "required_rank": 1,
+      "description": "Minor Tier 4 - Requires Apprentice rank"
+    },
+    "MT5": {
+      "required_rank": 2,
+      "description": "Minor Tier 5 - Requires Journeyman rank"
+    },
+    "MT6": {
+      "required_rank": 2,
+      "description": "Minor Tier 6 - Requires Journeyman rank"
+    },
+    "MT7": {
+      "required_rank": 3,
+      "description": "Minor Tier 7 - Requires Expert rank"
+    },
+    "MT8": {
+      "required_rank": 3,
+      "description": "Minor Tier 8 - Requires Expert rank"
+    },
+    "MT9": {
+      "required_rank": 4,
+      "description": "Minor Tier 9 - Requires Master rank"
+    },
+    "T1": {
+      "required_rank": 1,
+      "description": "Regular Tier 1 - Requires Apprentice rank"
+    },
+    "T2": {
+      "required_rank": 2,
+      "description": "Regular Tier 2 - Requires Journeyman rank"
+    },
+    "T3": {
+      "required_rank": 3,
+      "description": "Regular Tier 3 - Requires Expert rank"
+    },
+    "T4": {
+      "required_rank": 3,
+      "description": "Regular Tier 4 - Requires Expert rank"
+    },
+    "T5": {
+      "required_rank": 4,
+      "description": "Regular Tier 5 - Requires Master rank"
+    },
+    "T6": {
+      "required_rank": 4,
+      "description": "Regular Tier 6 - Requires Master rank"
+    },
+    "T7": {
+      "required_rank": 5,
+      "description": "Regular Tier 7 - Requires Legendary rank"
+    },
+    "T8": {
+      "required_rank": 5,
+      "description": "Regular Tier 8 - Requires Legendary rank"
+    },
+    "T9": {
+      "required_rank": 6,
+      "description": "Regular Tier 9 - Requires Mythic rank"
+    }
+  },
+  "rank_names": {
+    "0": "Untrained",
+    "1": "Apprentice",
+    "2": "Journeyman",
+    "3": "Expert",
+    "4": "Master",
+    "5": "Legendary",
+    "6": "Mythic"
+  }
+}
