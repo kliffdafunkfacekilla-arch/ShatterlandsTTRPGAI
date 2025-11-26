@@ -1,0 +1,25 @@
+{
+  "save_name": "test_campaign_save",
+  "save_time": "2025-11-26T17:49:26.101989",
+  "active_character_id": null,
+  "active_character_name": null,
+  "data": {
+    "characters": [],
+    "factions": [],
+    "regions": [],
+    "locations": [],
+    "npcs": [],
+    "items": [],
+    "traps": [],
+    "campaigns": [
+      {
+        "id": 10,
+        "name": "Test Campaign",
+        "main_plot_summary": "Test"
+      }
+    ],
+    "campaign_states": [],
+    "quests": [],
+    "flags": []
+  }
+}

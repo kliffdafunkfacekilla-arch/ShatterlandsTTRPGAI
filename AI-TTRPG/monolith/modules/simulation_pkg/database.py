@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 # .parents[1] = modules
 # .parents[2] = monolith
 # .parents[3] = AI-TTRPG (where world.db is)
-BASE_DIR = Path(__file__).resolve().parents[3]
+BASE_DIR = Path(__file__).resolve().parents[4]
 DB_PATH = BASE_DIR / "world.db"
 
 # Ensure the parent directory exists (though it should be the root)

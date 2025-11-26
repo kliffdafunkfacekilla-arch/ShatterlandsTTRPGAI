@@ -6,7 +6,7 @@ class Character(Base):
     __tablename__ = "characters"
 
     id = Column(String, primary_key=True, index=True)
-    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=True, index=True)  # NEW: For campaign scoping
+    campaign_id = Column(Integer, nullable=True, index=True)  # NEW: For campaign scoping
     name = Column(String, index=True)
     kingdom = Column(String)
 

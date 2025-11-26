@@ -66,7 +66,7 @@ def _save_game_internal(slot_name: str, active_character_id: str = None, campaig
     char_session = char_db.SessionLocal()
     world_session = world_db.SessionLocal()
     story_session = story_db.SessionLocal()
-    sim_session = sim_db.SessionLocal()
+    # sim_session removed to avoid locking (shares world.db)
 
     try:
         logger.info(f"--- Starting Save Game process for slot: {slot_name} ---")
@@ -91,8 +91,8 @@ def _save_game_internal(slot_name: str, active_character_id: str = None, campaig
             
             # World data: Filter by campaign_id
             logger.info("Querying world data for campaign...")
-            all_factions = world_session.query(world_models.Faction).filter(
-                world_models.Faction.campaign_id == campaign_id
+            all_factions = world_session.query(sim_models.Faction).filter(
+                sim_models.Faction.campaign_id == campaign_id
             ).all()
             all_regions = world_session.query(world_models.Region).filter(
                 world_models.Region.campaign_id == campaign_id
@@ -117,24 +117,23 @@ def _save_game_internal(slot_name: str, active_character_id: str = None, campaig
                 all_items = []
                 all_traps = []
             all_flags = story_session.query(story_models.StoryFlag).all()
+            all_campaign_states = story_session.query(story_models.CampaignState).filter(
+                story_models.CampaignState.campaign_id == campaign_id
+            ).all()
         else:
             # Backward compatibility: save all data if no campaign_id specified
             logger.info("Querying all data (no campaign filter)...")
             all_chars = char_session.query(char_models.Character).all()
-            all_factions = world_session.query(world_models.Faction).all()
+            all_factions = world_session.query(sim_models.Faction).all()
             all_regions = world_session.query(world_models.Region).all()
             all_locations = world_session.query(world_models.Location).all()
             all_npcs = world_session.query(world_models.NpcInstance).all()
             all_items = world_session.query(world_models.ItemInstance).all()
             all_traps = world_session.query(world_models.TrapInstance).all()
-            all_traps = world_session.query(world_models.TrapInstance).all()
             all_campaigns = story_session.query(story_models.Campaign).all()
             all_campaign_states = story_session.query(story_models.CampaignState).all()
             all_quests = story_session.query(story_models.ActiveQuest).all()
             all_flags = story_session.query(story_models.StoryFlag).all()
-
-        # --- 2. Serialize data using Pydantic Schemas ---
-        logger.info("Serializing data...")
         data = SaveGameData(
             characters=[CharacterSave.from_orm(c) for c in all_chars],
             factions=[FactionSave.from_orm(f) for f in all_factions],
@@ -185,7 +184,6 @@ def _save_game_internal(slot_name: str, active_character_id: str = None, campaig
         char_session.close()
         world_session.close()
         story_session.close()
-        sim_session.close()
 
 def _load_game_internal(slot_name: str) -> Dict[str, Any]:
     """Internal function to read file, wipe DBs, and repopulate."""
@@ -197,7 +195,7 @@ def _load_game_internal(slot_name: str) -> Dict[str, Any]:
     char_session = char_db.SessionLocal()
     world_session = world_db.SessionLocal()
     story_session = story_db.SessionLocal()
-    sim_session = sim_db.SessionLocal()
+    # sim_session removed
 
     try:
         logger.info(f"--- Starting Load Game process from: {filepath} ---")
@@ -227,7 +225,7 @@ def _load_game_internal(slot_name: str) -> Dict[str, Any]:
         world_session.query(world_models.Map).delete()
         world_session.query(world_models.Region).delete()
         # world_session.query(world_models.Faction).delete() # MOVED
-        sim_session.query(sim_models.Faction).delete()
+        world_session.query(sim_models.Faction).delete()
 
         # Character
         char_session.query(char_models.Character).delete()
@@ -244,9 +242,9 @@ def _load_game_internal(slot_name: str) -> Dict[str, Any]:
             # This might fail if the schema in save file doesn't match.
             # But we assume the save file matches the Pydantic schema FactionSave.
             # We need to ensure sim_models.Faction is compatible with FactionSave.
-            sim_session.add(sim_models.Faction(**faction_data.model_dump()))
+            world_session.add(sim_models.Faction(**faction_data.model_dump()))
 
-        sim_session.commit()
+        # sim_session.commit() -> handled by world_session.commit()
 
         for region_data in data.regions:
             world_session.add(world_models.Region(**region_data.model_dump()))
@@ -283,7 +281,6 @@ def _load_game_internal(slot_name: str) -> Dict[str, Any]:
         char_session.commit()
         world_session.commit()
         story_session.commit()
-        sim_session.commit()
 
         logger.info("--- Load Game complete ---")
         return {"success": True, "name": save_file.save_name, "active_character_name": save_file.active_character_name}
@@ -293,10 +290,8 @@ def _load_game_internal(slot_name: str) -> Dict[str, Any]:
         char_session.rollback()
         world_session.rollback()
         story_session.rollback()
-        sim_session.rollback()
         return {"success": False, "error": str(e)}
     finally:
         char_session.close()
         world_session.close()
         story_session.close()
-        sim_session.close()

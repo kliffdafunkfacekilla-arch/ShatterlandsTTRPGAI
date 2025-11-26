@@ -42,18 +42,7 @@ class TrapInstance(Base):
     # Relationships
     location = relationship("Location", back_populates="trap_instances")
 
-class Faction(Base):
-    """
-    Tracks factions like 'The Silver Hand'.
-    This is high-level data for the AI DM.
-    """
-    __tablename__ = "factions"
-    id = Column(Integer, primary_key=True, index=True)
-    campaign_id = Column(Integer, nullable=True, index=True)  # Campaign scoping
-    name = Column(String, unique=True, index=True)
-    status = Column(String, default="neutral")
-    disposition = Column(JSON, default={}) # e.g., {"faction_id_2": "war"}
-    resources = Column(Integer, default=100)
+# Faction model moved to simulation_pkg/models.py to avoid duplication
 
 class Region(Base):
     """

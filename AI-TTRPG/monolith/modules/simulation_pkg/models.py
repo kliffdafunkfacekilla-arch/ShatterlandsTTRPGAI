@@ -6,6 +6,7 @@ class Faction(Base):
     __tablename__ = "factions"
 
     id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, nullable=True, index=True) # Added for campaign scoping
     name = Column(String, unique=True, index=True)
     goals = Column(String) # Description of what they want
     strength = Column(Integer, default=50) # 0-100

@@ -159,9 +159,32 @@ class ActiveQuestSave(BaseModel):
     class Config:
         from_attributes = True
 
+class SaveGameData(BaseModel):
+    characters: List[CharacterSave]
+    factions: List[FactionSave]
+    regions: List[RegionSave]
+    locations: List[LocationSave]
+    npcs: List[NpcInstanceSave]
+    items: List[ItemInstanceSave]
+    traps: List[TrapInstanceSave]
+    campaigns: List[CampaignSave]
+    campaign_states: List[CampaignStateSave] = []
+    quests: List[ActiveQuestSave]
+    flags: List["StoryFlagSave"] = []
+
+    class Config:
+        from_attributes = True
+
 class StoryFlagSave(BaseModel):
     id: int
     flag_name: str
+    active_character_id: Optional[str] = None
+    active_character_name: Optional[str] = None
+    data: SaveGameData
+
+class SaveFile(BaseModel):
+    save_name: str
+    save_time: str
     active_character_id: Optional[str] = None
     active_character_name: Optional[str] = None
     data: SaveGameData
