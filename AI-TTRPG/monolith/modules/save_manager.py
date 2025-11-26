@@ -127,7 +127,9 @@ def _save_game_internal(slot_name: str, active_character_id: str = None, campaig
             all_npcs = world_session.query(world_models.NpcInstance).all()
             all_items = world_session.query(world_models.ItemInstance).all()
             all_traps = world_session.query(world_models.TrapInstance).all()
+            all_traps = world_session.query(world_models.TrapInstance).all()
             all_campaigns = story_session.query(story_models.Campaign).all()
+            all_campaign_states = story_session.query(story_models.CampaignState).all()
             all_quests = story_session.query(story_models.ActiveQuest).all()
             all_flags = story_session.query(story_models.StoryFlag).all()
 
