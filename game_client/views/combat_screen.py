@@ -137,47 +137,6 @@ class CombatScreen(Screen):
 
         self.add_widget(layout)
         Window.bind(on_resize=self.center_layout)
-        
-    def center_layout(self, *args):
-        # Kivy's window binding expects this method to exist.
-        # Add widget positioning logic here later.
-        pass
-
-    def _update_text_size(self, instance, value):
-        instance.text_size = (instance.width - 20, None)
-
-    def on_enter(self, *args):
-        """Called when the screen is shown. Starts the combat loop."""
-        app = App.get_running_app()
-        try:
-            main_screen = app.root.get_screen('main_interface')
-            # Ensure we have party contexts
-            if not main_screen.party_contexts:
-                 logging.error("No party contexts found to start combat.")
-                 app.root.current = 'main_interface'
-                 return
-
-            player_ids = [p.id for p in main_screen.party_contexts]
-            npc_ids = app.game_settings.get('pending_combat_npcs', ['goblin_scout'])
-            loc_id = main_screen.active_character_context.current_location_id
-
-            start_req = story_schemas.CombatStartRequest(
-                location_id=loc_id,
-                player_ids=player_ids,
-                npc_template_ids=npc_ids
-            )
-            self.combat_state = story_api.start_combat(start_req)
-            app.game_settings['combat_state'] = self.combat_state 
-
-        except Exception as e:
-            logging.exception(f"Failed to start combat: {e}")
-            self.add_to_log(f"Error starting combat: {e}")
-            app.root.current = 'main_interface'
-            return
-
-        self.log_text = "Combat started.\n"
-        self.current_action = None
-        self.is_player_turn = False
         self.active_combat_character = None
         self.party_contexts_list.clear()
 

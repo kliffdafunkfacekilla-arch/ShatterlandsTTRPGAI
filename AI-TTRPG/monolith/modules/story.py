@@ -108,6 +108,39 @@ def handle_player_action(combat_id: int, actor_id: str, action: se_schemas.Playe
     finally:
         db.close()
 
+def get_combat_state(combat_id: int) -> Dict[str, Any]:
+    """Retrieve the current state of a combat encounter."""
+    logger.info(f"[story.sync] get_combat_state command received: {combat_id}")
+    db = se_db.SessionLocal()
+    try:
+        combat = se_crud.get_combat_encounter(db, combat_id)
+        if not combat:
+            raise RuntimeError(f"Combat {combat_id} not found")
+        
+        participants = []
+        for p in combat.participants:
+            participants.append({
+                "actor_id": p.actor_id,
+                "actor_type": p.actor_type,
+                "initiative_roll": p.initiative_roll,
+                "team": p.team
+            })
+            
+        return {
+            "id": combat.id,
+            "location_id": combat.location_id,
+            "status": combat.status,
+            "turn_order": combat.turn_order,
+            "current_turn_index": combat.current_turn_index,
+            "participants": participants,
+            "log": [] 
+        }
+    except Exception as e:
+        logger.exception(f"Error getting combat state: {e}")
+        raise
+    finally:
+        db.close()
+
 def handle_npc_action(combat_id: int) -> Dict[str, Any]:
     """Determine and execute an NPC action for the current turn."""
     logger.info(f"[story.sync] handle_npc_action command received for combat {combat_id}")

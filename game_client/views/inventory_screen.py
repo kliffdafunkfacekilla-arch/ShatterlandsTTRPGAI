@@ -95,8 +95,7 @@ class InventoryScreen(Screen):
 
     def on_enter(self, *args):
         app = App.get_running_app()
-        main_screen = app.root.get_screen('main_interface')
-        char_context = main_screen.active_character_context
+        char_context = app.active_character_context
         if not char_context:
             logging.error("INVENTORY: No character context found!")
             return
@@ -145,9 +144,9 @@ class InventoryScreen(Screen):
 
         new_context_dict = character_api.equip_item(char_id, item_id, slot)
 
-        main_screen = App.get_running_app().root.get_screen('main_interface')
-        context_schema = main_screen.active_character_context.__class__
-        main_screen.active_character_context = context_schema(**new_context_dict)
+        app = App.get_running_app()
+        context_schema = app.active_character_context.__class__
+        app.active_character_context = context_schema(**new_context_dict)
 
         self.on_enter()
 
@@ -163,11 +162,10 @@ class InventoryScreen(Screen):
 
             # 2. Get the active character context object from the main screen
             app = App.get_running_app()
-            main_screen = app.root.get_screen('main_interface')
 
             # 3. Update the context object using the refreshed schema data
-            context_schema = main_screen.active_character_context.__class__
-            main_screen.active_character_context = context_schema(**new_context_dict)
+            context_schema = app.active_character_context.__class__
+            app.active_character_context = context_schema(**new_context_dict)
 
             # 4. Refresh the current screen's display to show the updated inventory
             self.on_enter()

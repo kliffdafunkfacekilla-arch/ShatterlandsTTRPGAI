@@ -269,7 +269,11 @@ class CharacterCreationScreen(Screen):
                     if not hasattr(app, 'game_settings') or app.game_settings is None:
                         app.game_settings = {}
                     app.game_settings['party_list'] = [res.name]
-                    app.root.current = 'main_interface'
+                    
+                    # Redirect to Game Setup
+                    game_setup_screen = app.root.get_screen('game_setup')
+                    game_setup_screen.preselect_character(res.id)
+                    app.root.current = 'game_setup'
         except Exception as e:
             logging.exception(f"Creation failed: {e}")
 

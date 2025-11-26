@@ -329,9 +329,16 @@ class MainInterfaceScreen(Screen):
             self.party_contexts = loaded_contexts
             # --- END FIX ---
 
-            # Set the first character as active by default
+            # Set the first character as active by default OR keep existing
             if self.party_contexts:
-                self.active_character_context = self.party_contexts[0]
+                if app.active_character_context and any(c.id == app.active_character_context.id for c in self.party_contexts):
+                     # Keep existing if valid
+                     self.active_character_context = app.active_character_context
+                else:
+                     self.active_character_context = self.party_contexts[0]
+                
+                # Update global context
+                app.active_character_context = self.active_character_context
             # Set the party_list to trigger the UI update
             self.party_list = self.party_contexts
 
@@ -414,6 +421,14 @@ class MainInterfaceScreen(Screen):
     def set_active_character(self, char_context, *args):
         """Callback to switch the active character."""
         self.active_character_context = char_context
+        app = App.get_running_app()
+        app.active_character_context = char_context
+        
+        # Save persistence
+        if hasattr(app, 'app_settings'):
+            app.app_settings['last_active_character_id'] = char_context.id
+            from game_client import settings_manager
+            settings_manager.save_settings(app.app_settings)
         self.update_log(f"{char_context.name} is now the active character.")
         # Re-firing update_party_list_ui will update the highlighting
         self.update_party_list_ui()
@@ -457,6 +472,13 @@ class MainInterfaceScreen(Screen):
             updated_context_dict = character_api.update_character_location(
                 char_id, loc_id, new_coords
             )
+            
+            # --- Check for Encounter ---
+            if updated_context_dict.get("event_type") == "combat_start":
+                encounter_id = updated_context_dict.get("encounter_id")
+                logging.info(f"Combat triggered! Encounter ID: {encounter_id}")
+                self.trigger_combat(encounter_id)
+                return # Stop processing movement visual update
 
             # --- Refresh the specific character in the master list ---
             # Create a new CharacterContextResponse object from the updated dict
@@ -479,9 +501,17 @@ class MainInterfaceScreen(Screen):
             )
             self.update_log(f"{self.active_character_context.name} moved to ({tile_x}, {tile_y})")
 
+
+
         except Exception as e:
             logging.exception(f"Failed to move player: {e}")
             self.update_log(f"Error: Could not move player.")
+
+    def trigger_combat(self, encounter_id):
+        """Transitions the game to the combat screen."""
+        app = App.get_running_app()
+        app.current_encounter_id = encounter_id
+        app.root.current = 'combat_screen'
 
     def on_submit_narration(self, *args):
         pass
@@ -604,11 +634,15 @@ class MainInterfaceScreen(Screen):
             result = save_api.save_game(slot_name)
             if result.get("success"):
                 self.update_log(f"Game saved to slot: {slot_name}")
+                App.get_running_app().show_error("Success", "Game Saved Successfully")
             else:
-                self.update_log(f"Save failed: {result.get('error', 'Unknown error')}")
+                error_msg = result.get('error', 'Unknown error')
+                self.update_log(f"Save failed: {error_msg}")
+                App.get_running_app().show_error("Save Failed", error_msg)
         except Exception as e:
             logging.exception(f"Error calling save_game: {e}")
             self.update_log(f"Save failed: {e}")
+            App.get_running_app().show_error("Save Error", str(e))
         self.save_popup.dismiss()
 
     def show_debug_popup(self):

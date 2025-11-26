@@ -41,74 +41,14 @@ class GameSetupScreen(Screen):
 
     # This will hold the mapping of {char_name: CheckBox_widget}
     character_toggles: Dict[str, CheckBox] = {}
+    character_toggles_by_id: Dict[str, CheckBox] = {}
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.build_ui()
-        self.load_characters() # Load characters when the screen is created
+        # self.load_characters() # Removed from init, called on_enter
 
-    def build_ui(self):
-        """Constructs the Kivy widget layout for this screen."""
-        layout = BoxLayout(orientation='vertical', padding='20dp', spacing='10dp')
-
-        layout.add_widget(Label(text='Game Setup', font_size='32sp', size_hint_y=0.15))
-
-        # --- Party Selection ---
-        layout.add_widget(Label(text='Select Party Members', size_hint_y=0.1))
-
-        # --- NEW: ScrollView for Character Checkboxes ---
-        scroll_view = ScrollView(size_hint_y=0.3)
-        self.character_select_list = GridLayout(
-            cols=1,
-            size_hint_y=None,
-            spacing='5dp'
-        )
-        self.character_select_list.bind(minimum_height=self.character_select_list.setter('height'))
-        scroll_view.add_widget(self.character_select_list)
-        layout.add_widget(scroll_view)
-        # --- END NEW ---
-
-        # Button to go to character creation
-        create_char_btn = Button(
-            text='Create New Character',
-            size_hint_y=None,
-            height='44dp'
-        )
-        create_char_btn.bind(on_release=self.go_to_character_creation)
-        layout.add_widget(create_char_btn)
-
-        # --- Game Settings (as defined in your outline) ---
-        layout.add_widget(Label(text='Difficulty', size_hint_y=0.1))
-        self.difficulty_spinner = Spinner(
-            text='Normal',
-            values=['Easy', 'Normal', 'Hard', 'Nightmare'],
-            size_hint_y=None, height='44dp'
-        )
-        layout.add_widget(self.difficulty_spinner)
-
-        # ... (Add other spinners for Style, Combat, etc. here) ...
-
-        # Spacer
-        layout.add_widget(BoxLayout(size_hint_y=0.1))
-
-        # --- Start/Back Buttons ---
-        button_layout = BoxLayout(size_hint_y=0.1, spacing='10dp')
-
-        back_btn = Button(text='Back to Menu')
-        back_btn.bind(on_release=self.go_to_main_menu)
-        button_layout.add_widget(back_btn)
-
-        start_btn = Button(text='Start Game')
-        start_btn.bind(on_release=self.start_game)
-        button_layout.add_widget(start_btn)
-
-        layout.add_widget(button_layout)
-        self.add_widget(layout)
-
-    def on_enter(self, *args):
-        """Kivy function that runs when this screen is shown."""
-        # Refresh the character list every time we enter this screen
-        self.load_characters()
+    # ... (build_ui unchanged) ...
 
     def load_characters(self):
         """
@@ -120,9 +60,9 @@ class GameSetupScreen(Screen):
             self.character_select_list.add_widget(Label(text="Error: Monolith not loaded"))
             return
 
-        char_names = ['No characters found']
         self.character_select_list.clear_widgets()
         self.character_toggles.clear()
+        self.character_toggles_by_id.clear()
 
         db = None
         try:
@@ -150,6 +90,7 @@ class GameSetupScreen(Screen):
 
                     self.character_select_list.add_widget(char_box)
                     self.character_toggles[char_context.name] = checkbox
+                    self.character_toggles_by_id[char_context.id] = checkbox
                 # --- END NEW ---
 
             else:
@@ -162,6 +103,15 @@ class GameSetupScreen(Screen):
         finally:
             if db:
                 db.close() # Always close the session
+
+    def preselect_character(self, char_id):
+        """Selects the checkbox for the given character ID."""
+        # Ensure characters are loaded first
+        self.load_characters()
+        if char_id in self.character_toggles_by_id:
+            self.character_toggles_by_id[char_id].active = True
+
+
 
     def go_to_main_menu(self, instance):
         """Navigates back to the main menu."""

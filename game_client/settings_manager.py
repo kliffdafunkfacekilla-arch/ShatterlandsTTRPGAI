@@ -24,7 +24,8 @@ DEFAULT_SETTINGS = {
     "sfx_volume": 100,
     "colorblind_mode": False,
     "reduce_flashing": False,
-    "google_api_key": ""
+    "google_api_key": "",
+    "last_active_character_id": None
 }
 
 def load_settings() -> Dict[str, Any]:
