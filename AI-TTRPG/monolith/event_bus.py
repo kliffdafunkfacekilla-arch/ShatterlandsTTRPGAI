@@ -24,7 +24,13 @@ class EventBus:
     """
     def __init__(self):
         self._subscribers: Dict[str, List[Subscriber]] = {}
-        self._lock = asyncio.Lock()
+        self._lock = None # Lazy init
+
+    @property
+    def lock(self):
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def publish(self, topic: str, payload: Any) -> None:
         """
@@ -38,7 +44,7 @@ class EventBus:
             payload (Any): The data to pass to subscribers.
         """
         # dispatch to subscribers without waiting on each
-        async with self._lock:
+        async with self.lock:
             subs = list(self._subscribers.get(topic, []))
         for sub in subs:
             # schedule but don't await to keep bus responsive
@@ -61,7 +67,7 @@ class EventBus:
             topic (str): The event topic to listen for.
             handler (Subscriber): An async callable that takes (topic, payload).
         """
-        async with self._lock:
+        async with self.lock:
             if topic not in self._subscribers:
                 self._subscribers[topic] = []
             self._subscribers[topic].append(handler)
@@ -74,7 +80,7 @@ class EventBus:
             topic (str): The event topic.
             handler (Subscriber): The handler to remove.
         """
-        async with self._lock:
+        async with self.lock:
             if topic in self._subscribers:
                 try:
                     self._subscribers[topic].remove(handler)

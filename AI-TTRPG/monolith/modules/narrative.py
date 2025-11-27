@@ -35,7 +35,7 @@ def register(orchestrator) -> None:
     """
     bus = get_event_bus()
     # subscribe to state updates
-    asyncio.create_task(bus.subscribe("state.updated", _on_state_updated))
+    asyncio.get_event_loop().create_task(bus.subscribe("state.updated", _on_state_updated))
 
 
 async def advance_narrative(node_id: str, orchestrator) -> dict:

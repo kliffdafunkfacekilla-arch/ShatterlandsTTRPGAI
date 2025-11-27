@@ -37,4 +37,4 @@ def register(orchestrator) -> None:
         orchestrator: The system orchestrator instance.
     """
     bus = get_event_bus()
-    asyncio.create_task(bus.subscribe("command.start_combat", _on_command_start_combat))
+    asyncio.get_event_loop().create_task(bus.subscribe("command.start_combat", _on_command_start_combat))

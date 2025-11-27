@@ -112,6 +112,11 @@ class ShatterlandsClientApp(App):
         Updates the LoadingScreen via Clock.schedule_once.
         """
         try:
+            # Create a new event loop for this thread
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
             self.update_loading_status("Initializing Logging...", 10)
             
             # Database Migrations
@@ -122,6 +127,7 @@ class ShatterlandsClientApp(App):
             
             # Module Registration
             self.update_loading_status("Registering Modules...", 50)
+            # register_all uses asyncio.create_task, so it needs a loop
             register_all(get_orchestrator())
             
             # Asset Loading
@@ -138,6 +144,9 @@ class ShatterlandsClientApp(App):
             
             # Initialize screens on main thread and switch
             Clock.schedule_once(self.initialize_screens_and_switch, 0)
+            
+            # Keep the loop running for the event bus
+            loop.run_forever()
             
         except Exception as e:
             logger.exception(f"FATAL: An error occurred during startup: {e}")
