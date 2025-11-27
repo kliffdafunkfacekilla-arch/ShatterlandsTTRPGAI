@@ -20,7 +20,7 @@ def register_all(orchestrator) -> None:
     """
     # import modules lazily to avoid import cycles during bootstrap
     from . import narrative, combat, rules, encounter_generator, story, world
-    from . import character, save_api, ai_dm
+    from . import character, save_api, ai_dm, simulation
 
     narrative.register(orchestrator)
     combat.register(orchestrator)

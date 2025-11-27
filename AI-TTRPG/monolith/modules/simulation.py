@@ -1,7 +1,8 @@
 import logging
 from typing import Dict, Any, List
 from .simulation_pkg import services, database
-from . import orchestrator
+# from .. import orchestrator # Not actually used in this file, and causes circular imports if not careful.
+# The register function takes orchestrator as an arg, so we don't need to import it at top level.
 
 logger = logging.getLogger("monolith.simulation")
 
