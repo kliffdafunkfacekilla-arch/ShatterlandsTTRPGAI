@@ -1,0 +1,72 @@
+INFO:monolith.orchestrator:Orchestrator Initialized.
+INFO:monolith.rules.data_loader:Loaded stats_and_skills.json
+INFO:monolith.rules.data_loader:--- Loading Rules Data ---
+INFO:monolith.rules.data_loader:Loaded stats_and_skills.json
+INFO:monolith.rules.data_loader:Loaded abilities.json
+INFO:monolith.rules.data_loader:Loaded talents.json
+INFO:monolith.rules.data_loader:Loaded kingdom_features.json
+INFO:monolith.rules.data_loader:Loaded kingdom_features.json
+INFO:monolith.rules.data_loader:Loaded melee_weapons.json
+INFO:monolith.rules.data_loader:Loaded ranged_weapons.json
+INFO:monolith.rules.data_loader:Loaded armor.json
+INFO:monolith.rules.data_loader:Loaded skill_mappings.json
+INFO:monolith.rules.data_loader:Loaded injury_effects.json
+INFO:monolith.rules.data_loader:Loaded status_effects.json
+INFO:monolith.rules.data_loader:Loaded origin_choices.json
+INFO:monolith.rules.data_loader:Loaded childhood_choices.json
+INFO:monolith.rules.data_loader:Loaded coming_of_age_choices.json
+INFO:monolith.rules.data_loader:Loaded training_choices.json
+INFO:monolith.rules.data_loader:Loaded devotion_choices.json
+INFO:monolith.rules.data_loader:Loaded npc_templates.json
+INFO:monolith.rules.data_loader:Loaded item_templates.json
+INFO:monolith.rules.data_loader:Loaded generation_rules.json
+INFO:monolith.ai_dm.llm:AI Client initialized.
+INFO:monolith.map:[map] Loading all map data from 'map_pkg/data/'...
+INFO:monolith.map:[map] Map data loaded successfully.
+INFO:reproduce_crash:Starting crash reproduction script...
+INFO:reproduce_crash:Found character to test: TestChar
+INFO:reproduce_crash:Simulating MainInterfaceScreen loading...
+INFO:reproduce_crash:Loading character: TestChar
+INFO:reproduce_crash:Calling get_character_context...
+INFO:reproduce_crash:Character Context Loaded. ID: 6a3351d7-dcf3-4e55-a836-72c8052ac9b7, Location: 1
+INFO:reproduce_crash:Loading location context for ID: 1
+INFO:monolith.world.crud:Getting full context for location_id: 1
+ERROR:monolith.world.crud:Location not found for id: 1
+ERROR:reproduce_crash:Failed to load location context: 404: Location not found
+Traceback (most recent call last):
+  File "C:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\reproduce_crash.py", line 72, in reproduce
+    location_context = world_crud.get_location_context(world_db, loc_id)
+  File "C:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\AI-TTRPG\monolith\modules\world_pkg\crud.py", line 408, in get_location_context
+    raise HTTPException(status_code=404, detail="Location not found")
+fastapi.exceptions.HTTPException: 404: Location not found
+Starting data loading process...
+Processed 72 skills into master map.
+Processed 3 techniques.
+Processed 320 abilities into fast lookup map.
+Processed 60 kingdom features into flat map.
+DEBUG: STATS_LIST len: 12
+DEBUG: ALL_SKILLS len: 72
+DEBUG: ABILITY_DATA len: 12
+DEBUG: ABILITY_MAP len: 320
+DEBUG: TALENT_DATA len: 3
+DEBUG: FEATURE_STATS_MAP len: 60
+DEBUG: KINGDOM_FEATURES_DATA keys: 9
+Loaded 12 melee weapon categories.
+Loaded 12 ranged weapon categories.
+Loaded 12 armor categories.
+Loaded 36 skill mappings.
+Loaded 4 major injury locations.
+Loaded 12 status effect definitions.
+Loaded 3 origin choices.
+Loaded 3 childhood choices.
+Loaded 3 coming of age choices.
+Loaded 3 training choices.
+Loaded 3 devotion choices.
+Loaded 4 NPC templates.
+Loaded 21 item templates.
+Loaded 6 NPC generation rule sections.
+--- Rules Engine Data Parsed Successfully ---
+--- Map Generator: Loading Data ---
+Loaded 6 tile definitions.
+Loaded 2 generation algorithms.
+--- Map Generator: Data Loaded ---

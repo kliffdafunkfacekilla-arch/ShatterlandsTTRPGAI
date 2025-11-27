@@ -21,10 +21,10 @@ MAIN_MENU_KV = """
             bold: True
 
         DungeonButton:
-            text: 'Character Creator'
+            text: 'New Game'
             font_size: '24sp'
             size_hint_y: 0.15
-            on_release: app.root.current = 'character_creation'
+            on_release: app.root.current = 'game_setup'
 
         DungeonButton:
             text: 'Load Game'

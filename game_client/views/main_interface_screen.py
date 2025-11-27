@@ -326,7 +326,11 @@ class MainInterfaceScreen(Screen, AsyncHelper):
         except Exception as e:
             logging.error(f"Failed to load party: {e}")
             if char_db: char_db.close()
-            app.root.current = 'main_menu'
+            # Show error popup before returning to menu
+            p = Popup(title="Load Error", content=Label(text=f"Failed to load party:\n{e}"), size_hint=(0.8, 0.4))
+            p.open()
+            # Delay return to menu so user can see error
+            Clock.schedule_once(lambda dt: setattr(app.root, 'current', 'main_menu'), 5)
             return
         finally:
             if char_db: char_db.close()

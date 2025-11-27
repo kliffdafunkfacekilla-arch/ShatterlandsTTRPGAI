@@ -191,11 +191,34 @@ class GameSetupScreen(Screen):
                 for char_context in char_contexts:
                     char_box = BoxLayout(orientation='horizontal', size_hint_y=None, height='44dp')
 
-                    checkbox = CheckBox(size_hint_x=0.2, color=(0,0,0,1)) # Dark checkbox for parchment
-                    label = Factory.ParchmentLabel(text=char_context.name, size_hint_x=0.8, halign='left', valign='middle')
-                    label.bind(size=label.setter('text_size')) # for alignment
+                    # Container for checkbox with dark background to make it visible
+                    check_container = BoxLayout(size_hint_x=0.2, padding='10dp')
+                    with check_container.canvas.before:
+                        from kivy.graphics import Color, Rectangle
+                        Color(0.2, 0.15, 0.1, 1) # Dark brown background for checkbox area
+                        Rectangle(pos=check_container.pos, size=check_container.size)
+                    # Bind canvas update
+                    def update_rect(instance, value):
+                        instance.canvas.before.children[2].pos = instance.pos
+                        instance.canvas.before.children[2].size = instance.size
+                    check_container.bind(pos=update_rect, size=update_rect)
 
-                    char_box.add_widget(checkbox)
+                    checkbox = CheckBox(color=(1, 1, 1, 1)) # White checkmark
+                    check_container.add_widget(checkbox)
+
+                    # High contrast label (Black text)
+                    label = Label(
+                        text=char_context.name, 
+                        size_hint_x=0.8, 
+                        halign='left', 
+                        valign='middle',
+                        color=(0, 0, 0, 1), # Black text
+                        font_size='18sp',
+                        bold=True
+                    )
+                    label.bind(size=label.setter('text_size')) 
+
+                    char_box.add_widget(check_container)
                     char_box.add_widget(label)
 
                     self.character_select_list.add_widget(char_box)
