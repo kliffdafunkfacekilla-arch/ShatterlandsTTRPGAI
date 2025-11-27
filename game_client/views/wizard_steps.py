@@ -162,7 +162,7 @@ class FeatureStep(WizardStep):
             desc = "; ".join(mod_strs)
             
             # Create a selectable card
-            btn = Factory.DungeonButton(text=f"{name}\n[size=14sp]{desc}[/size]", size_hint_y=None, height='80dp', halign='center')
+            btn = Factory.DungeonButton(text=f"{name}\n[size=14sp]{desc}[/size]", size_hint_y=None, height='80dp', halign='center', markup=True)
             btn.bind(on_release=lambda inst, n=name: self.select_option(inst, n))
             self.options_layout.add_widget(btn)
 
@@ -264,7 +264,7 @@ class BackgroundStep(WizardStep):
             desc = opt.get('description', 'No description available.')
             
             # Card with Name and Description
-            btn = Factory.DungeonButton(text=f"{name}\n[size=14sp]{desc}[/size]", size_hint_y=None, height='100dp', halign='center')
+            btn = Factory.DungeonButton(text=f"{name}\n[size=14sp]{desc}[/size]", size_hint_y=None, height='100dp', halign='center', markup=True)
             btn.bind(on_release=lambda inst, n=name: self.select_option(inst, n))
             self.options_layout.add_widget(btn)
 

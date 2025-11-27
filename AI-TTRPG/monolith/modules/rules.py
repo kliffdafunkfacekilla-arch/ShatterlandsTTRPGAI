@@ -74,13 +74,20 @@ def calculate_creation_preview(request_data: Dict[str, Any]) -> Dict[str, Any]:
     return {"calculated_stats": stats, "calculated_skills": [], "eligible_talents": [{"name": "Basic Strike"}, {"name": "Defensive Stance"}]}
 
 def get_all_stats() -> List[str]:
+    if not data_loader.STATS_LIST:
+        logger.warning("Stats list empty, attempting to reload data...")
+        data_loader.load_data()
     return data_loader.STATS_LIST
 
 def get_all_skills() -> List[str]:
+    if not data_loader.SKILL_MAP:
+        data_loader.load_data()
     return list(data_loader.SKILL_MAP.keys())
 
 def get_all_talents_data() -> Dict[str, Any]:
     """Returns structured talent data."""
+    if not data_loader.TALENT_DATA:
+        data_loader.load_data()
     return data_loader.TALENT_DATA
 
 def get_ability_school(school_name: str) -> Dict[str, Any]:
@@ -104,6 +111,10 @@ def resolve_stat(context: dict, default: str, tags: list, check_type: str) -> st
 
 def calculate_talent_bonuses(context: dict, action: str, tags: list) -> dict:
     return talent_logic.calculate_talent_bonuses(context, action, tags)
+
+def get_data(data_key: str) -> Any:
+    """Public accessor for raw data."""
+    return _get_data(data_key)
 
 def _get_data(data_key: str) -> Any:
     mapping = {

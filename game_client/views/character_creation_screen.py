@@ -86,6 +86,22 @@ class CharacterCreationScreen(Screen, AsyncHelper):
 
     def _fetch_rules_task(self):
         if not rules_api: return {}
+        
+        # Robust Talent Parsing
+        talents_data = rules_api.get_all_talents_data()
+        all_talents = []
+        
+        def extract_names(obj):
+            if isinstance(obj, dict):
+                if 'talent_name' in obj: all_talents.append(obj['talent_name'])
+                elif 'name' in obj: all_talents.append(obj['name'])
+                for v in obj.values(): extract_names(v)
+            elif isinstance(obj, list):
+                for item in obj: extract_names(item)
+        
+        if talents_data:
+            extract_names(talents_data)
+
         return {
             "kingdoms": rules_api.get_all_kingdoms(),
             "schools": rules_api.get_all_ability_schools(),
@@ -94,7 +110,7 @@ class CharacterCreationScreen(Screen, AsyncHelper):
             "coming_of_ages": rules_api.get_coming_of_age_choices(),
             "trainings": rules_api.get_training_choices(),
             "devotions": rules_api.get_devotion_choices(),
-            "talents": [t['name'] for t in rules_api.get_all_talents_data().values()],
+            "talents": sorted(list(set(all_talents))) if all_talents else ["Basic Strike"],
             # We need raw feature data for descriptions
             "kingdom_features_data": rules_api.get_data("kingdom_features_data") 
         }
@@ -107,6 +123,10 @@ class CharacterCreationScreen(Screen, AsyncHelper):
     def _on_rules_error(self, error):
         logging.error(f"Rules load error: {error}")
         self.set_loading(False)
+        # Initialize steps anyway so the UI doesn't crash, but show error
+        self.init_steps()
+        p = Popup(title="Data Load Error", content=Label(text=f"Failed to load game data:\n{error}"), size_hint=(0.8, 0.4))
+        p.open()
 
     def init_steps(self):
         self.steps = []
