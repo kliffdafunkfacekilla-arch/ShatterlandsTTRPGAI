@@ -49,8 +49,9 @@ class IdentityStep(WizardStep):
         # Kingdom Description & Image Area
         self.info_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height='150dp', spacing='10dp')
         
-        # Placeholder Image
-        self.kingdom_image = Image(source='game_client/assets/graphics/ui/stone_button.png', size_hint_x=0.3, allow_stretch=True, keep_ratio=True) # Placeholder
+        # Placeholder Image - Use a solid color or transparent for now if no asset
+        self.kingdom_image = Image(source='', size_hint_x=0.3, allow_stretch=True, keep_ratio=True)
+        self.kingdom_image.color = (0.5, 0.5, 0.5, 1) # Grey placeholder
         self.info_layout.add_widget(self.kingdom_image)
         
         # Description
@@ -60,9 +61,14 @@ class IdentityStep(WizardStep):
         self.add_widget(self.info_layout)
 
         # Kingdom Spinner
-        self.kingdom_spinner = Spinner(text='Select Kingdom...', values=(), size_hint_y=None, height='44dp')
+        self.kingdom_spinner = Spinner(text='Select Kingdom...', values=('Loading...',), size_hint_y=None, height='44dp')
         self.kingdom_spinner.bind(text=self.on_kingdom_select)
         self.add_widget(self.kingdom_spinner)
+        
+        # Debug Button
+        debug_btn = Button(text="Test Click", size_hint_y=None, height='30dp')
+        debug_btn.bind(on_release=lambda x: print("DEBUG: Test Button Clicked"))
+        self.add_widget(debug_btn)
         
         self.add_widget(BoxLayout(size_hint_y=1)) # Spacer
 
