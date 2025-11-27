@@ -109,6 +109,15 @@ class ShatterlandsClientApp(App):
         
         return self.sm
 
+    def on_stop(self):
+        """Called when the application is closing."""
+        logging.info("Application stopping...")
+        try:
+            from monolith.orchestrator import get_orchestrator
+            get_orchestrator().shutdown()
+        except Exception as e:
+            logging.error(f"Error during shutdown: {e}")
+
     def initialize_backend(self):
         """
         Runs database migrations and module registration in a background thread.

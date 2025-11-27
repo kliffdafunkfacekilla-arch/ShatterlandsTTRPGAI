@@ -10,6 +10,7 @@ feature-rich implementation later if needed.
 """
 from typing import Any, Callable, Dict, List, Coroutine, Optional
 import asyncio
+import logging
 
 Subscriber = Callable[[str, Any], Coroutine[Any, Any, None]]
 
@@ -41,7 +42,16 @@ class EventBus:
             subs = list(self._subscribers.get(topic, []))
         for sub in subs:
             # schedule but don't await to keep bus responsive
-            asyncio.create_task(sub(topic, payload))
+            task = asyncio.create_task(sub(topic, payload))
+            task.add_done_callback(self._handle_task_result)
+
+    def _handle_task_result(self, task: asyncio.Task) -> None:
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logging.getLogger("monolith.event_bus").exception(f"Event handler failed: {e}")
 
     async def subscribe(self, topic: str, handler: Subscriber) -> None:
         """

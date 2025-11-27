@@ -248,13 +248,11 @@ def _load_game_internal(slot_name: str) -> Dict[str, Any]:
 
         for region_data in data.regions:
             world_session.add(world_models.Region(**region_data.model_dump()))
-        # Commit regions/factions so locations can link to them
-        world_session.commit()
+
 
         for loc_data in data.locations:
             world_session.add(world_models.Location(**loc_data.model_dump()))
-        # Commit locations so NPCs/Items can link
-        world_session.commit()
+
 
         for npc_data in data.npcs:
             world_session.add(world_models.NpcInstance(**npc_data.model_dump()))
@@ -266,7 +264,7 @@ def _load_game_internal(slot_name: str) -> Dict[str, Any]:
         # Story
         for camp_data in data.campaigns:
             story_session.add(story_models.Campaign(**camp_data.model_dump()))
-        story_session.commit() # Commit campaigns so quests can link
+
 
         for camp_state_data in data.campaign_states:
             story_session.add(story_models.CampaignState(**camp_state_data.model_dump()))

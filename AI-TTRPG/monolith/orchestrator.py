@@ -99,6 +99,12 @@ class Orchestrator:
         logger.info("Turn processing complete. State saved.")
         return triggered_events
 
+    def shutdown(self) -> None:
+        """Gracefully shut down the orchestrator and its resources."""
+        logger.info("Orchestrator shutting down...")
+        # Future: Close DB connections, cancel background tasks, etc.
+        pass
+
 # Module‑level singleton for convenience
 _default: Orchestrator = Orchestrator()
 
