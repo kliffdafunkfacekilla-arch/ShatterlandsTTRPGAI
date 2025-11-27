@@ -88,19 +88,7 @@ class ShatterlandsClientApp(App):
         self.loading_screen = LoadingScreen(name='loading_screen')
         self.sm.add_widget(self.loading_screen)
         
-        # Add other screens
-        self.sm.add_widget(MainMenuScreen(name='main_menu'))
-        self.sm.add_widget(GameSetupScreen(name='game_setup'))
-        self.sm.add_widget(CharacterCreationScreen(name='character_creation'))
-        self.sm.add_widget(LoadGameScreen(name='load_game'))
-        self.sm.add_widget(MainInterfaceScreen(name='main_interface'))
-        self.sm.add_widget(CombatScreen(name='combat_screen'))
-        self.sm.add_widget(CharacterSheetScreen(name='character_sheet'))
-        self.sm.add_widget(InventoryScreen(name='inventory'))
-        self.sm.add_widget(QuestLogScreen(name='quest_log'))
-        self.sm.add_widget(DialogueScreen(name='dialogue_screen'))
-        self.sm.add_widget(ShopScreen(name='shop_screen'))
-        self.sm.add_widget(SettingsScreen(name='settings'))
+        # Other screens will be added after backend initialization to prevent DB locks
 
         self.sm.current = 'loading_screen'
         
@@ -148,21 +136,35 @@ class ShatterlandsClientApp(App):
             self.update_loading_status("Initialization Complete!", 100)
             time.sleep(0.5) # Brief pause to show 100%
             
-            # Switch to Main Menu on main thread
-            Clock.schedule_once(self.switch_to_main_menu, 0)
+            # Initialize screens on main thread and switch
+            Clock.schedule_once(self.initialize_screens_and_switch, 0)
             
         except Exception as e:
             logger.exception(f"FATAL: An error occurred during startup: {e}")
             # In a real app, we might show an error screen here
             sys.exit(1)
 
+    def initialize_screens_and_switch(self, dt):
+        """Initializes the rest of the application screens and switches to main menu."""
+        # Add other screens now that backend is ready
+        self.sm.add_widget(MainMenuScreen(name='main_menu'))
+        self.sm.add_widget(GameSetupScreen(name='game_setup'))
+        self.sm.add_widget(CharacterCreationScreen(name='character_creation'))
+        self.sm.add_widget(LoadGameScreen(name='load_game'))
+        self.sm.add_widget(MainInterfaceScreen(name='main_interface'))
+        self.sm.add_widget(CombatScreen(name='combat_screen'))
+        self.sm.add_widget(CharacterSheetScreen(name='character_sheet'))
+        self.sm.add_widget(InventoryScreen(name='inventory'))
+        self.sm.add_widget(QuestLogScreen(name='quest_log'))
+        self.sm.add_widget(DialogueScreen(name='dialogue_screen'))
+        self.sm.add_widget(ShopScreen(name='shop_screen'))
+        self.sm.add_widget(SettingsScreen(name='settings'))
+        
+        self.sm.current = 'main_menu'
+
     def update_loading_status(self, message, progress):
         """Helper to update loading screen on main thread"""
         Clock.schedule_once(lambda dt: self.loading_screen.update_status(message, progress), 0)
-
-    def switch_to_main_menu(self, dt):
-        """Callback to switch screen"""
-        self.sm.current = 'main_menu'
 
     def show_error(self, title, message):
         """Displays a generic error popup."""
