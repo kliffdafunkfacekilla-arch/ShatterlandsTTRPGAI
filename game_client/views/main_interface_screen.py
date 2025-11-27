@@ -68,20 +68,55 @@ MAIN_INTERFACE_KV = '''
     party_list_container: party_list_container
     map_view_anchor: map_view_anchor
 
-    AnchorLayout:
-        AnchorLayout:
-            anchor_x: 'center'
-            anchor_y: 'center'
-            BoxLayout:
-                id: map_view_anchor
-                size_hint: None, None
-        AnchorLayout:
-            anchor_x: 'left'
-            anchor_y: 'top'
-            size_hint: 0.3, 0.25
-            padding: '10dp'
+    FloatLayout:
+        # --- Map Layer (Bottom) ---
+        BoxLayout:
+            id: map_view_anchor
+            size_hint: 1, 1
+            pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+
+        # --- UI Layer (Top) ---
+        
+        # Top Bar (Menu)
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint: 1, None
+            height: '48dp'
+            pos_hint: {'top': 1}
+            DungeonBackground:
+                orientation: 'horizontal'
+                DungeonButton:
+                    text: 'Menu'
+                    on_release:
+                        app.root.get_screen('settings').previous_screen = 'main_interface'
+                        app.root.current = 'settings'
+                DungeonButton:
+                    text: 'Debug'
+                    on_release: root.show_debug_popup()
+                DungeonButton:
+                    text: 'Save Game'
+                    on_release: root.show_save_popup()
+                DungeonButton:
+                    text: 'Inventory'
+                    on_release: app.root.current = 'inventory'
+                DungeonButton:
+                    text: 'Quest Log'
+                    on_release: app.root.current = 'quest_log'
+                DungeonButton:
+                    text: 'Character'
+                    on_release: app.root.current = 'character_sheet'
+
+        # Left Panel (Log & Party)
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint: 0.25, 0.8
+            pos_hint: {'x': 0.02, 'y': 0.05}
+            spacing: '10dp'
+            
+            # Log
             ParchmentPanel:
                 orientation: 'vertical'
+                size_hint_y: 0.4
                 ParchmentLabel:
                     text: 'Log'
                     size_hint_y: None
@@ -97,14 +132,12 @@ MAIN_INTERFACE_KV = '''
                         height: self.texture_size[1]
                         text_size: self.width, None
                         padding: '5dp'
-        AnchorLayout:
-            anchor_x: 'left'
-            anchor_y: 'bottom'
-            size_hint: 0.25, 0.3
-            padding: '10dp'
+
+            # Party
             ParchmentPanel:
                 id: party_panel
                 orientation: 'vertical'
+                size_hint_y: 0.6
                 ParchmentLabel:
                     text: 'Active Character'
                     size_hint_y: None
@@ -115,11 +148,11 @@ MAIN_INTERFACE_KV = '''
                     id: active_char_name
                     text: 'Character Name'
                     font_size: '16sp'
-                    size_hint_y: 0.2
+                    size_hint_y: 0.1
                 ParchmentLabel:
                     id: active_char_status
                     text: 'HP: 100/100'
-                    size_hint_y: 0.15
+                    size_hint_y: 0.1
                 ParchmentLabel:
                     text: 'Party'
                     size_hint_y: None
@@ -132,11 +165,12 @@ MAIN_INTERFACE_KV = '''
                         orientation: 'vertical'
                         size_hint_y: None
                         height: self.minimum_height
-        AnchorLayout:
-            anchor_x: 'right'
-            anchor_y: 'center'
-            size_hint: 0.3, 0.95
-            padding: '10dp'
+
+        # Right Panel (Narration)
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint: 0.3, 0.8
+            pos_hint: {'right': 0.98, 'y': 0.05}
             ParchmentPanel:
                 orientation: 'vertical'
                 spacing: '10dp'
@@ -163,34 +197,6 @@ MAIN_INTERFACE_KV = '''
                     font_size: '16sp'
                     multiline: False
                     on_text_validate: root.on_submit_narration(self)
-        AnchorLayout:
-            anchor_x: 'center'
-            anchor_y: 'top'
-            size_hint_y: None
-            height: '48dp'
-            DungeonBackground:
-                orientation: 'horizontal'
-                size_hint_x: 1
-                DungeonButton:
-                    text: 'Menu'
-                    on_release:
-                        app.root.get_screen('settings').previous_screen = 'main_interface'
-                        app.root.current = 'settings'
-                DungeonButton:
-                    text: 'Debug'
-                    on_release: root.show_debug_popup()
-                DungeonButton:
-                    text: 'Save Game'
-                    on_release: root.show_save_popup()
-                DungeonButton:
-                    text: 'Inventory'
-                    on_release: app.root.current = 'inventory'
-                DungeonButton:
-                    text: 'Quest Log'
-                    on_release: app.root.current = 'quest_log'
-                DungeonButton:
-                    text: 'Character'
-                    on_release: app.root.current = 'character_sheet'
 '''
 Builder.load_string(MAIN_INTERFACE_KV)
 

@@ -108,7 +108,8 @@ class InventoryScreen(Screen):
         self.ids.inventory_list.clear_widgets()
 
         # Populate Equipment
-        for slot, item_id in context.equipment.items():
+        equipment = context.equipment or {}
+        for slot, item_id in equipment.items():
             box = BoxLayout(orientation='horizontal', size_hint_y=None, height='44dp')
             box.add_widget(Label(text=f"{slot.title()}: {item_id}"))
             unequip_btn = Button(text="Unequip", size_hint_x=0.3)
@@ -117,7 +118,8 @@ class InventoryScreen(Screen):
             self.ids.equipment_list.add_widget(box)
 
         # Populate Inventory
-        for item_id, quantity in context.inventory.items():
+        inventory = context.inventory or {}
+        for item_id, quantity in inventory.items():
             box = BoxLayout(orientation='horizontal', size_hint_y=None, height='44dp')
             box.add_widget(Label(text=f"{item_id} (x{quantity})"))
             equip_btn = Button(text="Equip", size_hint_x=0.3)

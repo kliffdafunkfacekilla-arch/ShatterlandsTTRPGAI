@@ -155,9 +155,8 @@ class CharacterSheetScreen(Screen):
         """Called when this screen is shown. Fetches data and populates UI."""
         app = App.get_running_app()
 
-        # Get the active character from the MainInterfaceScreen
-        main_screen = app.root.get_screen('main_interface')
-        char_context = main_screen.active_character_context
+        # Get the active character directly from the App
+        char_context = app.active_character_context
 
         if not char_context:
             logging.error("CHAR_SHEET: No active character context found!")
@@ -173,8 +172,9 @@ class CharacterSheetScreen(Screen):
 
         # --- Populate Stats ---
         self.stats_grid.clear_widgets()
-        if context.stats:
-            for stat_name, value in context.stats.items():
+        stats = context.stats or {}
+        if stats:
+            for stat_name, value in stats.items():
                 self.stats_grid.add_widget(
                     Label(text=f"{stat_name}:", font_size='16sp', size_hint_x=0.6, height='30dp')
                 )
@@ -184,9 +184,10 @@ class CharacterSheetScreen(Screen):
 
         # --- Populate Skills ---
         self.skills_grid.clear_widgets()
-        if context.skills:
+        skills = context.skills or {}
+        if skills:
             # We only want to show skills the character actually has
-            for skill_name, data in context.skills.items():
+            for skill_name, data in skills.items():
                 rank = data.get('rank', 0)
                 if rank > 0:
                     self.skills_grid.add_widget(
@@ -198,10 +199,11 @@ class CharacterSheetScreen(Screen):
 
         # --- Populate Talents ---
         self.talents_list.clear_widgets()
-        if context.talents:
+        talents = context.talents or []
+        if talents:
             from monolith.modules import rules as rules_api # Import here to avoid circular imports if any
             
-            for talent_name in context.talents:
+            for talent_name in talents:
                 talent_data = rules_api.get_talent_details(talent_name)
                 
                 # Create a box for each talent
@@ -232,16 +234,18 @@ class CharacterSheetScreen(Screen):
 
         # --- Populate Abilities ---
         self.abilities_list.clear_widgets()
-        if context.abilities:
-            for ability_desc in context.abilities:
+        abilities = context.abilities or []
+        if abilities:
+            for ability_desc in abilities:
                 self.abilities_list.add_widget(
                     Label(text=ability_desc, font_size='14sp', text_size=(self.abilities_list.width, None), size_hint_y=None, height='60dp')
                 )
 
         # --- Populate Resource Pools ---
         self.resource_pools_grid.clear_widgets()
-        if context.resource_pools:
-            for pool_name, data in context.resource_pools.items():
+        pools = context.resource_pools or {}
+        if pools:
+            for pool_name, data in pools.items():
                 current = data.get('current', 0)
                 max_val = data.get('max', 0)
 
