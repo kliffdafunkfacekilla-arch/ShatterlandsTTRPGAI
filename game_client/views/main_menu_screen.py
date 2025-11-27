@@ -8,36 +8,38 @@ from kivy.app import App
 # Use Kivy Language (KV) string for a clean layout.
 MAIN_MENU_KV = """
 <MainMenuScreen>:
-    BoxLayout:
+    DungeonBackground:
         orientation: 'vertical'
         padding: '50dp'
         spacing: '20dp'
 
-        Label:
+        DungeonLabel:
             text: 'Shatterlands'
-            font_size: '48sp'
+            font_size: '64sp'
             size_hint_y: 0.4
+            color: 0.9, 0.8, 0.6, 1
+            bold: True
 
-        Button:
+        DungeonButton:
             text: 'New Run'
             font_size: '24sp'
             size_hint_y: 0.15
             on_release: app.root.current = 'game_setup'
 
-        Button:
+        DungeonButton:
             text: 'Character Creator'
             font_size: '24sp'
             size_hint_y: 0.15
             on_release: app.root.current = 'character_creation'
 
-        Button:
+        DungeonButton:
             text: 'Load Game'
             font_size: '24sp'
             size_hint_y: 0.15
             disabled: False
             on_release: app.root.current = 'load_game'
 
-        Button:
+        DungeonButton:
             text: 'Settings'
             font_size: '24sp'
             size_hint_y: 0.15
@@ -45,7 +47,7 @@ MAIN_MENU_KV = """
                 app.root.get_screen('settings').previous_screen = 'main_menu'
                 app.root.current = 'settings'
 
-        Button:
+        DungeonButton:
             text: 'Quit'
             font_size: '24sp'
             size_hint_y: 0.15

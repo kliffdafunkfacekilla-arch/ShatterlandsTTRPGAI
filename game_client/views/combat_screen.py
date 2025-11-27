@@ -9,7 +9,7 @@ from kivy.app import App
 from kivy.uix.screenmanager import Screen
 from kivy.properties import ObjectProperty, ListProperty, StringProperty
 from typing import Optional, List
-
+from kivy.factory import Factory
 
 # --- Monolith Imports ---
 try:
@@ -82,20 +82,22 @@ class CombatScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # --- Main Layout ---
-        layout = BoxLayout(orientation='vertical', padding='10dp', spacing='5dp')
+        # Use DungeonBackground as the main container
+        layout = Factory.DungeonBackground(orientation='vertical', padding='10dp', spacing='5dp')
         
-        # 1. Narrative Box (Replacing simple title)
-        self.narrative_label = Label(
+        # 1. Narrative Box
+        # Wrap in ParchmentPanel for style
+        narrative_panel = Factory.ParchmentPanel(size_hint_y=0.15)
+        self.narrative_label = Factory.ParchmentLabel(
             text="The battle begins...", 
             font_size='16sp', 
             italic=True,
-            size_hint_y=0.15,
-            text_size=(Window.width - 40, None),
+            text_size=(Window.width - 60, None),
             halign='center',
-            valign='middle',
-            color=(0.9, 0.9, 1, 1)
+            valign='middle'
         )
         self.narrative_label.bind(size=self._update_text_size)
+        narrative_panel.add_widget(self.narrative_label)
 
         # 2. Center Content (Map & Turn Order)
         center_layout = BoxLayout(orientation='horizontal', spacing='10dp', size_hint_y=0.65)
@@ -105,18 +107,25 @@ class CombatScreen(Screen):
             self.map_view_widget = MapViewWidget()
             self.map_view_anchor.add_widget(self.map_view_widget)
 
-        self.turn_order_label = Label(
-            text='Turn Order:\n[loading...]',
+        # Turn Order Panel
+        turn_order_panel = Factory.ParchmentPanel(size_hint_x=0.3, orientation='vertical', padding='5dp')
+        turn_order_title = Factory.ParchmentLabel(text="Turn Order", size_hint_y=None, height='30dp', bold=True)
+        self.turn_order_label = Factory.ParchmentLabel(
+            text='[loading...]',
             font_size='14sp',
-            size_hint_x=0.3
+            valign='top'
         )
+        self.turn_order_label.bind(size=self.turn_order_label.setter('text_size'))
+        turn_order_panel.add_widget(turn_order_title)
+        turn_order_panel.add_widget(self.turn_order_label)
 
         center_layout.add_widget(self.map_view_anchor)
-        center_layout.add_widget(self.turn_order_label)
+        center_layout.add_widget(turn_order_panel)
 
         # 3. Combat Log
-        log_scroll = ScrollView(size_hint_y=0.1)
-        self.combat_log_label = Label(
+        log_panel = Factory.ParchmentPanel(size_hint_y=0.1, orientation='vertical')
+        log_scroll = ScrollView()
+        self.combat_log_label = Factory.ParchmentLabel(
             text=self.log_text, font_size='12sp', size_hint_y=None,
             padding='5dp'
         )
@@ -126,17 +135,67 @@ class CombatScreen(Screen):
             text=self.setter('log_text')
         )
         log_scroll.add_widget(self.combat_log_label)
+        log_panel.add_widget(log_scroll)
 
         # 4. Action Bar
         self.action_bar = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing='10dp')
 
-        layout.add_widget(self.narrative_label)
+        layout.add_widget(narrative_panel)
         layout.add_widget(center_layout)
-        layout.add_widget(log_scroll)
+        layout.add_widget(log_panel)
         layout.add_widget(self.action_bar)
 
         self.add_widget(layout)
         Window.bind(on_resize=self.center_layout)
+
+    def center_layout(self, *args):
+        pass
+
+    def _update_text_size(self, instance, value):
+        instance.text_size = (instance.width - 20, None)
+
+    def on_enter(self, *args):
+        """Called when the screen is shown. Starts the combat loop."""
+        app = App.get_running_app()
+        try:
+            main_screen = app.root.get_screen('main_interface')
+            
+            # 1. Check if we are loading an existing encounter (triggered by backend)
+            if hasattr(app, 'current_encounter_id') and app.current_encounter_id:
+                logging.info(f"Loading existing combat encounter: {app.current_encounter_id}")
+                self.combat_state = story_api.get_combat_state(int(app.current_encounter_id))
+                app.game_settings['combat_state'] = self.combat_state
+                
+            # 2. Fallback: Start a new debug combat (if no ID provided)
+            else:
+                logging.info("Starting new debug combat (no encounter ID provided).")
+                # Ensure we have party contexts
+                if not main_screen.party_contexts:
+                     logging.error("No party contexts found to start combat.")
+                     app.root.current = 'main_interface'
+                     return
+
+                player_ids = [p.id for p in main_screen.party_contexts]
+                npc_ids = app.game_settings.get('pending_combat_npcs', ['goblin_scout'])
+                loc_id = main_screen.active_character_context.current_location_id
+
+                start_req = story_schemas.CombatStartRequest(
+                    location_id=loc_id,
+                    player_ids=player_ids,
+                    npc_template_ids=npc_ids
+                )
+                self.combat_state = story_api.start_combat(start_req)
+                app.game_settings['combat_state'] = self.combat_state 
+
+        except Exception as e:
+            logging.exception(f"Failed to start combat: {e}")
+            self.add_to_log(f"Error starting combat: {e}")
+            app.root.current = 'main_interface'
+            return
+
+        self.log_text = "Combat started.\n"
+        self.current_action = None
+        self.is_player_turn = False
         self.active_combat_character = None
         self.party_contexts_list.clear()
 
@@ -176,13 +235,6 @@ class CombatScreen(Screen):
         self.center_layout(None, self.width, self.height)
 
         self.check_turn()
-
-    def center_layout(self, instance, width, height):
-        if self.map_view_anchor:
-            self.map_view_anchor.pos = (
-                (self.width - self.map_view_anchor.width) / 2,
-                (self.height - self.map_view_anchor.height) / 2
-            )
 
     def check_turn(self):
         """The core combat loop."""
@@ -249,25 +301,25 @@ class CombatScreen(Screen):
         self.close_ability_menu()
         self.close_item_menu()
 
-        attack_btn = Button(text='Attack', font_size='18sp')
+        attack_btn = Factory.DungeonButton(text='Attack', font_size='18sp')
         attack_btn.bind(on_release=lambda x: self.set_action_mode("attack"))
 
-        move_btn = Button(text='Move', font_size='18sp')
+        move_btn = Factory.DungeonButton(text='Move', font_size='18sp')
         move_btn.bind(on_release=lambda x: self.set_action_mode("move"))
 
-        ability_btn = Button(text='Ability', font_size='18sp')
+        ability_btn = Factory.DungeonButton(text='Ability', font_size='18sp')
         ability_btn.bind(on_release=self.open_ability_menu)
 
-        item_btn = Button(text='Item', font_size='18sp')
+        item_btn = Factory.DungeonButton(text='Item', font_size='18sp')
         item_btn.bind(on_release=self.open_item_menu)
 
-        ready_btn = Button(text='Ready', font_size='18sp')
+        ready_btn = Factory.DungeonButton(text='Ready', font_size='18sp')
         ready_btn.bind(on_release=lambda x: self.handle_player_action(
             player_id,
             story_schemas.PlayerActionRequest(action="ready")
         ))
 
-        wait_btn = Button(text='Wait', font_size='18sp')
+        wait_btn = Factory.DungeonButton(text='Wait', font_size='18sp')
         wait_btn.bind(on_release=lambda x: self.handle_player_action(
             player_id,
             story_schemas.PlayerActionRequest(action="wait")
@@ -385,7 +437,7 @@ class CombatScreen(Screen):
             self.narrative_label.text = "Silence falls as the battle ends..."
             self.add_to_log("Combat has ended!")
             self.action_bar.clear_widgets()
-            exit_btn = Button(text='Return to Exploration')
+            exit_btn = Factory.DungeonButton(text='Return to Exploration')
             exit_btn.bind(on_release=self.end_combat)
             self.action_bar.add_widget(exit_btn)
             return
@@ -469,7 +521,7 @@ class CombatScreen(Screen):
 
         for ability_name in abilities:
             # Simple button for now
-            btn = Button(text=ability_name, size_hint_y=None, height='44dp')
+            btn = Factory.DungeonButton(text=ability_name, size_hint_y=None, height='44dp')
             btn.bind(on_release=partial(self.select_ability, ability_name))
             self.ability_menu.add_widget(btn)
 
@@ -508,7 +560,7 @@ class CombatScreen(Screen):
         scroll_content.bind(minimum_height=scroll_content.setter('height'))
 
         for item_id, quantity in inventory.items():
-            btn = Button(text=f"{item_id} (x{quantity})", size_hint_y=None, height='44dp')
+            btn = Factory.DungeonButton(text=f"{item_id} (x{quantity})", size_hint_y=None, height='44dp')
             btn.bind(on_release=partial(self.select_item, item_id))
             scroll_content.add_widget(btn)
 
@@ -527,10 +579,10 @@ class CombatScreen(Screen):
 
         btns = BoxLayout(size_hint_y=0.4, spacing='10dp')
 
-        yes_btn = Button(text="Strike! (Yes)", background_color=(0, 1, 0, 1))
+        yes_btn = Factory.DungeonButton(text="Strike! (Yes)", background_color=(0, 1, 0, 1))
         yes_btn.bind(on_release=lambda x: self.send_reaction_response("execute", data))
 
-        no_btn = Button(text="Ignore (No)", background_color=(1, 0, 0, 1))
+        no_btn = Factory.DungeonButton(text="Ignore (No)", background_color=(1, 0, 0, 1))
         no_btn.bind(on_release=lambda x: self.send_reaction_response("skip", data))
 
         btns.add_widget(yes_btn)
@@ -674,3 +726,12 @@ class CombatScreen(Screen):
             self.selected_item_id = None
 
         return True
+
+    def add_to_log(self, message):
+        self.log_text += f"\n{message}"
+        if self.combat_log_label:
+            self.combat_log_label.text = self.log_text
+
+    def update_narrative(self, logs, ai_dm_api):
+        # Placeholder for AI narration update
+        pass

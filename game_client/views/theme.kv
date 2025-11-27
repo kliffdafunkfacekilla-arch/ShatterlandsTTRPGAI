@@ -1,0 +1,48 @@
+#:kivy 2.1.0
+
+<DungeonBackground@BoxLayout>:
+    canvas.before:
+        Color:
+            rgba: 1, 1, 1, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+            source: 'game_client/assets/graphics/ui/dungeon_bg.png'
+            texture_size: self.size # Stretch for now, or use texture wrapping if we had a seamless tile
+
+<DungeonButton@Button>:
+    background_normal: 'game_client/assets/graphics/ui/stone_button.png'
+    background_down: 'game_client/assets/graphics/ui/stone_button.png'
+    border: (10, 10, 10, 10) # Assuming the button has some borders we want to preserve
+    color: 0.9, 0.8, 0.6, 1 # Gold-ish text
+    font_size: '18sp'
+    bold: True
+    canvas.after:
+        Color:
+            rgba: (0, 0, 0, 0.2) if self.state == 'down' else (0, 0, 0, 0)
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+<ParchmentPanel@BoxLayout>:
+    canvas.before:
+        Color:
+            rgba: 1, 1, 1, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+            source: 'game_client/assets/graphics/ui/parchment_bg.png'
+
+<ParchmentLabel@Label>:
+    color: 0.1, 0.05, 0.05, 1 # Dark brown text
+    canvas.before:
+        Color:
+            rgba: 1, 1, 1, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+            source: 'game_client/assets/graphics/ui/parchment_bg.png'
+
+<DungeonLabel@Label>:
+    color: 0.9, 0.9, 0.9, 1
+    font_size: '16sp'

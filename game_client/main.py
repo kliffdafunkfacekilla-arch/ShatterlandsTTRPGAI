@@ -39,6 +39,10 @@ from kivy.uix.popup import Popup
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.boxlayout import BoxLayout
+from kivy.lang import Builder
+
+# Load Theme
+Builder.load_file(str(Path(__file__).parent / "views" / "theme.kv"))
 
 # --- 4. VIEW IMPORTS ---
 from views.loading_screen import LoadingScreen

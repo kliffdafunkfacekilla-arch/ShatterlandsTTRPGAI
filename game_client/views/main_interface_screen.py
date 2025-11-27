@@ -77,21 +77,16 @@ MAIN_INTERFACE_KV = '''
             anchor_y: 'top'
             size_hint: 0.3, 0.25
             padding: '10dp'
-            BoxLayout:
+            ParchmentPanel:
                 orientation: 'vertical'
-                canvas.before:
-                    Color:
-                        rgba: 0.1, 0.1, 0.1, 0.8
-                    Rectangle:
-                        pos: self.pos
-                        size: self.size
-                Label:
+                ParchmentLabel:
                     text: 'Log'
                     size_hint_y: None
                     height: '30dp'
                     font_size: '18sp'
+                    bold: True
                 ScrollView:
-                    Label:
+                    ParchmentLabel:
                         id: log_label
                         text: 'Welcome to Shatterlands.'
                         font_size: '14sp'
@@ -104,34 +99,30 @@ MAIN_INTERFACE_KV = '''
             anchor_y: 'bottom'
             size_hint: 0.25, 0.3
             padding: '10dp'
-            BoxLayout:
+            ParchmentPanel:
                 id: party_panel
                 orientation: 'vertical'
-                canvas.before:
-                    Color:
-                        rgba: 0.1, 0.1, 0.1, 0.8
-                    Rectangle:
-                        pos: self.pos
-                        size: self.size
-                Label:
+                ParchmentLabel:
                     text: 'Active Character'
                     size_hint_y: None
                     height: '30dp'
                     font_size: '18sp'
-                Label:
+                    bold: True
+                ParchmentLabel:
                     id: active_char_name
                     text: 'Character Name'
                     font_size: '16sp'
                     size_hint_y: 0.2
-                Label:
+                ParchmentLabel:
                     id: active_char_status
                     text: 'HP: 100/100'
                     size_hint_y: 0.15
-                Label:
+                ParchmentLabel:
                     text: 'Party'
                     size_hint_y: None
                     height: '30dp'
                     font_size: '16sp'
+                    bold: True
                 ScrollView:
                     BoxLayout:
                         id: party_list_container
@@ -143,22 +134,17 @@ MAIN_INTERFACE_KV = '''
             anchor_y: 'center'
             size_hint: 0.3, 0.95
             padding: '10dp'
-            BoxLayout:
+            ParchmentPanel:
                 orientation: 'vertical'
                 spacing: '10dp'
-                canvas.before:
-                    Color:
-                        rgba: 0.1, 0.1, 0.1, 0.8
-                    Rectangle:
-                        pos: self.pos
-                        size: self.size
-                Label:
+                ParchmentLabel:
                     text: 'Narration'
                     size_hint_y: None
                     height: '30dp'
                     font_size: '18sp'
+                    bold: True
                 ScrollView:
-                    Label:
+                    ParchmentLabel:
                         id: narration_label
                         text: 'The story begins...'
                         font_size: '14sp'
@@ -179,41 +165,29 @@ MAIN_INTERFACE_KV = '''
             anchor_y: 'top'
             size_hint_y: None
             height: '48dp'
-            BoxLayout:
+            DungeonBackground:
                 orientation: 'horizontal'
                 size_hint_x: 1
-                canvas.before:
-                    Color:
-                        rgba: 0.2, 0.2, 0.2, 0.9
-                    Rectangle:
-                        pos: self.pos
-                        size: self.size
-                Button:
+                DungeonButton:
                     text: 'Menu'
                     on_release:
                         app.root.get_screen('settings').previous_screen = 'main_interface'
                         app.root.current = 'settings'
-                Button:
+                DungeonButton:
                     text: 'Debug'
                     on_release: root.show_debug_popup()
-                Button:
+                DungeonButton:
                     text: 'Save Game'
                     on_release: root.show_save_popup()
-                Button:
-                    text: 'Character'
-                    on_release: app.root.current = 'character_sheet'
-                Button:
+                DungeonButton:
                     text: 'Inventory'
                     on_release: app.root.current = 'inventory'
-                Button:
-                    text: 'Quests'
+                DungeonButton:
+                    text: 'Quest Log'
                     on_release: app.root.current = 'quest_log'
-                Button:
-                    text: 'Rest'
-                    on_release: root.on_rest()
-                Button:
-                    text: 'Shop'
-                    on_release: app.root.current = 'shop_screen'
+                DungeonButton:
+                    text: 'Character'
+                    on_release: app.root.current = 'character_sheet'
 '''
 Builder.load_string(MAIN_INTERFACE_KV)
 

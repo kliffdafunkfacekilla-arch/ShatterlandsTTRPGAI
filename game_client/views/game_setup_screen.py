@@ -16,9 +16,9 @@ from kivy.app import App
 from kivy.properties import ObjectProperty, ListProperty
 from typing import List, Dict
 import logging
+from kivy.factory import Factory
 
 # --- Direct Monolith Imports ---
-# ... (imports are unchanged) ...
 try:
     from monolith.modules.character_pkg import crud as char_crud
     from monolith.modules.character_pkg import services as char_services
@@ -38,6 +38,7 @@ class GameSetupScreen(Screen):
 
     # Kivy properties to hold our dynamic data
     character_select_list = ObjectProperty(None)
+    difficulty_spinner = ObjectProperty(None) # Added missing property
 
     # This will hold the mapping of {char_name: CheckBox_widget}
     character_toggles: Dict[str, CheckBox] = {}
@@ -46,9 +47,102 @@ class GameSetupScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.build_ui()
-        # self.load_characters() # Removed from init, called on_enter
 
-    # ... (build_ui unchanged) ...
+    def build_ui(self):
+        # Root Layout - Dungeon Background
+        root = Factory.DungeonBackground(orientation='vertical', padding='20dp', spacing='20dp')
+
+        # Title
+        title = Factory.DungeonLabel(
+            text="New Game Setup",
+            font_size='32sp',
+            size_hint_y=None,
+            height='60dp',
+            bold=True,
+            color=(0.9, 0.8, 0.6, 1)
+        )
+        root.add_widget(title)
+
+        # Main Content Area (Split: Left=Party, Right=Settings)
+        content = BoxLayout(orientation='horizontal', spacing='20dp')
+
+        # --- Left Column: Party Selection ---
+        party_panel = Factory.ParchmentPanel(orientation='vertical', padding='10dp', spacing='10dp')
+        
+        party_label = Factory.ParchmentLabel(
+            text="Select Party Members",
+            size_hint_y=None,
+            height='30dp',
+            bold=True,
+            font_size='18sp'
+        )
+        party_panel.add_widget(party_label)
+
+        # Scrollable Character List
+        scroll = ScrollView()
+        self.character_select_list = BoxLayout(orientation='vertical', size_hint_y=None, spacing='5dp')
+        self.character_select_list.bind(minimum_height=self.character_select_list.setter('height'))
+        scroll.add_widget(self.character_select_list)
+        party_panel.add_widget(scroll)
+
+        # Create New Character Button
+        create_char_btn = Factory.DungeonButton(
+            text="Create New Character",
+            size_hint_y=None,
+            height='44dp'
+        )
+        create_char_btn.bind(on_release=self.go_to_character_creation)
+        party_panel.add_widget(create_char_btn)
+
+        content.add_widget(party_panel)
+
+        # --- Right Column: Game Settings ---
+        settings_panel = Factory.ParchmentPanel(orientation='vertical', padding='10dp', spacing='10dp', size_hint_x=0.6)
+        
+        settings_label = Factory.ParchmentLabel(
+            text="Game Settings",
+            size_hint_y=None,
+            height='30dp',
+            bold=True,
+            font_size='18sp'
+        )
+        settings_panel.add_widget(settings_label)
+
+        # Difficulty
+        diff_box = BoxLayout(orientation='horizontal', size_hint_y=None, height='44dp')
+        diff_label = Factory.ParchmentLabel(text="Difficulty:", size_hint_x=0.4, halign='left')
+        self.difficulty_spinner = Spinner(
+            text='Normal',
+            values=('Story', 'Normal', 'Hard', 'Deadly'),
+            size_hint_x=0.6
+        )
+        diff_box.add_widget(diff_label)
+        diff_box.add_widget(self.difficulty_spinner)
+        settings_panel.add_widget(diff_box)
+
+        # Spacer
+        settings_panel.add_widget(Label())
+
+        content.add_widget(settings_panel)
+        root.add_widget(content)
+
+        # Bottom Bar: Back and Start
+        bottom_bar = BoxLayout(orientation='horizontal', size_hint_y=None, height='60dp', spacing='20dp')
+        
+        back_btn = Factory.DungeonButton(text="Back")
+        back_btn.bind(on_release=self.go_to_main_menu)
+        
+        start_btn = Factory.DungeonButton(text="Start Adventure")
+        start_btn.bind(on_release=self.start_game)
+
+        bottom_bar.add_widget(back_btn)
+        bottom_bar.add_widget(start_btn)
+        root.add_widget(bottom_bar)
+
+        self.add_widget(root)
+
+    def on_enter(self, *args):
+        self.load_characters()
 
     def load_characters(self):
         """
@@ -81,8 +175,8 @@ class GameSetupScreen(Screen):
                 for char_context in char_contexts:
                     char_box = BoxLayout(orientation='horizontal', size_hint_y=None, height='44dp')
 
-                    checkbox = CheckBox(size_hint_x=0.2)
-                    label = Label(text=char_context.name, size_hint_x=0.8, halign='left')
+                    checkbox = CheckBox(size_hint_x=0.2, color=(0,0,0,1)) # Dark checkbox for parchment
+                    label = Factory.ParchmentLabel(text=char_context.name, size_hint_x=0.8, halign='left', valign='middle')
                     label.bind(size=label.setter('text_size')) # for alignment
 
                     char_box.add_widget(checkbox)
@@ -110,8 +204,6 @@ class GameSetupScreen(Screen):
         self.load_characters()
         if char_id in self.character_toggles_by_id:
             self.character_toggles_by_id[char_id].active = True
-
-
 
     def go_to_main_menu(self, instance):
         """Navigates back to the main menu."""

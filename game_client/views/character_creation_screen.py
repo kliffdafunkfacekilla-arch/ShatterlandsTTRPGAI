@@ -9,6 +9,7 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.gridlayout import GridLayout
+from kivy.factory import Factory
 
 # --- Monolith Imports ---
 try:
@@ -88,78 +89,95 @@ class CharacterCreationScreen(Screen):
     # ---------------------------------------------------------------------
     def build_ui(self):
         self.clear_widgets()
-        root = BoxLayout(orientation='vertical', padding='20dp', spacing='10dp')
-        root.add_widget(Label(text="Create New Character", font_size='24sp', size_hint_y=0.1, color=(1, 1, 1, 1)))
+        # Root Layout - Dungeon Background
+        root = Factory.DungeonBackground(orientation='vertical', padding='20dp', spacing='10dp')
+        
+        # Title
+        root.add_widget(Factory.DungeonLabel(
+            text="Create New Character", 
+            font_size='32sp', 
+            size_hint_y=None, 
+            height='60dp',
+            bold=True,
+            color=(0.9, 0.8, 0.6, 1)
+        ))
 
-        scroll = ScrollView(size_hint_y=0.8)
+        # Main Form Area - Parchment Panel
+        form_panel = Factory.ParchmentPanel(orientation='vertical', padding='10dp')
+        
+        scroll = ScrollView(size_hint_y=1)
         form_layout = GridLayout(cols=1, spacing='15dp', size_hint_y=None, padding='10dp')
         form_layout.bind(minimum_height=form_layout.setter('height'))
         self.form_layout = form_layout  # keep reference for dynamic feature spinners
 
         # ----- Basic fields -----
         # Name
-        form_layout.add_widget(Label(text="Name:", size_hint_y=None, height='30dp'))
+        form_layout.add_widget(Factory.ParchmentLabel(text="Name:", size_hint_y=None, height='30dp', halign='left'))
         self.name_input = TextInput(multiline=False, size_hint_y=None, height='40dp')
         self.name_input.bind(text=self.on_name_change)
         form_layout.add_widget(self.name_input)
 
         # Kingdom
-        form_layout.add_widget(Label(text="Kingdom:", size_hint_y=None, height='30dp'))
+        form_layout.add_widget(Factory.ParchmentLabel(text="Kingdom:", size_hint_y=None, height='30dp', halign='left'))
         self.kingdom_spinner = Spinner(text='Loading...', values=('Loading...',), size_hint_y=None, height='44dp')
         self.kingdom_spinner.bind(text=self.on_kingdom_select)
         form_layout.add_widget(self.kingdom_spinner)
 
         # Ability School
-        form_layout.add_widget(Label(text="Ability School:", size_hint_y=None, height='30dp'))
+        form_layout.add_widget(Factory.ParchmentLabel(text="Ability School:", size_hint_y=None, height='30dp', halign='left'))
         self.school_spinner = Spinner(text='Loading...', values=('Loading...',), size_hint_y=None, height='44dp')
         self.school_spinner.bind(text=self.on_school_select)
         form_layout.add_widget(self.school_spinner)
 
         # Origin
-        form_layout.add_widget(Label(text="Origin:", size_hint_y=None, height='30dp'))
+        form_layout.add_widget(Factory.ParchmentLabel(text="Origin:", size_hint_y=None, height='30dp', halign='left'))
         self.origin_spinner = Spinner(text='Loading...', values=('Loading...',), size_hint_y=None, height='44dp')
         self.origin_spinner.bind(text=self.on_origin_select)
         form_layout.add_widget(self.origin_spinner)
 
         # Childhood
-        form_layout.add_widget(Label(text="Childhood:", size_hint_y=None, height='30dp'))
+        form_layout.add_widget(Factory.ParchmentLabel(text="Childhood:", size_hint_y=None, height='30dp', halign='left'))
         self.childhood_spinner = Spinner(text='Loading...', values=('Loading...',), size_hint_y=None, height='44dp')
         self.childhood_spinner.bind(text=self.on_childhood_select)
         form_layout.add_widget(self.childhood_spinner)
 
         # Coming of Age
-        form_layout.add_widget(Label(text="Coming of Age:", size_hint_y=None, height='30dp'))
+        form_layout.add_widget(Factory.ParchmentLabel(text="Coming of Age:", size_hint_y=None, height='30dp', halign='left'))
         self.coming_of_age_spinner = Spinner(text='Loading...', values=('Loading...',), size_hint_y=None, height='44dp')
         self.coming_of_age_spinner.bind(text=self.on_coming_of_age_select)
         form_layout.add_widget(self.coming_of_age_spinner)
 
         # Training
-        form_layout.add_widget(Label(text="Training:", size_hint_y=None, height='30dp'))
+        form_layout.add_widget(Factory.ParchmentLabel(text="Training:", size_hint_y=None, height='30dp', halign='left'))
         self.training_spinner = Spinner(text='Loading...', values=('Loading...',), size_hint_y=None, height='44dp')
         self.training_spinner.bind(text=self.on_training_select)
         form_layout.add_widget(self.training_spinner)
 
         # Devotion
-        form_layout.add_widget(Label(text="Devotion:", size_hint_y=None, height='30dp'))
+        form_layout.add_widget(Factory.ParchmentLabel(text="Devotion:", size_hint_y=None, height='30dp', halign='left'))
         self.devotion_spinner = Spinner(text='Loading...', values=('Loading...',), size_hint_y=None, height='44dp')
         self.devotion_spinner.bind(text=self.on_devotion_select)
         form_layout.add_widget(self.devotion_spinner)
 
         # Talent Choice
-        form_layout.add_widget(Label(text="Starting Talent:", size_hint_y=None, height='30dp'))
+        form_layout.add_widget(Factory.ParchmentLabel(text="Starting Talent:", size_hint_y=None, height='30dp', halign='left'))
         self.talent_spinner = Spinner(text='Select Talent...', values=('Loading...',), size_hint_y=None, height='44dp')
         self.talent_spinner.bind(text=self.on_talent_select)
         form_layout.add_widget(self.talent_spinner)
 
         scroll.add_widget(form_layout)
-        root.add_widget(scroll)
+        form_panel.add_widget(scroll)
+        root.add_widget(form_panel)
 
         # ----- Footer -----
-        footer = BoxLayout(size_hint_y=0.1, spacing='10dp')
-        back_btn = Button(text="Back")
+        footer = BoxLayout(size_hint_y=None, height='60dp', spacing='20dp')
+        
+        back_btn = Factory.DungeonButton(text="Back")
         back_btn.bind(on_release=self.go_back)
-        create_btn = Button(text="Create Character", background_color=(0.3, 0.8, 0.3, 1))
+        
+        create_btn = Factory.DungeonButton(text="Create Character")
         create_btn.bind(on_release=self.submit_character)
+        
         footer.add_widget(back_btn)
         footer.add_widget(create_btn)
         root.add_widget(footer)
@@ -195,7 +213,7 @@ class CharacterCreationScreen(Screen):
 
         for f_key, options in sorted(features.items(), key=sort_key):
             # Label
-            self.form_layout.add_widget(Label(text=f"{f_key}:", size_hint_y=None, height='30dp'))
+            self.form_layout.add_widget(Factory.ParchmentLabel(text=f"{f_key}:", size_hint_y=None, height='30dp', halign='left'))
             spinner = Spinner(text='Loading...', values=tuple(options) if options else ('None',), size_hint_y=None, height='44dp')
             spinner.bind(text=lambda inst, val, key=f_key: self.on_feature_select(key, val))
             self.form_layout.add_widget(spinner)
