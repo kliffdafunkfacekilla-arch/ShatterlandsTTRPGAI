@@ -46,3 +46,30 @@ def safe_update(target: Dict[str, Any], diff: Dict[str, Any]) -> Dict[str, Any]:
     result = dict(target)
     result.update(diff)
     return result
+
+import functools
+from typing import Callable
+
+def with_db_session(session_factory):
+    """
+    Decorator to inject a database session into a function.
+    
+    If 'db' is already present in kwargs, it is used.
+    Otherwise, a new session is created from session_factory and closed after execution.
+    """
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # If 'db' is passed explicitly, use it and don't close it here
+            if "db" in kwargs and kwargs["db"] is not None:
+                return func(*args, **kwargs)
+            
+            # Otherwise, create a new session
+            db = session_factory()
+            try:
+                kwargs["db"] = db
+                return func(*args, **kwargs)
+            finally:
+                db.close()
+        return wrapper
+    return decorator

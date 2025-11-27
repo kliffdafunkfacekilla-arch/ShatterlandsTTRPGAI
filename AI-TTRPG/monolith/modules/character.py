@@ -19,6 +19,7 @@ from .character_pkg import database as char_db
 from .character_pkg import schemas as char_schemas
 from .character_pkg.models import Character
 from .character_pkg import schemas
+from ..shared import with_db_session
 
 logger = logging.getLogger("monolith.character")
 
@@ -64,7 +65,8 @@ def _get_character_db(db: char_db.SessionLocal, char_id: str) -> Character:
     return db_character
 
 # --- Public API functions for other modules ---
-def get_character_context(char_id: str) -> Dict[str, Any]:
+@with_db_session(char_db.SessionLocal)
+def get_character_context(char_id: str, db: Session = None) -> Dict[str, Any]:
     """
     Retrieves the full context for a character.
 
@@ -72,12 +74,11 @@ def get_character_context(char_id: str) -> Dict[str, Any]:
 
     Args:
         char_id (str): The unique identifier of the character.
+        db (Session): Injected database session.
 
     Returns:
         Dict[str, Any]: A dictionary representation of the character's context.
     """
-    # --- REMOVED ASYNC AND _client ---
-    db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         schema_char = char_services.get_character_context(db_char)
@@ -85,14 +86,12 @@ def get_character_context(char_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.exception(f"[character.get_character_context] Error: {e}")
         raise
-    finally:
-        db.close()
 
-def award_xp(char_id: str, amount: int) -> Dict[str, Any]:
+@with_db_session(char_db.SessionLocal)
+def award_xp(char_id: str, amount: int, db: Session = None) -> Dict[str, Any]:
     """
     Awards XP to a character.
     """
-    db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         updated_char = char_services.award_xp(db, db_char.id, amount)
@@ -101,14 +100,12 @@ def award_xp(char_id: str, amount: int) -> Dict[str, Any]:
     except Exception as e:
         logger.exception(f"[character.award_xp] Error: {e}")
         raise
-    finally:
-        db.close()
 
-def snapshot_character_state(char_id: str) -> bool:
+@with_db_session(char_db.SessionLocal)
+def snapshot_character_state(char_id: str, db: Session = None) -> bool:
     """
     Snapshots the character's current state to 'previous_state' for diff tracking.
     """
-    db = char_db.SessionLocal()
     try:
         # Strip prefix if present (internal service expects UUID)
         uuid_part = char_id.split("_", 1)[1] if char_id.startswith("player_") else char_id
@@ -116,8 +113,6 @@ def snapshot_character_state(char_id: str) -> bool:
     except Exception as e:
         logger.exception(f"[character.snapshot_state] Error: {e}")
         return False
-    finally:
-        db.close()
 
 # --- NEW: Progression Endpoints ---
 @router.post("/level-up", response_model=schemas.LevelUpResponse)
@@ -195,18 +190,19 @@ def purchase_ability_endpoint(
         # Log the error
         raise HTTPException(status_code=500, detail=str(e))
 
-def unequip_item(char_id: str, slot: str) -> Dict[str, Any]:
+@with_db_session(char_db.SessionLocal)
+def unequip_item(char_id: str, slot: str, db: Session = None) -> Dict[str, Any]:
     """
     Unequips an item from a specific slot on a character.
 
     Args:
         char_id (str): The unique identifier of the character.
         slot (str): The slot identifier to unequip (e.g., 'head', 'main_hand').
+        db (Session): Injected database session.
 
     Returns:
         Dict[str, Any]: The updated character context after removing the item.
     """
-    db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         updated_char = char_crud.unequip_item(db, db_char, slot)
@@ -215,10 +211,9 @@ def unequip_item(char_id: str, slot: str) -> Dict[str, Any]:
     except Exception as e:
         logger.exception(f"[character.unequip_item] Error: {e}")
         raise
-    finally:
-        db.close()
 
-def equip_item(char_id: str, item_id: str, slot: str) -> Dict[str, Any]:
+@with_db_session(char_db.SessionLocal)
+def equip_item(char_id: str, item_id: str, slot: str, db: Session = None) -> Dict[str, Any]:
     """
     Equips an item to a character's slot.
 
@@ -226,20 +221,18 @@ def equip_item(char_id: str, item_id: str, slot: str) -> Dict[str, Any]:
         char_id (str): The unique identifier of the character.
         item_id (str): The unique identifier of the item template to equip.
         slot (str): The target slot identifier.
+        db (Session): Injected database session.
 
     Returns:
         Dict[str, Any]: The updated character context.
     """
-    db = char_db.SessionLocal()
-    try:
-        db_char = _get_character_db(db, char_id)
-        updated_char = char_crud.equip_item(db, db_char, item_id, slot)
-        schema_char = char_services.get_character_context(updated_char)
-        return schema_char.model_dump()
-    finally:
-        db.close()
+    db_char = _get_character_db(db, char_id)
+    updated_char = char_crud.equip_item(db, db_char, item_id, slot)
+    schema_char = char_services.get_character_context(updated_char)
+    return schema_char.model_dump()
 
-def update_character_resource_pool(char_id: str, pool_name: str, new_value: int) -> Dict[str, Any]:
+@with_db_session(char_db.SessionLocal)
+def update_character_resource_pool(char_id: str, pool_name: str, new_value: int, db: Session = None) -> Dict[str, Any]:
     """
     Updates the value of a specific resource pool for a character.
 
@@ -247,11 +240,11 @@ def update_character_resource_pool(char_id: str, pool_name: str, new_value: int)
         char_id (str): The unique identifier of the character.
         pool_name (str): The name of the resource pool (e.g., 'mana', 'stamina').
         new_value (int): The new value to set for the pool (current value).
+        db (Session): Injected database session.
 
     Returns:
         Dict[str, Any]: The updated character context.
     """
-    db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         updated_char = char_crud.update_resource_pool(db, db_char, pool_name, new_value)
@@ -260,22 +253,21 @@ def update_character_resource_pool(char_id: str, pool_name: str, new_value: int)
     except Exception as e:
         logger.exception(f"[character.update_character_resource_pool] Error: {e}")
         raise
-    finally:
-        db.close()
 
-def apply_damage_to_character(char_id: str, damage_amount: int) -> Dict[str, Any]:
+@with_db_session(char_db.SessionLocal)
+def apply_damage_to_character(char_id: str, damage_amount: int, db: Session = None) -> Dict[str, Any]:
     """
     Applies physical damage to a character.
 
     Args:
         char_id (str): The unique identifier of the character.
         damage_amount (int): The amount of damage to apply.
+        db (Session): Injected database session.
 
     Returns:
         Dict[str, Any]: The updated character context.
     """
     # --- REMOVED ASYNC AND _client ---
-    db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         updated_char = char_crud.apply_damage_to_character(db, db_char, damage_amount)
@@ -285,22 +277,21 @@ def apply_damage_to_character(char_id: str, damage_amount: int) -> Dict[str, Any
     except Exception as e:
         logger.exception(f"[character.apply_damage_to_character] Error: {e}")
         raise
-    finally:
-        db.close()
 
 # --- (Apply same sync refactor to all other functions in this file) ---
-def apply_status_to_character(char_id: str, status_id: str) -> Dict[str, Any]:
+@with_db_session(char_db.SessionLocal)
+def apply_status_to_character(char_id: str, status_id: str, db: Session = None) -> Dict[str, Any]:
     """
     Applies a status effect to a character.
 
     Args:
         char_id (str): The unique identifier of the character.
         status_id (str): The identifier of the status effect.
+        db (Session): Injected database session.
 
     Returns:
         Dict[str, Any]: The updated character context.
     """
-    db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         updated_char = char_crud.apply_status_to_character(db, db_char, status_id)
@@ -309,10 +300,9 @@ def apply_status_to_character(char_id: str, status_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.exception(f"[character.apply_status_to_character] Error: {e}")
         raise
-    finally:
-        db.close()
 
-def add_item_to_character(char_id: str, item_id: str, quantity: int) -> Dict[str, Any]:
+@with_db_session(char_db.SessionLocal)
+def add_item_to_character(char_id: str, item_id: str, quantity: int, db: Session = None) -> Dict[str, Any]:
     """
     Adds a quantity of an item to the character's inventory.
 
@@ -320,11 +310,11 @@ def add_item_to_character(char_id: str, item_id: str, quantity: int) -> Dict[str
         char_id (str): The unique identifier of the character.
         item_id (str): The identifier of the item template.
         quantity (int): The number of items to add.
+        db (Session): Injected database session.
 
     Returns:
         Dict[str, Any]: The updated character context.
     """
-    db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         updated_char = char_crud.add_item_to_inventory(db, db_char, item_id, quantity)
@@ -333,10 +323,9 @@ def add_item_to_character(char_id: str, item_id: str, quantity: int) -> Dict[str
     except Exception as e:
         logger.exception(f"[character.add_item_to_character] Error: {e}")
         raise
-    finally:
-        db.close()
 
-def remove_item_from_character(char_id: str, item_id: str, quantity: int) -> Dict[str, Any]:
+@with_db_session(char_db.SessionLocal)
+def remove_item_from_character(char_id: str, item_id: str, quantity: int, db: Session = None) -> Dict[str, Any]:
     """
     Removes a quantity of an item from the character's inventory.
 
@@ -344,11 +333,11 @@ def remove_item_from_character(char_id: str, item_id: str, quantity: int) -> Dic
         char_id (str): The unique identifier of the character.
         item_id (str): The identifier of the item template to remove.
         quantity (int): The number of items to remove.
+        db (Session): Injected database session.
 
     Returns:
         Dict[str, Any]: The updated character context.
     """
-    db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         updated_char = char_crud.remove_item_from_inventory(db, db_char, item_id, quantity)
@@ -357,10 +346,9 @@ def remove_item_from_character(char_id: str, item_id: str, quantity: int) -> Dic
     except Exception as e:
         logger.exception(f"[character.remove_item_from_character] Error: {e}")
         raise
-    finally:
-        db.close()
 
-def update_character_location(char_id: str, location_id: int, coordinates: List[int]) -> Dict[str, Any]:
+@with_db_session(char_db.SessionLocal)
+def update_character_location(char_id: str, location_id: int, coordinates: List[int], db: Session = None) -> Dict[str, Any]:
     """
     Updates a character's location and coordinates in the world.
 
@@ -368,34 +356,46 @@ def update_character_location(char_id: str, location_id: int, coordinates: List[
         char_id (str): The unique identifier of the character.
         location_id (int): The ID of the location the character is entering.
         coordinates (List[int]): The [x, y] coordinates in the new location.
+        db (Session): Injected database session.
 
     Returns:
-        Dict[str, Any]: The updated character context.
+        Dict[str, Any]: A structured response containing:
+            - success (bool): Whether the move was successful.
+            - character (Dict): The updated character context.
+            - events (List): Any events triggered by the move (e.g., combat).
+            - message (str): A descriptive message.
     """
-    db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         updated_char = char_crud.update_character_location_and_coords(db, db_char, location_id, coordinates)
         schema_char = char_services.get_character_context(updated_char)
-        return schema_char.model_dump()
+        
+        # Placeholder for event checking (could call story_api.check_for_events)
+        events = [] 
+        
+        return {
+            "success": True,
+            "character": schema_char.model_dump(),
+            "events": events,
+            "message": f"Moved to {coordinates}"
+        }
     except Exception as e:
         logger.exception(f"[character.update_character_location] Error: {e}")
         raise
-    finally:
-        db.close()
 
-def remove_status_from_character(char_id: str, status_id: str) -> Dict[str, Any]:
+@with_db_session(char_db.SessionLocal)
+def remove_status_from_character(char_id: str, status_id: str, db: Session = None) -> Dict[str, Any]:
     """
     Removes a status effect from a character.
 
     Args:
         char_id (str): The unique identifier of the character.
         status_id (str): The identifier of the status effect to remove.
+        db (Session): Injected database session.
 
     Returns:
         Dict[str, Any]: The updated character context.
     """
-    db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         updated_char = char_crud.remove_status_from_character(db, db_char, status_id)
@@ -404,8 +404,6 @@ def remove_status_from_character(char_id: str, status_id: str) -> Dict[str, Any]
     except Exception as e:
         logger.exception(f"[character.remove_status_from_character] Error: {e}")
         raise
-    finally:
-        db.close()
 
 
 def register(orchestrator) -> None:
@@ -422,18 +420,19 @@ def register(orchestrator) -> None:
     # and does not currently subscribe to any event bus commands.
     logger.info("[character] module registered (direct-call adapter)")
 
-def apply_composure_damage_to_character(char_id: str, damage_amount: int) -> Dict[str, Any]:
+@with_db_session(char_db.SessionLocal)
+def apply_composure_damage_to_character(char_id: str, damage_amount: int, db: Session = None) -> Dict[str, Any]:
     """
     Applies composure damage to a character.
 
     Args:
         char_id (str): The unique identifier of the character.
         damage_amount (int): The amount of composure damage to apply.
+        db (Session): Injected database session.
 
     Returns:
         Dict[str, Any]: The updated character context.
     """
-    db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         updated_char = char_crud.apply_composure_damage(db, db_char, damage_amount)
@@ -442,21 +441,20 @@ def apply_composure_damage_to_character(char_id: str, damage_amount: int) -> Dic
     except Exception as e:
         logger.exception(f"[character.apply_composure_damage_to_character] Error: {e}")
         raise
-    finally:
-        db.close()
 
-def apply_composure_healing_to_character(char_id: str, amount: int):
+@with_db_session(char_db.SessionLocal)
+def apply_composure_healing_to_character(char_id: str, amount: int, db: Session = None):
     """
     Applies composure healing to a character.
 
     Args:
         char_id (str): The unique identifier of the character.
         amount (int): The amount of composure to restore.
+        db (Session): Injected database session.
 
     Returns:
         Dict[str, Any]: The updated character context.
     """
-    db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         updated_char = char_crud.apply_composure_healing(db, db_char, amount)
@@ -465,10 +463,9 @@ def apply_composure_healing_to_character(char_id: str, amount: int):
     except Exception as e:
         logger.exception(f"[character.apply_composure_healing_to_character] Error: {e}")
         raise
-    finally:
-        db.close()
 
-def apply_resource_damage_to_character(char_id: str, resource_name: str, damage_amount: int) -> Dict[str, Any]:
+@with_db_session(char_db.SessionLocal)
+def apply_resource_damage_to_character(char_id: str, resource_name: str, damage_amount: int, db: Session = None) -> Dict[str, Any]:
     """
     Applies damage to a specific resource pool (e.g., Chi, Stamina).
 
@@ -476,11 +473,11 @@ def apply_resource_damage_to_character(char_id: str, resource_name: str, damage_
         char_id (str): The unique identifier of the character.
         resource_name (str): The name of the resource pool to damage.
         damage_amount (int): The amount to reduce the resource by.
+        db (Session): Injected database session.
 
     Returns:
         Dict[str, Any]: The updated character context.
     """
-    db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         updated_char = char_crud.apply_resource_damage(db, db_char, resource_name, damage_amount)
@@ -489,25 +486,22 @@ def apply_resource_damage_to_character(char_id: str, resource_name: str, damage_
     except Exception as e:
         logger.exception(f"[character.apply_resource_damage_to_character] Error: {e}")
         raise
-    finally:
-        db.close()
 
-def apply_healing_to_character(char_id: str, amount: int):
+@with_db_session(char_db.SessionLocal)
+def apply_healing_to_character(char_id: str, amount: int, db: Session = None):
     """
     Applies healing to a character's Hit Points.
 
     Args:
         char_id (str): The unique identifier of the character.
         amount (int): The amount of HP to restore.
+        db (Session): Injected database session.
     """
-    db = char_db.SessionLocal()
-    try:
-        db_char = _get_character_db(db, char_id)
-        char_crud.apply_healing(db, db_char, amount)
-    finally:
-        db.close()
+    db_char = _get_character_db(db, char_id)
+    char_crud.apply_healing(db, db_char, amount)
 
-def apply_temp_hp_to_character(char_id: str, amount: int) -> Dict[str, Any]:
+@with_db_session(char_db.SessionLocal)
+def apply_temp_hp_to_character(char_id: str, amount: int, db: Session = None) -> Dict[str, Any]:
     """
     Applies temporary HP to a character.
 
@@ -516,11 +510,11 @@ def apply_temp_hp_to_character(char_id: str, amount: int) -> Dict[str, Any]:
     Args:
         char_id (str): The unique identifier of the character.
         amount (int): The amount of temporary HP to apply.
+        db (Session): Injected database session.
 
     Returns:
         Dict[str, Any]: The updated character context.
     """
-    db = char_db.SessionLocal()
     try:
         db_char = _get_character_db(db, char_id)
         # This now calls the real CRUD function
@@ -530,5 +524,3 @@ def apply_temp_hp_to_character(char_id: str, amount: int) -> Dict[str, Any]:
     except Exception as e:
         logger.exception(f"[character.apply_temp_hp_to_character] Error: {e}")
         raise
-    finally:
-        db.close()

@@ -27,6 +27,8 @@ from . import ai_dm
 from . import simulation # It is in the same directory 'modules'
 from ..orchestrator import get_orchestrator
 from .character_pkg import services as character_api
+from ..shared import with_db_session
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger("monolith.story")
 
@@ -34,10 +36,10 @@ logger = logging.getLogger("monolith.story")
 # Core synchronous API functions
 # ---------------------------------------------------------------------------
 
-def add_experience(char_id: str, xp_amount: int) -> Dict[str, Any]:
+@with_db_session(se_db.SessionLocal)
+def add_experience(char_id: str, xp_amount: int, db: Session = None) -> Dict[str, Any]:
     """Add experience points to a character and return updated context."""
     logger.info(f"[story.sync] add_experience command received: char={char_id}, xp={xp_amount}")
-    db = se_db.SessionLocal()
     try:
         updated_char = se_experience.add_experience(db, char_id, xp_amount)
         from .character_pkg import services as char_services
@@ -45,8 +47,6 @@ def add_experience(char_id: str, xp_amount: int) -> Dict[str, Any]:
     except Exception as e:
         logger.exception(f"Failed to add experience: {e}")
         raise
-    finally:
-        db.close()
 
 def get_shop_inventory(shop_id: str) -> Dict[str, Any]:
     """Retrieve inventory for a specific shop."""
@@ -57,31 +57,27 @@ def get_shop_inventory(shop_id: str) -> Dict[str, Any]:
         logger.exception(f"Failed to get shop inventory: {e}")
         raise
 
-def buy_item(char_id: str, shop_id: str, item_id: str, quantity: int) -> Dict[str, Any]:
+@with_db_session(se_db.SessionLocal)
+def buy_item(char_id: str, shop_id: str, item_id: str, quantity: int, db: Session = None) -> Dict[str, Any]:
     """Buy an item from a shop for a character."""
     logger.info(f"[story.sync] buy_item command received: char={char_id}, shop={shop_id}, item={item_id}, qty={quantity}")
-    db = se_db.SessionLocal()
     try:
         updated_context = se_shop.buy_item(db, char_id, shop_id, item_id, quantity)
         return updated_context.model_dump()
     except Exception as e:
         logger.exception(f"Failed to buy item: {e}")
         raise
-    finally:
-        db.close()
 
-def sell_item(char_id: str, shop_id: str, item_id: str, quantity: int) -> Dict[str, Any]:
+@with_db_session(se_db.SessionLocal)
+def sell_item(char_id: str, shop_id: str, item_id: str, quantity: int, db: Session = None) -> Dict[str, Any]:
     """Sell an item to a shop for a character."""
     logger.info(f"[story.sync] sell_item command received: char={char_id}, shop={shop_id}, item={item_id}, qty={quantity}")
-    db = se_db.SessionLocal()
     try:
         updated_context = se_shop.sell_item(db, char_id, shop_id, item_id, quantity)
         return updated_context.model_dump()
     except Exception as e:
         logger.exception(f"Failed to sell item: {e}")
         raise
-    finally:
-        db.close()
 
 def get_dialogue_node(dialogue_id: str, node_id: str) -> Dict[str, Any]:
     """Retrieve a specific node from a dialogue tree."""
@@ -92,10 +88,10 @@ def get_dialogue_node(dialogue_id: str, node_id: str) -> Dict[str, Any]:
         logger.exception(f"Failed to get dialogue node: {e}")
         raise
 
-def handle_player_action(combat_id: int, actor_id: str, action: se_schemas.PlayerActionRequest) -> Dict[str, Any]:
+@with_db_session(se_db.SessionLocal)
+def handle_player_action(combat_id: int, actor_id: str, action: se_schemas.PlayerActionRequest, db: Session = None) -> Dict[str, Any]:
     """Process a player's combat action."""
     logger.info(f"[story.sync] player_action command received for combat {combat_id}: {actor_id}")
-    db = se_db.SessionLocal()
     try:
         combat = se_crud.get_combat_encounter(db, combat_id)
         if not combat:
@@ -105,13 +101,11 @@ def handle_player_action(combat_id: int, actor_id: str, action: se_schemas.Playe
     except Exception as e:
         logger.exception(f"Error handling player action: {e}")
         raise
-    finally:
-        db.close()
 
-def get_combat_state(combat_id: int) -> Dict[str, Any]:
+@with_db_session(se_db.SessionLocal)
+def get_combat_state(combat_id: int, db: Session = None) -> Dict[str, Any]:
     """Retrieve the current state of a combat encounter."""
     logger.info(f"[story.sync] get_combat_state command received: {combat_id}")
-    db = se_db.SessionLocal()
     try:
         combat = se_crud.get_combat_encounter(db, combat_id)
         if not combat:
@@ -138,13 +132,11 @@ def get_combat_state(combat_id: int) -> Dict[str, Any]:
     except Exception as e:
         logger.exception(f"Error getting combat state: {e}")
         raise
-    finally:
-        db.close()
 
-def handle_npc_action(combat_id: int) -> Dict[str, Any]:
+@with_db_session(se_db.SessionLocal)
+def handle_npc_action(combat_id: int, db: Session = None) -> Dict[str, Any]:
     """Determine and execute an NPC action for the current turn."""
     logger.info(f"[story.sync] handle_npc_action command received for combat {combat_id}")
-    db = se_db.SessionLocal()
     try:
         combat = se_crud.get_combat_encounter(db, combat_id)
         if not combat:
@@ -161,14 +153,12 @@ def handle_npc_action(combat_id: int) -> Dict[str, Any]:
     except Exception as e:
         logger.exception(f"Error handling NPC action: {e}")
         raise
-    finally:
-        db.close()
 
-def get_active_quest_requirements(location_id: int) -> Dict[str, Any]:
+@with_db_session(se_db.SessionLocal)
+def get_active_quest_requirements(location_id: int, db: Session = None) -> Dict[str, Any]:
     """
     Returns a map injection request if any active quest requires items/NPCs in this location.
     """
-    db = se_db.SessionLocal()
     try:
         quests = se_crud.get_all_quests(db, campaign_id=1) # MVP assumption
 
@@ -220,10 +210,12 @@ def get_active_quest_requirements(location_id: int) -> Dict[str, Any]:
                 "atmosphere_tags": ["quest_active"]
             }
         return None
-    finally:
-        db.close()
+    except Exception as e:
+        logger.exception(f"Error getting active quest requirements: {e}")
+        raise
 
-def handle_interaction(request: se_schemas.InteractionRequest) -> Dict[str, Any]:
+@with_db_session(se_db.SessionLocal)
+def handle_interaction(request: se_schemas.InteractionRequest, db: Session = None) -> Dict[str, Any]:
     """Handle an interaction request between an actor and a target object."""
     logger.info(f"[story.sync] Handling interaction: Actor '{request.actor_id}' -> Target '{request.target_object_id}'")
 
@@ -232,20 +224,16 @@ def handle_interaction(request: se_schemas.InteractionRequest) -> Dict[str, Any]
         if request.target_object_id.startswith("seed_"):
             # This is a story seed interaction
             # We assume campaign_id=1 for single player MVP, or we'd fetch from actor context
-            db = se_db.SessionLocal()
-            try:
-                camp_director = director.get_director(db, campaign_id=1)
-                generated_quest = camp_director.resolve_seed(request.target_object_id)
+            camp_director = director.get_director(db, campaign_id=1)
+            generated_quest = camp_director.resolve_seed(request.target_object_id)
 
-                # Format response as a narrative message
-                # In a full impl, this would create the quest in DB and notify client.
-                return {
-                    "success": True,
-                    "message": f"QUEST TRIGGERED: {generated_quest['title']}\n{generated_quest['description']}",
-                    "updated_annotations": {"quest_data": generated_quest}
-                }
-            finally:
-                db.close()
+            # Format response as a narrative message
+            # In a full impl, this would create the quest in DB and notify client.
+            return {
+                "success": True,
+                "message": f"QUEST TRIGGERED: {generated_quest['title']}\n{generated_quest['description']}",
+                "updated_annotations": {"quest_data": generated_quest}
+            }
     except Exception as e:
         logger.error(f"Director hook failed: {e}")
     # -------------------------------------------
@@ -257,27 +245,26 @@ def handle_interaction(request: se_schemas.InteractionRequest) -> Dict[str, Any]
         logger.exception(f"[story.sync] Interaction handling failed: {e}")
         return {"success": False, "message": f"An unexpected error occurred: {e}"}
 
-def get_all_quests(campaign_id: int) -> List[Dict[str, Any]]:
+@with_db_session(se_db.SessionLocal)
+def get_all_quests(campaign_id: int, db: Session = None) -> List[Dict[str, Any]]:
     """Retrieve all active quests for a campaign."""
-    db = se_db.SessionLocal()
     try:
         db_quests = se_crud.get_all_quests(db, campaign_id)
         return [se_schemas.ActiveQuest.from_orm(q).model_dump() for q in db_quests]
-    finally:
-        db.close()
+    except Exception as e:
+        logger.exception(f"Error getting all quests: {e}")
+        raise
 
-def rest_at_camp(rest_request: camp_schemas.CampRestRequest) -> Dict[str, Any]:
+@with_db_session(se_db.SessionLocal)
+def rest_at_camp(rest_request: camp_schemas.CampRestRequest, db: Session = None) -> Dict[str, Any]:
     """Process a camp rest action for a character."""
     logger.info(f"[story.sync] rest_at_camp command received: {rest_request.model_dump_json(indent=2)}")
-    db = se_db.SessionLocal()
     try:
         updated_character_context = camp_services.rest_at_camp(db, rest_request)
         return updated_character_context.model_dump()
     except Exception as e:
         logger.exception(f"Failed to rest at camp: {e}")
         raise
-    finally:
-        db.close()
 
 def handle_narrative_prompt(actor_id: str, prompt_text: str) -> Dict[str, Any]:
     """Generate a narrative response using intent classification and deterministic routing.

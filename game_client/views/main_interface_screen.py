@@ -48,6 +48,7 @@ try:
     from game_client import asset_loader
     from game_client.views.map_view_widget import MapViewWidget
     from game_client import debug_utils
+    from game_client.utils import AsyncHelper
 except ImportError as e:
     logging.error(f"MAIN_INTERFACE: Failed to import client modules: {e}")
     asset_loader = None
@@ -193,38 +194,7 @@ MAIN_INTERFACE_KV = '''
 '''
 Builder.load_string(MAIN_INTERFACE_KV)
 
-class AsyncHelper:
-    """Mixin to offload tasks to a background thread."""
-    
-    def run_async(self, task_func, success_callback, error_callback=None):
-        """
-        Run task_func in a thread.
-        
-        :param task_func: Function to run in background (no args).
-        :param success_callback: Function to run on main thread with result.
-        :param error_callback: Function to run on main thread if exception occurs.
-        """
-        def worker():
-            try:
-                result = task_func()
-                self._dispatch_success(success_callback, result)
-            except Exception as e:
-                self._dispatch_error(error_callback, e)
 
-        threading.Thread(target=worker, daemon=True).start()
-
-    @mainthread
-    def _dispatch_success(self, callback, result):
-        callback(result)
-
-    @mainthread
-    def _dispatch_error(self, callback, error):
-        if callback:
-            callback(error)
-        else:
-            # Default error handling: Log to console
-            import logging
-            logging.error(f"Async Task Failed: {error}")
 
 class MainInterfaceScreen(Screen, AsyncHelper):
     """
@@ -483,26 +453,22 @@ class MainInterfaceScreen(Screen, AsyncHelper):
                 char_id, loc_id, new_coords
             )
 
-        def on_complete(updated_context_dict):
+        def on_complete(result):
             try:
-                # --- Check for Encounter ---
-                if updated_context_dict.get("event_type") == "combat_start":
-                    encounter_id = updated_context_dict.get("encounter_id")
-                    logging.info(f"Combat triggered! Encounter ID: {encounter_id}")
-                    self.trigger_combat(encounter_id)
-                    return # Stop processing movement visual update
+                if not result.get("success", False):
+                    self.update_log(f"Move failed: {result.get('message', 'Unknown error')}")
+                    return
 
-                # --- Refresh the specific character in the master list ---
-                # Create a new CharacterContextResponse object from the updated dict
-                # This ensures Kivy properties are updated correctly
-                updated_char_context = CharacterContextResponse(**updated_context_dict)
+                # Extract character context
+                char_data = result.get("character", {})
+                updated_char_context = CharacterContextResponse(**char_data)
 
                 # Update the active_character_context
                 self.active_character_context = updated_char_context
 
                 # Update the context in our list (self.party_contexts)
                 for i, ctx in enumerate(self.party_contexts):
-                    if ctx.id == char_id: # Use char_id to match the character being moved
+                    if ctx.id == char_id:
                         self.party_contexts[i] = updated_char_context
                         break
                 self.party_list = list(self.party_contexts) # Trigger UI refresh
@@ -512,6 +478,13 @@ class MainInterfaceScreen(Screen, AsyncHelper):
                     char_id, tile_x, tile_y, self.get_map_height()
                 )
                 self.update_log(f"{self.active_character_context.name} moved to ({tile_x}, {tile_y})")
+
+                # Handle events
+                events = result.get("events", [])
+                if events:
+                    # Example: Check for combat event
+                    # In a real impl, we'd iterate and handle types
+                    pass
 
             except Exception as e:
                 logging.exception(f"Error updating UI after move: {e}")
