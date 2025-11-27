@@ -10,15 +10,16 @@
             source: 'game_client/assets/graphics/ui/dungeon_bg.png'
 
 <DungeonButton@Button>:
-    background_normal: 'game_client/assets/graphics/ui/stone_button.png'
-    background_down: 'game_client/assets/graphics/ui/stone_button.png'
-    border: (10, 10, 10, 10) # Assuming the button has some borders we want to preserve
+    background_normal: ''
+    background_down: ''
+    background_color: 0.2, 0.15, 0.1, 1 # Dark brown/stone
+    border: (0, 0, 0, 0)
     color: 0.9, 0.8, 0.6, 1 # Gold-ish text
     font_size: '18sp'
     bold: True
     canvas.after:
         Color:
-            rgba: (0, 0, 0, 0.2) if self.state == 'down' else (0, 0, 0, 0)
+            rgba: (1, 1, 1, 0.1) if self.state == 'down' else (0, 0, 0, 0)
         Rectangle:
             pos: self.pos
             size: self.size
@@ -45,3 +46,8 @@
 <DungeonLabel@Label>:
     color: 0.9, 0.9, 0.9, 1
     font_size: '16sp'
+
+<DarkTextLabel@Label>:
+    color: 0.1, 0.05, 0.05, 1 # Dark brown text
+    font_size: '16sp'
+

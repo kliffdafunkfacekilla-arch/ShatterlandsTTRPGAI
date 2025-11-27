@@ -40,6 +40,10 @@ from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.boxlayout import BoxLayout
 from kivy.lang import Builder
+from kivy.resources import resource_add_path
+
+# Ensure Kivy can find assets
+resource_add_path(str(APP_ROOT))
 
 # Load Theme
 Builder.load_file(str(Path(__file__).parent / "views" / "theme.kv"))

@@ -199,6 +199,8 @@ def load_data() -> Dict[str, Any]:
 
         # Load kingdom features (full structure for creation)
         KINGDOM_FEATURES_DATA = load_json_data("kingdom_features.json")
+        global KINGDOM_FEATURES
+        KINGDOM_FEATURES = KINGDOM_FEATURES_DATA
 
         # Load combat data
         MELEE_WEAPONS = load_json_data("melee_weapons.json")
