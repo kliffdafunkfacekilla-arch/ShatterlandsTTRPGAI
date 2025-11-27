@@ -1,0 +1,117 @@
+INFO:monolith.orchestrator:Orchestrator Initialized.
+INFO:monolith.rules.data_loader:Loaded stats_and_skills.json
+INFO:monolith.rules.data_loader:--- Loading Rules Data ---
+INFO:monolith.rules.data_loader:Loaded stats_and_skills.json
+INFO:monolith.rules.data_loader:Loaded abilities.json
+INFO:monolith.rules.data_loader:Loaded talents.json
+INFO:monolith.rules.data_loader:Loaded kingdom_features.json
+INFO:monolith.rules.data_loader:Loaded kingdom_features.json
+INFO:monolith.rules.data_loader:Loaded melee_weapons.json
+INFO:monolith.rules.data_loader:Loaded ranged_weapons.json
+INFO:monolith.rules.data_loader:Loaded armor.json
+INFO:monolith.rules.data_loader:Loaded skill_mappings.json
+INFO:monolith.rules.data_loader:Loaded injury_effects.json
+INFO:monolith.rules.data_loader:Loaded status_effects.json
+INFO:monolith.rules.data_loader:Loaded origin_choices.json
+INFO:monolith.rules.data_loader:Loaded childhood_choices.json
+INFO:monolith.rules.data_loader:Loaded coming_of_age_choices.json
+INFO:monolith.rules.data_loader:Loaded training_choices.json
+INFO:monolith.rules.data_loader:Loaded devotion_choices.json
+INFO:monolith.rules.data_loader:Loaded npc_templates.json
+INFO:monolith.rules.data_loader:Loaded item_templates.json
+INFO:monolith.rules.data_loader:Loaded generation_rules.json
+INFO:reproduce_issue:Starting reproduction script...
+INFO:reproduce_issue:Simulating frontend rules loading...
+INFO:monolith.rules.data_loader:Loaded kingdom_features.json
+INFO:monolith.rules.data_loader:Loaded stats_and_skills.json
+INFO:monolith.rules.data_loader:--- Loading Rules Data ---
+INFO:monolith.rules.data_loader:Loaded stats_and_skills.json
+INFO:monolith.rules.data_loader:Loaded abilities.json
+INFO:monolith.rules.data_loader:Loaded talents.json
+INFO:monolith.rules.data_loader:Loaded kingdom_features.json
+INFO:monolith.rules.data_loader:Loaded kingdom_features.json
+INFO:monolith.rules.data_loader:Loaded melee_weapons.json
+INFO:monolith.rules.data_loader:Loaded ranged_weapons.json
+INFO:monolith.rules.data_loader:Loaded armor.json
+INFO:monolith.rules.data_loader:Loaded skill_mappings.json
+INFO:monolith.rules.data_loader:Loaded injury_effects.json
+INFO:monolith.rules.data_loader:Loaded status_effects.json
+INFO:monolith.rules.data_loader:Loaded origin_choices.json
+INFO:monolith.rules.data_loader:Loaded childhood_choices.json
+INFO:monolith.rules.data_loader:Loaded coming_of_age_choices.json
+INFO:monolith.rules.data_loader:Loaded training_choices.json
+INFO:monolith.rules.data_loader:Loaded devotion_choices.json
+INFO:monolith.rules.data_loader:Loaded npc_templates.json
+INFO:monolith.rules.data_loader:Loaded item_templates.json
+INFO:monolith.rules.data_loader:Loaded generation_rules.json
+INFO:reproduce_issue:Rules Data Keys: ['kingdoms', 'schools', 'origins', 'childhoods', 'coming_of_ages', 'trainings', 'devotions', 'talents', 'kingdom_features_data', 'stats_list', 'all_skills']
+INFO:reproduce_issue:Stats List: ['Might', 'Endurance', 'Finesse', 'Reflexes', 'Vitality', 'Fortitude', 'Knowledge', 'Logic', 'Awareness', 'Intuition', 'Charm', 'Willpower']
+INFO:reproduce_issue:All Skills Length: 0
+INFO:reproduce_issue:Calling create_character...
+INFO:monolith.character.services:--- Starting character creation for: TestChar ---
+INFO:monolith.character.services:Using pre-fetched rules data.
+ERROR:monolith.character.services:Failed to initialize stats/skills.
+ERROR:monolith.character.services:Stats List (Type: <class 'list'>): ['Might', 'Endurance', 'Finesse', 'Reflexes', 'Vitality', 'Fortitude', 'Knowledge', 'Logic', 'Awareness', 'Intuition', 'Charm', 'Willpower']
+ERROR:monolith.character.services:All Skills (Type: <class 'list'>): []
+ERROR:monolith.character.services:All Skills Length: 0
+ERROR:reproduce_issue:Character Creation Failed: Character creation failed: Missing core rules data.
+Traceback (most recent call last):
+  File "C:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\reproduce_issue.py", line 67, in reproduce
+    result = char_services.create_character(db, new_char, rules_data=rules_data)
+  File "C:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\AI-TTRPG\monolith\modules\character_pkg\services.py", line 405, in create_character
+    raise Exception("Character creation failed: Missing core rules data.")
+Exception: Character creation failed: Missing core rules data.
+Starting data loading process...
+Processed 72 skills into master map.
+Processed 3 techniques.
+Processed 320 abilities into fast lookup map.
+Processed 60 kingdom features into flat map.
+DEBUG: STATS_LIST len: 12
+DEBUG: ALL_SKILLS len: 72
+DEBUG: ABILITY_DATA len: 12
+DEBUG: ABILITY_MAP len: 320
+DEBUG: TALENT_DATA len: 3
+DEBUG: FEATURE_STATS_MAP len: 60
+DEBUG: KINGDOM_FEATURES_DATA keys: 9
+Loaded 12 melee weapon categories.
+Loaded 12 ranged weapon categories.
+Loaded 12 armor categories.
+Loaded 36 skill mappings.
+Loaded 4 major injury locations.
+Loaded 12 status effect definitions.
+Loaded 3 origin choices.
+Loaded 3 childhood choices.
+Loaded 3 coming of age choices.
+Loaded 3 training choices.
+Loaded 3 devotion choices.
+Loaded 4 NPC templates.
+Loaded 21 item templates.
+Loaded 6 NPC generation rule sections.
+--- Rules Engine Data Parsed Successfully ---
+Starting data loading process...
+Processed 72 skills into master map.
+Processed 3 techniques.
+Processed 320 abilities into fast lookup map.
+Processed 60 kingdom features into flat map.
+DEBUG: STATS_LIST len: 12
+DEBUG: ALL_SKILLS len: 72
+DEBUG: ABILITY_DATA len: 12
+DEBUG: ABILITY_MAP len: 320
+DEBUG: TALENT_DATA len: 3
+DEBUG: FEATURE_STATS_MAP len: 60
+DEBUG: KINGDOM_FEATURES_DATA keys: 9
+Loaded 12 melee weapon categories.
+Loaded 12 ranged weapon categories.
+Loaded 12 armor categories.
+Loaded 36 skill mappings.
+Loaded 4 major injury locations.
+Loaded 12 status effect definitions.
+Loaded 3 origin choices.
+Loaded 3 childhood choices.
+Loaded 3 coming of age choices.
+Loaded 3 training choices.
+Loaded 3 devotion choices.
+Loaded 4 NPC templates.
+Loaded 21 item templates.
+Loaded 6 NPC generation rule sections.
+--- Rules Engine Data Parsed Successfully ---

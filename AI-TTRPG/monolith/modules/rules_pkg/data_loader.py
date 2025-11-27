@@ -166,13 +166,14 @@ def load_data() -> Dict[str, Any]:
     """Loads all rules data and returns it in a dictionary."""
     global STATS_LIST, SKILL_CATEGORIES, ALL_SKILLS, TECHNIQUES, ABILITY_DATA, ABILITY_MAP, TALENT_DATA, FEATURE_STATS_MAP, GENERATION_RULES
     global MELEE_WEAPONS, RANGED_WEAPONS, ARMOR, INJURY_EFFECTS, STATUS_EFFECTS, EQUIPMENT_CATEGORY_TO_SKILL_MAP, KINGDOM_FEATURES_DATA, NPC_TEMPLATES, ITEM_TEMPLATES
-    global ORIGIN_CHOICES, CHILDHOOD_CHOICES, COMING_OF_AGE_CHOICES, TRAINING_CHOICES, DEVOTION_CHOICES
+    global ORIGIN_CHOICES, CHILDHOOD_CHOICES, COMING_OF_AGE_CHOICES, TRAINING_CHOICES, DEVOTION_CHOICES, SKILL_MAP
 
     print("Starting data loading process...")
     loaded_data = {}
     try:
         # Load stats and skills
         STATS_LIST, SKILL_CATEGORIES, ALL_SKILLS, TECHNIQUES = _process_skills()
+        SKILL_MAP = ALL_SKILLS
 
         # Load abilities
         ABILITY_DATA = load_json_data("abilities.json")

@@ -23,12 +23,19 @@ try:
     from monolith.modules.character_pkg import crud as char_crud
     from monolith.modules.character_pkg import services as char_services
     from monolith.modules.character_pkg.database import SessionLocal as CharSession
+    from monolith.modules.character_pkg import schemas as char_schemas
+    from monolith.modules import rules as rules_api
 except ImportError as e:
     logging.error(f"GAME_SETUP: Failed to import monolith modules: {e}")
     # Create dummy fallbacks so the app doesn't crash on import
     char_crud = None
     char_services = None
     CharSession = None
+    char_schemas = None
+    rules_api = None
+
+import random
+import uuid
 
 class GameSetupScreen(Screen):
     """
@@ -93,6 +100,15 @@ class GameSetupScreen(Screen):
         )
         create_char_btn.bind(on_release=self.go_to_character_creation)
         party_panel.add_widget(create_char_btn)
+
+        # Quick Start Button
+        quick_start_btn = Factory.DungeonButton(
+            text="Quick Start (Random)",
+            size_hint_y=None,
+            height='44dp'
+        )
+        quick_start_btn.bind(on_release=self.on_quick_start)
+        party_panel.add_widget(quick_start_btn)
 
         content.add_widget(party_panel)
 
@@ -240,3 +256,80 @@ class GameSetupScreen(Screen):
         }
 
         app.root.current = 'main_interface'
+
+    def on_quick_start(self, instance):
+        """Generates a random character and starts the game immediately."""
+        if not rules_api or not char_services or not CharSession:
+            logging.error("Cannot quick start: Monolith not loaded.")
+            return
+
+        logging.info("Quick Start initiated. Generating random character...")
+        
+        # 1. Fetch Rules Data
+        rules_data = {
+            "kingdoms": rules_api.get_all_kingdoms(),
+            "schools": rules_api.get_all_ability_schools(),
+            "origins": rules_api.get_origin_choices(),
+            "childhoods": rules_api.get_childhood_choices(),
+            "coming_of_ages": rules_api.get_coming_of_age_choices(),
+            "trainings": rules_api.get_training_choices(),
+            "devotions": rules_api.get_devotion_choices(),
+            "talents": ["Basic Strike"], # Simplified
+            "kingdom_features_data": rules_api.get_data("kingdom_features_data"),
+            "stats_list": rules_api.get_all_stats(),
+            "all_skills": rules_api.get_all_skills()
+        }
+
+        # 2. Random Selections
+        kingdom = random.choice(rules_data["kingdoms"])
+        school = random.choice(rules_data["schools"])
+        
+        # Features
+        feature_choices = []
+        kf_data = rules_data["kingdom_features_data"]
+        for i in range(1, 9):
+            f_key = f"F{i}"
+            f_data = kf_data.get(f_key, {})
+            options = f_data.get(kingdom, [])
+            if not options and "All" in f_data: options = f_data["All"]
+            
+            if options:
+                choice = random.choice(options)
+                feature_choices.append({"feature_id": f_key, "choice_name": choice.get("name")})
+
+        # Backgrounds
+        def pick_bg(key):
+            opts = rules_data.get(key, [])
+            return random.choice(opts)["name"] if opts else "None"
+
+        new_char = char_schemas.CharacterCreate(
+            name=f"Random_{str(uuid.uuid4())[:4]}",
+            kingdom=kingdom,
+            ability_school=school,
+            feature_choices=feature_choices,
+            origin_choice=pick_bg("origins"),
+            childhood_choice=pick_bg("childhoods"),
+            coming_of_age_choice=pick_bg("coming_of_ages"),
+            training_choice=pick_bg("trainings"),
+            devotion_choice=pick_bg("devotions"),
+            ability_talent="Basic Strike",
+            portrait_id="character_1"
+        )
+
+        # 3. Create Character
+        try:
+            with CharSession() as db:
+                res = char_services.create_character(db, new_char, rules_data=rules_data)
+                logging.info(f"Random Character Created: {res.name}")
+                
+                # 4. Start Game
+                app = App.get_running_app()
+                app.game_settings = {
+                    'party_list': [res.name],
+                    'difficulty': self.difficulty_spinner.text
+                }
+                app.root.current = 'main_interface'
+        except Exception as e:
+            logging.error(f"Quick Start Failed: {e}")
+            # TODO: Show popup
+

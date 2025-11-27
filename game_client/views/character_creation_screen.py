@@ -112,7 +112,9 @@ class CharacterCreationScreen(Screen, AsyncHelper):
             "devotions": rules_api.get_devotion_choices(),
             "talents": sorted(list(set(all_talents))) if all_talents else ["Basic Strike"],
             # We need raw feature data for descriptions
-            "kingdom_features_data": rules_api.get_data("kingdom_features_data") 
+            "kingdom_features_data": rules_api.get_data("kingdom_features_data"),
+            "stats_list": rules_api.get_all_stats(),
+            "all_skills": rules_api.get_all_skills()
         }
 
     def _on_rules_loaded(self, data):
@@ -275,7 +277,7 @@ class CharacterCreationScreen(Screen, AsyncHelper):
         )
         
         with CharSession() as db:
-            return char_services.create_character(db, new_char)
+            return char_services.create_character(db, new_char, rules_data=self.rules_data)
 
     def _on_character_created(self, res):
         logging.info(f"Character Created: {res.name}")
