@@ -65,27 +65,34 @@ class IdentityStep(WizardStep):
         self.kingdom_spinner.bind(text=self.on_kingdom_select)
         self.add_widget(self.kingdom_spinner)
         
-        # Debug Button
-        debug_btn = Button(text="Test Click", size_hint_y=None, height='30dp')
-        debug_btn.bind(on_release=lambda x: print("DEBUG: Test Button Clicked"))
-        self.add_widget(debug_btn)
+        # Debug Button & Label
+        debug_layout = BoxLayout(size_hint_y=None, height='40dp')
+        debug_btn = Button(text="Refresh Data", size_hint_x=0.3)
+        debug_btn.bind(on_release=lambda x: self.on_enter())
+        self.debug_label = Label(text="Debug Info: Waiting...", color=(1,0,0,1))
+        debug_layout.add_widget(debug_btn)
+        debug_layout.add_widget(self.debug_label)
+        self.add_widget(debug_layout)
         
         self.add_widget(BoxLayout(size_hint_y=1)) # Spacer
 
     def on_enter(self):
         # Populate kingdoms if available
-        print(f"DEBUG: IdentityStep.on_enter called. Rules Data Keys: {self.wizard.rules_data.keys()}")
-        if self.wizard.rules_data:
-            kingdoms = self.wizard.rules_data.get('kingdoms', [])
-            print(f"DEBUG: Kingdoms found: {kingdoms}")
+        data_keys = list(self.wizard.rules_data.keys()) if self.wizard.rules_data else "None"
+        kingdoms = self.wizard.rules_data.get('kingdoms', []) if self.wizard.rules_data else []
+        
+        msg = f"Data: {data_keys}\nKingdoms: {len(kingdoms)}"
+        if hasattr(self, 'debug_label'):
+            self.debug_label.text = msg
             
-            if not kingdoms:
-                print("DEBUG: Kingdoms list is empty! Using fallback.")
-                kingdoms = ['Fallback Mammal', 'Fallback Reptile']
-            
+        print(f"DEBUG: IdentityStep.on_enter. {msg}")
+        
+        if kingdoms:
             self.kingdom_spinner.values = tuple(kingdoms)
-            if kingdoms and self.kingdom_spinner.text == 'Select Kingdom...':
+            if self.kingdom_spinner.text == 'Select Kingdom...' or self.kingdom_spinner.text == 'Loading...':
                  self.kingdom_spinner.text = kingdoms[0]
+        else:
+             self.kingdom_spinner.values = ('No Data Found',)
 
     def on_kingdom_select(self, spinner, text):
         # Update description and image

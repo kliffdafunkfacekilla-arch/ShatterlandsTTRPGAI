@@ -19,11 +19,12 @@ from game_client.views.wizard_steps import IdentityStep, FeatureStep, CapstoneSt
 
 # Try to import monolith modules
 try:
-    from monolith.client_api import rules_api, char_services
+    from monolith.modules import rules as rules_api
     from monolith.modules.character_pkg import schemas as char_schemas
-    from monolith.modules.character import CharSession
-except ImportError:
-    logging.warning("Monolith modules not found. Running in UI-only mode.")
+    from monolith.modules.character_pkg import services as char_services
+    from monolith.modules.character_pkg.database import SessionLocal as CharSession
+except ImportError as e:
+    logging.warning(f"Monolith modules not found: {e}. Running in UI-only mode.")
     rules_api = None
     char_services = None
     char_schemas = None
