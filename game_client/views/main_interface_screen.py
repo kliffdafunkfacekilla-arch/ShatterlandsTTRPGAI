@@ -16,6 +16,8 @@ from kivy.core.window import Window
 from functools import partial
 from typing import Optional, List
 import datetime # <-- Import datetime for save game popup
+import threading
+from kivy.clock import mainthread
 
 # --- Monolith Imports ---
 # ... (imports unchanged, make sure char_crud, char_services, etc. are imported) ...
@@ -191,7 +193,40 @@ MAIN_INTERFACE_KV = '''
 '''
 Builder.load_string(MAIN_INTERFACE_KV)
 
-class MainInterfaceScreen(Screen):
+class AsyncHelper:
+    """Mixin to offload tasks to a background thread."""
+    
+    def run_async(self, task_func, success_callback, error_callback=None):
+        """
+        Run task_func in a thread.
+        
+        :param task_func: Function to run in background (no args).
+        :param success_callback: Function to run on main thread with result.
+        :param error_callback: Function to run on main thread if exception occurs.
+        """
+        def worker():
+            try:
+                result = task_func()
+                self._dispatch_success(success_callback, result)
+            except Exception as e:
+                self._dispatch_error(error_callback, e)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    @mainthread
+    def _dispatch_success(self, callback, result):
+        callback(result)
+
+    @mainthread
+    def _dispatch_error(self, callback, error):
+        if callback:
+            callback(error)
+        else:
+            # Default error handling: Log to console
+            import logging
+            logging.error(f"Async Task Failed: {error}")
+
+class MainInterfaceScreen(Screen, AsyncHelper):
     """
     The primary gameplay screen for exploration.
 
@@ -438,48 +473,54 @@ class MainInterfaceScreen(Screen):
     def move_player_to(self, tile_x: int, tile_y: int):
         if not self.active_character_context or not self.map_view_widget:
             return
-        try:
-            char_id = self.active_character_context.id # Use active char's ID
-            loc_id = self.active_character_context.current_location_id
-            new_coords = [tile_x, tile_y]
+        
+        char_id = self.active_character_context.id # Use active char's ID
+        loc_id = self.active_character_context.current_location_id
+        new_coords = [tile_x, tile_y]
 
-            updated_context_dict = character_api.update_character_location(
+        def background_task():
+            return character_api.update_character_location(
                 char_id, loc_id, new_coords
             )
-            
-            # --- Check for Encounter ---
-            if updated_context_dict.get("event_type") == "combat_start":
-                encounter_id = updated_context_dict.get("encounter_id")
-                logging.info(f"Combat triggered! Encounter ID: {encounter_id}")
-                self.trigger_combat(encounter_id)
-                return # Stop processing movement visual update
 
-            # --- Refresh the specific character in the master list ---
-            # Create a new CharacterContextResponse object from the updated dict
-            # This ensures Kivy properties are updated correctly
-            updated_char_context = CharacterContextResponse(**updated_context_dict)
+        def on_complete(updated_context_dict):
+            try:
+                # --- Check for Encounter ---
+                if updated_context_dict.get("event_type") == "combat_start":
+                    encounter_id = updated_context_dict.get("encounter_id")
+                    logging.info(f"Combat triggered! Encounter ID: {encounter_id}")
+                    self.trigger_combat(encounter_id)
+                    return # Stop processing movement visual update
 
-            # Update the active_character_context
-            self.active_character_context = updated_char_context
+                # --- Refresh the specific character in the master list ---
+                # Create a new CharacterContextResponse object from the updated dict
+                # This ensures Kivy properties are updated correctly
+                updated_char_context = CharacterContextResponse(**updated_context_dict)
 
-            # Update the context in our list (self.party_contexts)
-            for i, ctx in enumerate(self.party_contexts):
-                if ctx.id == char_id: # Use char_id to match the character being moved
-                    self.party_contexts[i] = updated_char_context
-                    break
-            self.party_list = list(self.party_contexts) # Trigger UI refresh
+                # Update the active_character_context
+                self.active_character_context = updated_char_context
 
-            # --- Call the new move function on the map_view_widget ---
-            self.map_view_widget.move_active_player_sprite(
-                char_id, tile_x, tile_y, self.get_map_height()
-            )
-            self.update_log(f"{self.active_character_context.name} moved to ({tile_x}, {tile_y})")
+                # Update the context in our list (self.party_contexts)
+                for i, ctx in enumerate(self.party_contexts):
+                    if ctx.id == char_id: # Use char_id to match the character being moved
+                        self.party_contexts[i] = updated_char_context
+                        break
+                self.party_list = list(self.party_contexts) # Trigger UI refresh
 
+                # --- Call the new move function on the map_view_widget ---
+                self.map_view_widget.move_active_player_sprite(
+                    char_id, tile_x, tile_y, self.get_map_height()
+                )
+                self.update_log(f"{self.active_character_context.name} moved to ({tile_x}, {tile_y})")
 
+            except Exception as e:
+                logging.exception(f"Error updating UI after move: {e}")
 
-        except Exception as e:
-            logging.exception(f"Failed to move player: {e}")
+        def on_fail(error):
+            logging.exception(f"Failed to move player: {error}")
             self.update_log(f"Error: Could not move player.")
+
+        self.run_async(background_task, on_complete, on_fail)
 
     def trigger_combat(self, encounter_id):
         """Transitions the game to the combat screen."""
@@ -536,45 +577,59 @@ class MainInterfaceScreen(Screen):
             logging.error("Cannot submit prompt, story_api not loaded.")
             self.update_narration("Error: Story module not loaded.")
             return
+        
         actor_id = self.active_character_context.id
         self.update_log(f"You: {prompt_text}")
-        try:
-            response = story_api.handle_narrative_prompt(actor_id, prompt_text)
-            
+        self.update_narration("The DM is thinking...")
+
+        def background_task():
+            return story_api.handle_narrative_prompt(actor_id, prompt_text)
+
+        def on_complete(response):
             # Display the main AI response
             self.update_narration(response.get("message", "An error occurred."))
             
             # Process any side-effects/events included in the response
-            # Note: handle_narrative_prompt might need to be updated to return 'events'
-            # For now, we assume the response MIGHT contain them if the backend supports it.
             if "events" in response:
                 self.process_story_events(response["events"])
 
-        except Exception as e:
-            logging.exception(f"Error handling narrative prompt: {e}")
-            self.update_narration(f"Error: {e}")
+        def on_fail(error):
+            logging.exception(f"Error handling narrative prompt: {error}")
+            self.update_narration(f"Error: {error}")
+
+        self.run_async(background_task, on_complete, on_fail)
 
     def on_rest(self):
         """Called when the 'Rest' button is pressed."""
         if not self.active_character_context or not story_api:
             self.update_log("Cannot rest right now.")
             return
-        try:
-            char_id = self.active_character_context.id
-            rest_request = camp_schemas.CampRestRequest(char_id=char_id, duration=8) # Rest for 8 hours
-            self.update_log("You rest for 8 hours...")
-            updated_context_dict = story_api.rest_at_camp(rest_request)
-            new_context = CharacterContextResponse(**updated_context_dict)
-            for i, ctx in enumerate(self.party_contexts):
-                if ctx.id == char_id:
-                    self.party_contexts[i] = new_context
-                    break
-            self.active_character_context = new_context
-            self.party_list = list(self.party_contexts)
-            self.update_log("You feel refreshed. HP and Composure restored.")
-        except Exception as e:
-            logging.exception(f"Error during rest: {e}")
-            self.update_log(f"Rest failed: {e}")
+        
+        char_id = self.active_character_context.id
+        rest_request = camp_schemas.CampRestRequest(char_id=char_id, duration=8) # Rest for 8 hours
+        self.update_log("You rest for 8 hours...")
+
+        def background_task():
+            return story_api.rest_at_camp(rest_request)
+
+        def on_complete(updated_context_dict):
+            try:
+                new_context = CharacterContextResponse(**updated_context_dict)
+                for i, ctx in enumerate(self.party_contexts):
+                    if ctx.id == char_id:
+                        self.party_contexts[i] = new_context
+                        break
+                self.active_character_context = new_context
+                self.party_list = list(self.party_contexts)
+                self.update_log("You feel refreshed. HP and Composure restored.")
+            except Exception as e:
+                logging.exception(f"Error updating UI after rest: {e}")
+
+        def on_fail(error):
+            logging.exception(f"Error during rest: {error}")
+            self.update_log(f"Rest failed: {error}")
+
+        self.run_async(background_task, on_complete, on_fail)
 
     def show_save_popup(self):
         """Displays a popup to get a save game name."""
