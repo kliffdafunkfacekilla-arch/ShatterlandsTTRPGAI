@@ -21,12 +21,6 @@ MAIN_MENU_KV = """
             bold: True
 
         DungeonButton:
-            text: 'New Run'
-            font_size: '24sp'
-            size_hint_y: 0.15
-            on_release: app.root.current = 'game_setup'
-
-        DungeonButton:
             text: 'Character Creator'
             font_size: '24sp'
             size_hint_y: 0.15
@@ -43,9 +37,7 @@ MAIN_MENU_KV = """
             text: 'Settings'
             font_size: '24sp'
             size_hint_y: 0.15
-            on_release:
-                app.root.get_screen('settings').previous_screen = 'main_menu'
-                app.root.current = 'settings'
+            on_release: app.root.current = 'settings'
 
         DungeonButton:
             text: 'Quit'
