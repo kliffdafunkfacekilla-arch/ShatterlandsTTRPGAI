@@ -604,6 +604,96 @@ def _handle_effect_move_target_roll(
         source_coords = _get_actor_coords(attacker_context) if attacker_context else None
         return _handle_effect_move_target(target_id, log, effect, source_coords)
 
+def _handle_effect_move_target(
+    target_id: str,
+    log: List[str],
+    effect: Dict,
+    source_coords: Optional[List[int]] = None
+) -> bool:
+    """
+    Forcibly moves a target (Push/Pull/Slide).
+
+    Args:
+        target_id: The ID of the actor to move.
+        log: Combat log.
+        effect: Effect definition containing 'distance', 'direction_type' (push/pull/fixed).
+        source_coords: [x, y] of the source (attacker) for push/pull calculations.
+
+    Returns:
+        bool: True if moved successfully.
+    """
+    distance = effect.get("distance", 1)
+    direction_type = effect.get("direction_type", "push") # push, pull, random
+    
+    # Get current target position
+    _, target_context = get_actor_context(target_id)
+    target_coords = _get_actor_coords(target_context)
+    if not target_coords:
+        log.append(f"Cannot move {target_id}: unknown location.")
+        return False
+
+    loc_id = target_context.get("current_location_id")
+    if not loc_id:
+        # Try to get from combat context if possible, or fail
+        # For now, assume we can get it from context
+        return False
+
+    start_x, start_y = target_coords
+    new_x, new_y = start_x, start_y
+
+    # Calculate vector
+    if direction_type == "push" and source_coords:
+        # Vector from source to target
+        dx = start_x - source_coords[0]
+        dy = start_y - source_coords[1]
+        
+        # Normalize roughly to grid (8-way)
+        if dx > 0: new_x += distance
+        elif dx < 0: new_x -= distance
+        
+        if dy > 0: new_y += distance
+        elif dy < 0: new_y -= distance
+        
+        if dx == 0 and dy == 0:
+            # Stacked? Move random
+            direction_type = "random"
+
+    elif direction_type == "pull" and source_coords:
+        # Vector from target to source
+        dx = source_coords[0] - start_x
+        dy = source_coords[1] - start_y
+        
+        # Normalize
+        if dx > 0: new_x += distance
+        elif dx < 0: new_x -= distance
+        
+        if dy > 0: new_y += distance
+        elif dy < 0: new_y -= distance
+
+    if direction_type == "random":
+        # Random adjacent
+        dx = random.choice([-1, 0, 1])
+        dy = random.choice([-1, 0, 1])
+        if dx == 0 and dy == 0: dx = 1 # Force move
+        new_x += dx * distance
+        new_y += dy * distance
+
+    # Check bounds/passability
+    if not _is_passable_and_in_bounds(loc_id, new_x, new_y, log):
+        log.append(f"{target_id} is slammed into an obstacle!")
+        # Optional: Apply collision damage?
+        return False
+
+    # Apply Move
+    if target_id.startswith("player_"):
+        services.character_api.update_character_location(target_id, loc_id, [new_x, new_y])
+    elif target_id.startswith("npc_"):
+        npc_instance_id = int(target_id.split('_')[1])
+        services.world_api.update_npc_state(npc_instance_id, {"coordinates": [new_x, new_y]})
+
+    log.append(f"{target_id} is moved {distance}m to ({new_x}, {new_y}).")
+    return True
+
 def _handle_effect_move_self(
     actor_id: str,
     target_id: str,
