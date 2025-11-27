@@ -5,9 +5,11 @@ from kivy.uix.button import Button
 from kivy.uix.image import Image
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
+from kivy.uix.textinput import TextInput
 from kivy.factory import Factory
 from kivy.properties import ObjectProperty, StringProperty, ListProperty, NumericProperty, BooleanProperty
 from kivy.clock import Clock
+from kivy.graphics import Color, Rectangle
 import logging
 
 class WizardStep(BoxLayout):
@@ -39,9 +41,28 @@ class IdentityStep(WizardStep):
         
         # Name
         self.add_widget(Factory.DarkTextLabel(text="Character Name:", size_hint_y=None, height='30dp'))
-        self.name_input = Factory.TextInput(multiline=False, size_hint_y=None, height='40dp')
-        self.name_input.bind(text=self.validate)
-        self.add_widget(self.name_input)
+        
+        # Debug Layout for Name Input
+        name_layout = BoxLayout(size_hint_y=None, height='40dp', spacing='5dp')
+        
+        self.name_input = TextInput(multiline=False, size_hint_x=0.7, hint_text="Enter Name Here")
+        self.name_input.bind(text=self.on_name_text)
+        self.name_input.bind(focus=self.on_name_focus)
+        
+        # Visual Debug: Red Background for Input
+        with self.name_input.canvas.before:
+            Color(1, 0, 0, 0.3) # Red transparent
+            self.rect = Rectangle(pos=self.name_input.pos, size=self.name_input.size)
+        self.name_input.bind(pos=self.update_rect, size=self.update_rect)
+        
+        name_layout.add_widget(self.name_input)
+        
+        # Manual Focus Button
+        focus_btn = Button(text="Focus", size_hint_x=0.3)
+        focus_btn.bind(on_release=self.force_focus)
+        name_layout.add_widget(focus_btn)
+        
+        self.add_widget(name_layout)
 
         # Kingdom
         self.add_widget(Factory.DarkTextLabel(text="Select Kingdom:", size_hint_y=None, height='30dp'))
@@ -76,6 +97,14 @@ class IdentityStep(WizardStep):
         
         self.add_widget(BoxLayout(size_hint_y=1)) # Spacer
 
+    def update_rect(self, instance, value):
+        self.rect.pos = instance.pos
+        self.rect.size = instance.size
+
+    def force_focus(self, instance):
+        print("DEBUG: Forcing focus on name_input")
+        self.name_input.focus = True
+
     def on_enter(self):
         # Populate kingdoms if available
         data_keys = list(self.wizard.rules_data.keys()) if self.wizard.rules_data else "None"
@@ -108,8 +137,18 @@ class IdentityStep(WizardStep):
         # self.kingdom_image.source = f"game_client/assets/graphics/kingdoms/{text.lower()}.png" # Future
         self.validate()
 
+    def on_name_text(self, instance, value):
+        print(f"DEBUG: IdentityStep.on_name_text: '{value}'")
+        self.validate()
+
+    def on_name_focus(self, instance, value):
+        print(f"DEBUG: IdentityStep.on_name_focus: {value}")
+
     def validate(self, *args):
-        self.is_valid = bool(self.name_input.text and self.kingdom_spinner.text != 'Select Kingdom...')
+        is_name_ok = bool(self.name_input.text)
+        is_kingdom_ok = (self.kingdom_spinner.text != 'Select Kingdom...' and self.kingdom_spinner.text != 'Loading...' and self.kingdom_spinner.text != 'No Data Found')
+        self.is_valid = is_name_ok and is_kingdom_ok
+        print(f"DEBUG: IdentityStep.validate: Name='{self.name_input.text}' ({is_name_ok}), Kingdom='{self.kingdom_spinner.text}' ({is_kingdom_ok}) -> Valid={self.is_valid}")
 
     def get_data(self):
         return {

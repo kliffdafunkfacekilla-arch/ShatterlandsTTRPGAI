@@ -167,13 +167,14 @@ class CharacterCreationScreen(Screen, AsyncHelper):
         # Update buttons
         self.back_btn.text = "Back" if index > 0 else "Cancel"
         self.next_btn.text = "Finish" if index == len(self.steps) - 1 else "Next"
+        
         self.update_nav_state()
-
         # Bind validation
         step.bind(is_valid=self.update_nav_state)
 
     def update_nav_state(self, *args):
         step = self.steps[self.current_step_index]
+        print(f"DEBUG: update_nav_state: Step={step.title}, Valid={step.is_valid}")
         self.next_btn.disabled = not step.is_valid
 
     def go_next(self, instance):
