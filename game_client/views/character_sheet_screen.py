@@ -154,10 +154,10 @@ class CharacterSheetScreen(Screen):
             self.populate_sheet(char_context)
         except Exception as e:
             logging.exception("CRASH PREVENTED IN CHARACTER SHEET")
+            from game_client.ui_utils import show_error
+            show_error("Character Sheet Error", f"Failed to load character data:\n{str(e)}")
             if 'char_name_label' in self.ids:
-                self.ids.char_name_label.text = f"CRASH ERROR: {str(e)}"
-            import traceback
-            traceback.print_exc()
+                self.ids.char_name_label.text = "Error Loading Data"
 
     def populate_sheet(self, context):
         """Fills all UI elements with character data."""

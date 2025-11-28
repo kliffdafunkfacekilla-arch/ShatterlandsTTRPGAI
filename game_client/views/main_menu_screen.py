@@ -43,7 +43,7 @@ MAIN_MENU_KV = """
             text: 'Quit'
             font_size: '24sp'
             size_hint_y: 0.15
-            on_release: app.stop()
+            on_release: root.confirm_quit()
 """
 
 # Load the KV string into Kivy's Builder
@@ -53,4 +53,10 @@ class MainMenuScreen(Screen):
     """
     The main menu screen class. The UI is defined in the KV string above.
     """
-    pass
+    def confirm_quit(self):
+        from game_client.ui_utils import show_confirmation
+        show_confirmation(
+            "Quit Game",
+            "Are you sure you want to quit?",
+            on_confirm=App.get_running_app().stop
+        )

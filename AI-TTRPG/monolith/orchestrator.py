@@ -505,7 +505,9 @@ class Orchestrator:
             del character.inventory[item_id]
             
         # Save state
+        # Save state
         self.state_manager.save_current_game()
+        await self.event_bus.publish("notification.auto_save", {})
         
         await self.event_bus.publish("action.equip", {
             "player_id": player_id,

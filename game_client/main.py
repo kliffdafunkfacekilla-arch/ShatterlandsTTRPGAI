@@ -103,7 +103,33 @@ class ShatterlandsClientApp(App):
         # Start backend initialization in a separate thread
         threading.Thread(target=self.initialize_backend, daemon=True).start()
         
+        # Bind keyboard
+        Window.bind(on_keyboard=self.on_keyboard)
+        
         return self.sm
+
+    def on_keyboard(self, window, key, scancode, codepoint, modifier):
+        """Global keyboard handler."""
+        if key == 27: # ESC
+            current = self.sm.current
+            # If in a sub-menu of main interface, go back to main interface
+            if current in ['character_sheet', 'inventory', 'quest_log', 'dialogue_screen', 'shop_screen', 'settings']:
+                self.sm.current = 'main_interface'
+                return True
+            # If in main interface, maybe open pause menu (not implemented yet) or settings
+            elif current == 'main_interface':
+                self.sm.current = 'settings'
+                return True
+            # If in settings, go back to previous
+            elif current == 'settings':
+                # Settings screen handles its own back logic usually, but we can force it
+                screen = self.sm.get_screen('settings')
+                if hasattr(screen, 'go_back'):
+                    screen.go_back()
+                else:
+                    self.sm.current = 'main_menu'
+                return True
+        return False
 
     def on_stop(self):
         """Called when the application is closing."""
@@ -211,4 +237,15 @@ class ShatterlandsClientApp(App):
         popup.open()
 
 if __name__ == '__main__':
-    ShatterlandsClientApp().run()
+    try:
+        ShatterlandsClientApp().run()
+    except Exception as e:
+        logging.critical(f"Unhandled exception: {e}", exc_info=True)
+        print(f"CRITICAL ERROR: {e}")
+        # Try to show a native error dialog since Kivy might be dead
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, f"Critical Error:\n{e}", "Shatterlands Crash", 0x10)
+        except:
+            pass
+        sys.exit(1)

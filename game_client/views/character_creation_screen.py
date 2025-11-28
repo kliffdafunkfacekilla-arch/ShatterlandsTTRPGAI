@@ -127,8 +127,9 @@ class CharacterCreationScreen(Screen, AsyncHelper):
         self.set_loading(False)
         # Initialize steps anyway so the UI doesn't crash, but show error
         self.init_steps()
-        p = Popup(title="Data Load Error", content=Label(text=f"Failed to load game data:\n{error}"), size_hint=(0.8, 0.4))
-        p.open()
+        self.init_steps()
+        from game_client.ui_utils import show_error
+        show_error("Data Load Error", f"Failed to load game data:\n{error}")
 
     def init_steps(self):
         self.steps = []
@@ -290,12 +291,11 @@ class CharacterCreationScreen(Screen, AsyncHelper):
         # We don't automatically add to party list anymore, the Game Setup screen handles selection
         # But we can navigate there.
         
-        show_popup = Popup(
-            title="Success",
-            content=Label(text=f"Character '{res.name}' created successfully!\nIt is now available in Game Setup."),
-            size_hint=(0.6, 0.4)
-        )
-        show_popup.open()
+        # We don't automatically add to party list anymore, the Game Setup screen handles selection
+        # But we can navigate there.
+        
+        from game_client.ui_utils import show_success
+        show_success(f"Character '{res.name}' created successfully!\nIt is now available in Game Setup.")
         
         # Navigate to Game Setup after a delay
         Clock.schedule_once(lambda dt: setattr(app.root, 'current', 'game_setup'), 2.0)
@@ -305,8 +305,8 @@ class CharacterCreationScreen(Screen, AsyncHelper):
     def _on_creation_error(self, error):
         logging.error(f"Creation failed: {error}")
         self.set_loading(False)
-        p = Popup(title="Error", content=Label(text=str(error)), size_hint=(0.6, 0.4))
-        p.open()
+        from game_client.ui_utils import show_error
+        show_error("Creation Error", str(error))
 
     def set_loading(self, loading):
         if hasattr(self, 'next_btn'):

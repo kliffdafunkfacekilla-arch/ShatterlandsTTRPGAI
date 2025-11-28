@@ -236,23 +236,7 @@ class MainInterfaceScreen(Screen, AsyncHelper):
         Clock.schedule_once(self._bind_inputs)
         Clock.schedule_once(self._subscribe_to_events, 0)  # NEW: Event Bus subscriptions
 
-    def _subscribe_to_events(self, dt):
-        """Subscribe to Event Bus for reactive updates"""
-        app = App.get_running_app()
-        
-        if app.event_bus:
-            # Subscribe to turn changes
-            app.event_bus.subscribe("player.turn_start", self.on_turn_changed)
-            
-            # Subscribe to ability results
-            app.event_bus.subscribe("action.ability", self.on_ability_result)
-            
-            # Subscribe to state updates
-            app.event_bus.subscribe("game.state_updated", self.on_state_updated)
-            
-            logging.info("Main Interface subscribed to Event Bus")
-        else:
-            logging.warning("Event Bus not available")
+
 
     def _bind_inputs(self, *args):
         """Bind inputs that aren't available during __init__."""
