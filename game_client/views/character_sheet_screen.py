@@ -199,10 +199,28 @@ class CharacterSheetScreen(Screen):
             self.ids.talents_list.clear_widgets()
             talents = context.talents or []
             if talents:
-                from monolith.modules import rules as rules_api # Import here to avoid circular imports if any
+                # Use RuleSetContainer instead of old rules_api
+                from monolith.modules.rules_pkg.data_loader_enhanced import RuleSetContainer
+                
+                rules = RuleSetContainer()
                 
                 for talent_name in talents:
-                    talent_data = rules_api.get_talent_details(talent_name)
+                    talent_data = rules.get_talent(talent_name)
+                    
+                    if not talent_data:
+                        # Talent not found, show error
+                        error_box = BoxLayout(orientation='vertical', size_hint_y=None, height='40dp')
+                        error_label = Label(
+                            text=f"[b]{talent_name}[/b] (not found)",
+                            markup=True,
+                            font_size='14sp',
+                            color=(1, 0.3, 0.3, 1),
+                            size_hint_y=None,
+                            height='40dp'
+                        )
+                        error_box.add_widget(error_label)
+                        self.ids.talents_list.add_widget(error_box)
+                        continue
                     
                     # Create a box for each talent
                     talent_box = BoxLayout(orientation='vertical', size_hint_y=None, height='60dp', spacing='2dp')
@@ -212,9 +230,9 @@ class CharacterSheetScreen(Screen):
                     name_label.bind(size=name_label.setter('text_size'))
                     talent_box.add_widget(name_label)
                     
-                    # Effect Description
-                    effect_text = talent_data.get("effect", "No description available.")
-                    desc_label = Label(text=effect_text, font_size='12sp', color=(0.8, 0.8, 0.8, 1), size_hint_y=None, height='20dp', halign='left', valign='middle')
+                    # Description
+                    desc_text = talent_data.get("description", "No description available.")
+                    desc_label = Label(text=desc_text, font_size='12sp', color=(0.8, 0.8, 0.8, 1), size_hint_y=None, height='20dp', halign='left', valign='middle')
                     desc_label.bind(size=desc_label.setter('text_size'))
                     talent_box.add_widget(desc_label)
 

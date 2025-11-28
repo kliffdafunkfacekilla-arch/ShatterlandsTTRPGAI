@@ -10,8 +10,11 @@ from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.scrollview import ScrollView
 from kivy.properties import ObjectProperty
+from kivy.clock import Clock
 from functools import partial
-from kivy.uix.popup import Popup
+
+# Import UI utilities
+from game_client.ui_utils import show_loading, hide_loading, show_error, show_success
 
 # --- Direct Monolith Imports ---
 try:
@@ -83,39 +86,52 @@ class LoadGameScreen(Screen):
 
     def load_selected_game(self, slot_name: str, *args):
         """Load game using orchestrator"""
-        import asyncio
-        
         logging.info(f"Attempting to load game: {slot_name}")
         if not save_manager:
+            show_error("Error", "Save manager not available")
             return
 
-        try:
-            app = App.get_running_app()
+        # Show loading
+        show_loading(f"Loading {slot_name}...")
+        
+        def do_load(dt):
+            import asyncio
             
-            # Call orchestrator to load game
-            result = asyncio.run(app.orchestrator.load_game(slot_name))
-            
-            if not result.get("success"):
-                raise Exception(result.get("error", "Unknown load error"))
-            
-            logging.info(f"Game loaded successfully: {slot_name}")
-            
-            # Navigate to main interface
-            app.root.current = 'main_interface'
+            try:
+                app = App.get_running_app()
+                
+                # Call orchestrator to load game
+                result = asyncio.run(app.orchestrator.load_game(slot_name))
+                
+                hide_loading()
+                
+                if not result.get("success"):
+                    error_msg = result.get("error", "Unknown load error")
+                    logging.error(f"Failed to load game: {error_msg}")
+                    show_error("Load Failed", error_msg)
+                    return
+                
+                logging.info(f"Game loaded successfully: {slot_name}")
+                
+                # Show success
+                show_success(f"Loaded {slot_name}")
+                
+                # Navigate to main interface after brief delay
+                Clock.schedule_once(
+                    lambda dt: setattr(app.root, 'current', 'main_interface'),
+                    0.5
+                )
 
-        except Exception as e:
-            logging.exception(f"Failed to load game: {e}")
-
-            # Show error popup
-            content = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
-            content.add_widget(Label(text="Load Failed!", font_size='20sp'))
-            content.add_widget(Label(text=str(e), font_size='14sp', size_hint_y=None))
-            close_btn = Button(text="OK", size_hint_y=None, height='44dp')
-            content.add_widget(close_btn)
-
-            popup = Popup(title='Error', content=content, size_hint=(0.6, 0.4))
-            close_btn.bind(on_release=popup.dismiss)
-            popup.open()
+            except Exception as e:
+                hide_loading()
+                logging.exception(f"Failed to load game: {e}")
+                show_error(
+                    "Load Error",
+                    f"Failed to load {slot_name}:\n{str(e)}\n\nCheck console for details."
+                )
+        
+        # Schedule on next frame to allow loading dialog to show
+        Clock.schedule_once(do_load, 0.1)
 
     def go_to_main_menu(self):
         App.get_running_app().root.current = 'main_menu'

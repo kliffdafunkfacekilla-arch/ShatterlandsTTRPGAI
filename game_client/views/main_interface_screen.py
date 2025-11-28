@@ -20,28 +20,14 @@ import threading
 from kivy.clock import mainthread
 
 # --- Monolith Imports ---
-# ... (imports unchanged, make sure char_crud, char_services, etc. are imported) ...
+# Updated to use Orchestrator instead of database
 try:
-    from monolith.modules.character_pkg import crud as char_crud
-    from monolith.modules.character_pkg import services as char_services
-    from monolith.modules.character_pkg.database import SessionLocal as CharSession
-    from monolith.modules.world_pkg import crud as world_crud
-    from monolith.modules.world_pkg.database import SessionLocal as WorldSession
-    from monolith.modules import character as character_api
-    from monolith.modules import story as story_api
-    from monolith.modules import save_api
     from monolith.modules.story_pkg import schemas as story_schemas
-    from monolith.modules.character_pkg.schemas import CharacterContextResponse
     from monolith.modules.camp_pkg import schemas as camp_schemas
 except ImportError as e:
     logging.error(f"MAIN_INTERFACE: Failed to import monolith modules: {e}")
-    # ... (all set to None)
-    CharacterContextResponse = None # Add this
-    char_crud, char_services, CharSession = None, None, None
-    world_crud, WorldSession = None, None
-    character_api, story_api, story_schemas = None, None, None
-    save_api = None
-    CharacterContextResponse = None
+    story_schemas = None
+    camp_schemas = None
 
 # --- Client Imports ---
 try:
@@ -304,80 +290,54 @@ class MainInterfaceScreen(Screen, AsyncHelper):
             app.root.current = 'main_menu'
             return
 
-        # --- MODIFIED: Load Full Party ---
-        char_names = app.game_settings.get('party_list')
-        if not char_names:
-            logging.error("No party_list in game settings! Returning to menu.")
+        # --- UPDATED: Load from Orchestrator State ---
+        if not app.orchestrator:
+            logging.error("No orchestrator found! Returning to menu.")
             app.root.current = 'main_menu'
             return
 
-        if not char_crud or not world_crud or not asset_loader:
-            logging.error("A required monolith module or asset loader is not available.")
-            return
-
-        self.party_contexts.clear()
-        char_db = None
         try:
-            char_db = CharSession()
-            loaded_contexts = []
-            for char_name in char_names:
-                db_char = char_crud.get_character_by_name(char_db, char_name)
-                if not db_char:
-                    raise Exception(f"Character '{char_name}' not found in database.")
-
-                context = char_services.get_character_context(db_char)
-                self.party_contexts.append(context)
-                loaded_contexts.append(context)
-
-            # --- FIX: Ensure party_contexts is updated ---
+            # Get current game state from Orchestrator
+            state = app.orchestrator.get_current_state()
+            
+            if not state or not state.characters:
+                logging.error("No game state or characters found! Returning to menu.")
+                app.root.current = 'main_menu'
+                return
+            
+            # Load party from state
+            self.party_contexts.clear()
+            loaded_contexts = list(state.characters)
             self.party_contexts = loaded_contexts
-            # --- END FIX ---
-
+            
             # Set the first character as active by default OR keep existing
             if self.party_contexts:
+                # Try to keep current active character if valid
                 if app.active_character_context and any(c.id == app.active_character_context.id for c in self.party_contexts):
-                     # Keep existing if valid
-                     self.active_character_context = app.active_character_context
+                    self.active_character_context = app.active_character_context
                 else:
-                     self.active_character_context = self.party_contexts[0]
+                    self.active_character_context = self.party_contexts[0]
                 
                 # Update global context
                 app.active_character_context = self.active_character_context
+            
             # Set the party_list to trigger the UI update
             self.party_list = self.party_contexts
 
-            logging.info(f"Loaded party: {[c.name for c in self.party_contexts]}")
+            logging.info(f"Loaded party from Orchestrator: {[c.name for c in self.party_contexts]}")
 
         except Exception as e:
-            logging.error(f"Failed to load party: {e}")
-            if char_db: char_db.close()
-            # Show error popup before returning to menu
-            p = Popup(title="Load Error", content=Label(text=f"Failed to load party:\n{e}"), size_hint=(0.8, 0.4))
-            p.open()
-            # Delay return to menu so user can see error
-            Clock.schedule_once(lambda dt: setattr(app.root, 'current', 'main_menu'), 5)
+            logging.error(f"Failed to load party from Orchestrator: {e}")
+            from game_client.ui_utils import show_error
+            show_error("Load Error", f"Failed to load game state:\n{e}")
+            Clock.schedule_once(lambda dt: setattr(app.root, 'current', 'main_menu'), 1)
             return
-        finally:
-            if char_db: char_db.close()
-        # --- END MODIFIED ---
-
-        # ... (Location loading is unchanged) ...
-        world_db = None
-        try:
-            if self.active_character_context:
-                loc_id = self.active_character_context.current_location_id # Use active char's location
-                world_db = WorldSession()
-                self.location_context = world_crud.get_location_context(world_db, loc_id)
-                if not self.location_context:
-                    raise Exception(f"Location ID '{loc_id}' not found in database.")
-                logging.info(f"Loaded context for location: {self.location_context.get('name')}")
-        except Exception as e:
-            logging.error(f"Failed to load location context: {e}")
-            if world_db: world_db.close()
-            app.root.current = 'main_menu'
-            return
-        finally:
-            if world_db: world_db.close()
+        
+        # Location context - simplified (map data should be in game state if needed)
+        # For now, we'll skip location loading since it requires database
+        # This can be implemented later by storing location data in game state
+        self.location_context = None
+        logging.info("Location context skipped (to be implemented in game state)")
 
         self.build_scene()
         self.center_layout(Window, Window.width, Window.height)
@@ -506,54 +466,6 @@ class MainInterfaceScreen(Screen, AsyncHelper):
             return False
         try:
             tile_id = tile_map[tile_y][tile_x]
-        except IndexError:
-            return False
-        tile_def = asset_loader.get_tile_definition(str(tile_id))
-        if not tile_def:
-            logging.warning(f"No tile definition found for ID {tile_id}")
-            return False
-        return tile_def.get('passable', False)
-
-    def move_player_to(self, tile_x: int, tile_y: int):
-        if not self.active_character_context or not self.map_view_widget:
-            return
-        
-        char_id = self.active_character_context.id # Use active char's ID
-        loc_id = self.active_character_context.current_location_id
-        new_coords = [tile_x, tile_y]
-
-        def background_task():
-            return character_api.update_character_location(
-                char_id, loc_id, new_coords
-            )
-
-        def on_complete(result):
-            try:
-                if not result.get("success", False):
-                    self.update_log(f"Move failed: {result.get('message', 'Unknown error')}")
-                    return
-
-                # Extract character context
-                char_data = result.get("character", {})
-                updated_char_context = CharacterContextResponse(**char_data)
-
-                # Update the active_character_context
-                self.active_character_context = updated_char_context
-
-                # Update the context in our list (self.party_contexts)
-                for i, ctx in enumerate(self.party_contexts):
-                    if ctx.id == char_id:
-                        self.party_contexts[i] = updated_char_context
-                        break
-                self.party_list = list(self.party_contexts) # Trigger UI refresh
-
-                # --- Call the new move function on the map_view_widget ---
-                self.map_view_widget.move_active_player_sprite(
-                    char_id, tile_x, tile_y, self.get_map_height()
-                )
-                self.update_log(f"{self.active_character_context.name} moved to ({tile_x}, {tile_y})")
-
-                # Handle events
                 events = result.get("events", [])
                 if events:
                     # Example: Check for combat event
