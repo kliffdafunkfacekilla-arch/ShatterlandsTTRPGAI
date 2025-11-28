@@ -17,11 +17,11 @@ MONOLITH_PATH = APP_ROOT / "AI-TTRPG"
 if str(MONOLITH_PATH) not in sys.path:
     sys.path.insert(0, str(MONOLITH_PATH))
 
-# --- 2. DELAYED MONOLITH & ASSET IMPORTS ---
+# --- 2. MONOLITH IMPORTS ---
 try:
-    from monolith.start_monolith import _run_migrations_for_module, ROOT
-    from monolith.orchestrator import get_orchestrator
-    from monolith.modules import register_all
+    from monolith.orchestrator import Orchestrator
+    from monolith.event_bus import get_event_bus
+    from monolith.modules.rules_pkg.data_loader_enhanced import load_and_validate_all
     from game_client import asset_loader
     from game_client import settings_manager
 except ImportError as e:
@@ -76,8 +76,12 @@ class ShatterlandsClientApp(App):
     game_settings = {}
     app_settings = {}
     
-    # Global Context for Active Character (Section 2.1)
+    # Global Context for Active Character
     active_character_context = ObjectProperty(None, force_dispatch=True)
+    
+    # Core game components (initialized in initialize_backend)
+    orchestrator = None
+    event_bus = None
 
     def build(self):
         """
@@ -105,37 +109,54 @@ class ShatterlandsClientApp(App):
         """Called when the application is closing."""
         logging.info("Application stopping...")
         try:
-            from monolith.orchestrator import get_orchestrator
-            get_orchestrator().shutdown()
+            if self.orchestrator:
+                # Clean shutdown of AI manager if present
+                from monolith.modules.ai_dm_pkg.llm_handler_enhanced import get_ai_manager
+                try:
+                    get_ai_manager().shutdown()
+                except:
+                    pass
         except Exception as e:
             logging.error(f"Error during shutdown: {e}")
 
     def initialize_backend(self):
         """
-        Runs database migrations and module registration in a background thread.
+        Initialize the local game engine in a background thread.
         Updates the LoadingScreen via Clock.schedule_once.
         """
         try:
-            # Create a new event loop for this thread
+            # Create async event loop for this thread
             import asyncio
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-            self.update_loading_status("Initializing Logging...", 10)
+            self.update_loading_status("Initializing Engine...", 10)
             
-            # Database Migrations
-            self.update_loading_status("Running Database Migrations...", 20)
-            _run_migrations_for_module("character", ROOT, "auto")
-            _run_migrations_for_module("world", ROOT, "auto")
-            _run_migrations_for_module("story", ROOT, "auto")
+            # Initialize Event Bus
+            self.update_loading_status("Setting up Event Bus...", 20)
+            self.event_bus = get_event_bus()
             
-            # Module Registration
-            self.update_loading_status("Registering Modules...", 50)
-            # register_all uses asyncio.create_task, so it needs a loop
-            register_all(get_orchestrator())
+            # Initialize Orchestrator
+            self.update_loading_status("Initializing Orchestrator...", 30)
+            self.orchestrator = Orchestrator()
+            
+            # Load and validate game rules (abilities, talents, etc.)
+            self.update_loading_status("Loading Game Rules...", 50)
+            try:
+                rules_summary = load_and_validate_all()
+                logger.info(f"Rules loaded: {rules_summary}")
+            except Exception as e:
+                logger.error(f"Failed to load rules: {e}")
+                self.update_loading_status("ERROR: Failed to load game rules", 50)
+                time.sleep(2)
+                sys.exit(1)
+            
+            # Initialize engine (loads rules into orchestrator)
+            self.update_loading_status("Initializing Game Engine...", 60)
+            loop.run_until_complete(self.orchestrator.initialize_engine())
             
             # Asset Loading
-            self.update_loading_status("Loading Assets...", 70)
+            self.update_loading_status("Loading Assets...", 80)
             asset_loader.initialize_assets()
             
             # Settings Loading
@@ -144,17 +165,16 @@ class ShatterlandsClientApp(App):
             
             # Complete
             self.update_loading_status("Initialization Complete!", 100)
-            time.sleep(0.5) # Brief pause to show 100%
+            time.sleep(0.5)
             
             # Initialize screens on main thread and switch
             Clock.schedule_once(self.initialize_screens_and_switch, 0)
             
-            # Keep the loop running for the event bus
+            # Keep the loop running for async operations (Event Bus, AI DM)
             loop.run_forever()
             
         except Exception as e:
             logger.exception(f"FATAL: An error occurred during startup: {e}")
-            # In a real app, we might show an error screen here
             sys.exit(1)
 
     def initialize_screens_and_switch(self, dt):
