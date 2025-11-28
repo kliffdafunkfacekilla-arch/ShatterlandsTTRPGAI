@@ -1,295 +1,363 @@
 """
-Core save/load logic. This module performs the direct database
-queries and operations for creating save files and loading state.
-It directly imports the models and sessions from all other modules.
+JSON-based Save Manager for Local Monolith Architecture
+
+This module handles all game state persistence using JSON files and Pydantic validation.
+Replaces the previous SQLAlchemy/database-based approach with direct file I/O.
+
+Responsibilities:
+- Save GameSaveState to JSON files
+- Load and validate JSON save files
+- Scan save directory for available saves
+- Load character JSON files from external sources
 """
 import logging
 import os
 import json
-import datetime
-from typing import List, Dict, Any
-# Import all schemas
-from .save_schemas import *
-# Import all DB models and sessions
-from .character_pkg import database as char_db
-from .character_pkg import models as char_models
-from .world_pkg import database as world_db
-from .world_pkg import models as world_models
-from .simulation_pkg import database as sim_db
-from .simulation_pkg import models as sim_models
-from .story_pkg import database as story_db
-from .story_pkg import models as story_models
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+from datetime import datetime
+from pydantic import ValidationError
+
+from .save_schemas import SaveFile, SaveGameData, CharacterSave
 
 logger = logging.getLogger("monolith.save_manager")
 
-SAVE_DIR = "saves"
-os.makedirs(SAVE_DIR, exist_ok=True)
+# Save directory configuration
+SAVE_DIR = Path("./saves")
+CHARACTER_DIR = Path("./characters")
+SAVE_DIR.mkdir(exist_ok=True)
+CHARACTER_DIR.mkdir(exist_ok=True)
 
-def _get_save_path(slot_name: str) -> str:
-    """Generates a clean file path for the save slot."""
-    filename = "".join(c for c in slot_name if c.isalnum() or c in ('_','-')) + ".json"
-    return os.path.join(SAVE_DIR, filename)
 
-def _get_active_character_info(campaign_id: int = None) -> (str, str):
-    """Fetches the ID and name of the first active character for a campaign.
+def _get_save_path(slot_name: str) -> Path:
+    """Generate a clean file path for the save slot.
     
     Args:
-        campaign_id: Optional campaign ID to filter by
+        slot_name: Name of the save slot
+        
+    Returns:
+        Path object for the save file
     """
-    db = None
-    try:
-        db = char_db.SessionLocal()
-        query = db.query(char_models.Character)
-        
-        if campaign_id:
-            query = query.filter(char_models.Character.campaign_id == campaign_id)
-        
-        char = query.first()
-        if char:
-            return char.id, char.name
-        return None, None
-    except Exception as e:
-        logger.warning(f"Could not get active character for save: {e}")
-        return None, None
-    finally:
-        if db:
-            db.close()
+    # Sanitize filename
+    filename = "".join(c for c in slot_name if c.isalnum() or c in ('_', '-', ' '))
+    filename = f"{filename}.json"
+    return SAVE_DIR / filename
 
-def _save_game_internal(slot_name: str, active_character_id: str = None, campaign_id: int = None) -> Dict[str, Any]:
-    """Internal function to query campaign-scoped data and write to file.
+
+def save_game(
+    data: SaveGameData,
+    slot_name: str = "CurrentSave",
+    active_character_id: Optional[str] = None,
+    active_character_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """Save game state to JSON file.
     
     Args:
-        slot_name: Name of save slot
-        active_character_id: ID of active character
-        campaign_id: Campaign ID to filter by (if None, saves all data for backward compatibility)
-    """
-    char_session = char_db.SessionLocal()
-    world_session = world_db.SessionLocal()
-    story_session = story_db.SessionLocal()
-    # sim_session removed to avoid locking (shares world.db)
-
-    try:
-        logger.info(f"--- Starting Save Game process for slot: {slot_name} ---")
-
-        # --- 1. Query campaign-scoped data ---
-        if campaign_id:
-            logger.info(f"Querying data for campaign_id: {campaign_id}")
-            
-            # Query only data belonging to this campaign
-            logger.info("Querying character data...")
-            all_chars = char_session.query(char_models.Character).filter(
-                char_models.Character.campaign_id == campaign_id
-            ).all()
-            
-            logger.info("Querying story data...")
-            all_campaigns = story_session.query(story_models.Campaign).filter(
-                story_models.Campaign.id == campaign_id
-            ).all()
-            all_quests = story_session.query(story_models.ActiveQuest).filter(
-                story_models.ActiveQuest.campaign_id == campaign_id
-            ).all()
-            
-            # World data: Filter by campaign_id
-            logger.info("Querying world data for campaign...")
-            all_factions = world_session.query(sim_models.Faction).filter(
-                sim_models.Faction.campaign_id == campaign_id
-            ).all()
-            all_regions = world_session.query(world_models.Region).filter(
-                world_models.Region.campaign_id == campaign_id
-            ).all()
-            all_locations = world_session.query(world_models.Location).filter(
-                world_models.Location.campaign_id == campaign_id
-            ).all()
-            # NPCs and Items are scoped via their location's campaign
-            location_ids = [loc.id for loc in all_locations]
-            if location_ids:
-                all_npcs = world_session.query(world_models.NpcInstance).filter(
-                    world_models.NpcInstance.location_id.in_(location_ids)
-                ).all()
-                all_items = world_session.query(world_models.ItemInstance).filter(
-                    world_models.ItemInstance.location_id.in_(location_ids)
-                ).all()
-                all_traps = world_session.query(world_models.TrapInstance).filter(
-                    world_models.TrapInstance.location_id.in_(location_ids)
-                ).all()
-            else:
-                all_npcs = []
-                all_items = []
-                all_traps = []
-            all_flags = story_session.query(story_models.StoryFlag).all()
-            all_campaign_states = story_session.query(story_models.CampaignState).filter(
-                story_models.CampaignState.campaign_id == campaign_id
-            ).all()
-        else:
-            # Backward compatibility: save all data if no campaign_id specified
-            logger.info("Querying all data (no campaign filter)...")
-            all_chars = char_session.query(char_models.Character).all()
-            all_factions = world_session.query(sim_models.Faction).all()
-            all_regions = world_session.query(world_models.Region).all()
-            all_locations = world_session.query(world_models.Location).all()
-            all_npcs = world_session.query(world_models.NpcInstance).all()
-            all_items = world_session.query(world_models.ItemInstance).all()
-            all_traps = world_session.query(world_models.TrapInstance).all()
-            all_campaigns = story_session.query(story_models.Campaign).all()
-            all_campaign_states = story_session.query(story_models.CampaignState).all()
-            all_quests = story_session.query(story_models.ActiveQuest).all()
-            all_flags = story_session.query(story_models.StoryFlag).all()
-        data = SaveGameData(
-            characters=[CharacterSave.from_orm(c) for c in all_chars],
-            factions=[FactionSave.from_orm(f) for f in all_factions],
-            regions=[RegionSave.from_orm(r) for r in all_regions],
-            locations=[LocationSave.from_orm(l) for l in all_locations],
-            npcs=[NpcInstanceSave.from_orm(n) for n in all_npcs],
-            items=[ItemInstanceSave.from_orm(i) for i in all_items],
-            traps=[TrapInstanceSave.from_orm(t) for t in all_traps],
-            campaigns=[CampaignSave.from_orm(c) for c in all_campaigns],
-            campaign_states=[CampaignStateSave.from_orm(c) for c in all_campaign_states],
-            quests=[ActiveQuestSave.from_orm(q) for q in all_quests],
-            flags=[StoryFlagSave.from_orm(f) for f in all_flags],
-        )
-
-        active_id = active_character_id
-        active_name = "Unknown"
+        data: Complete game state data (Pydantic model)
+        slot_name: Name of the save slot
+        active_character_id: ID of the currently active character
+        active_character_name: Name of the currently active character
         
-        if active_id:
-            # Find name from loaded chars
-            for c in all_chars:
-                if c.id == active_id:
-                    active_name = c.name
-                    break
-        else:
-            # Fallback to auto-detect
-            active_id, active_name = _get_active_character_info()
-
+    Returns:
+        Result dictionary with success status and metadata
+    """
+    try:
+        logger.info(f"Starting save game to slot: {slot_name}")
+        
+        # Auto-detect active character if not provided
+        if not active_character_id and data.characters:
+            active_character_id = data.characters[0].id
+            active_character_name = data.characters[0].name
+            logger.info(f"Auto-detected active character: {active_character_name}")
+        
+        # Create save file structure
         save_file = SaveFile(
             save_name=slot_name,
-            save_time=datetime.datetime.now().isoformat(),
-            active_character_id=active_id,
-            active_character_name=active_name,
+            save_time=datetime.now().isoformat(),
+            active_character_id=active_character_id,
+            active_character_name=active_character_name,
             data=data
         )
-
-        # --- 3. Write to file ---
+        
+        # Serialize to JSON
         filepath = _get_save_path(slot_name)
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(save_file.model_dump(), f, indent=2)
-
-        logger.info(f"--- Save Game complete: {filepath} ---")
-        return {"success": True, "path": filepath, "name": active_name}
-
+        json_data = save_file.model_dump_json(indent=2)
+        
+        # Write to file
+        filepath.write_text(json_data, encoding='utf-8')
+        
+        logger.info(f"Save complete: {filepath}")
+        return {
+            "success": True,
+            "path": str(filepath),
+            "name": active_character_name or "Unknown",
+            "timestamp": save_file.save_time
+        }
+        
     except Exception as e:
         logger.exception(f"Save game failed: {e}")
-        return {"success": False, "error": str(e)}
-    finally:
-        char_session.close()
-        world_session.close()
-        story_session.close()
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
-def _load_game_internal(slot_name: str) -> Dict[str, Any]:
-    """Internal function to read file, wipe DBs, and repopulate."""
+
+def load_game(slot_name: str) -> Dict[str, Any]:
+    """Load game state from JSON file with Pydantic validation.
+    
+    Args:
+        slot_name: Name of the save slot to load
+        
+    Returns:
+        Result dictionary with SaveFile data or error
+    """
     filepath = _get_save_path(slot_name)
-    if not os.path.exists(filepath):
-        logger.error(f"Save file not found: {filepath}")
-        raise FileNotFoundError(f"Save file {slot_name}.json not found.")
-
-    char_session = char_db.SessionLocal()
-    world_session = world_db.SessionLocal()
-    story_session = story_db.SessionLocal()
-    # sim_session removed
-
+    
     try:
-        logger.info(f"--- Starting Load Game process from: {filepath} ---")
-
-        # --- 1. Read and parse file ---
-        with open(filepath, 'r', encoding='utf-8') as f:
-            raw_data = json.load(f)
-
-        save_file = SaveFile(**raw_data)
-        data = save_file.data
-
-        # --- 2. Wipe existing data (in reverse dependency order) ---
-        logger.info("Wiping existing database state...")
-        # Story
-        story_session.query(story_models.ActiveQuest).delete()
-        story_session.query(story_models.StoryFlag).delete()
-        story_session.query(story_models.CombatParticipant).delete()
-        story_session.query(story_models.CombatEncounter).delete()
-        story_session.query(story_models.CampaignState).delete()
-        story_session.query(story_models.Campaign).delete()
-        # World
-        world_session.query(world_models.ItemInstance).delete()
-        world_session.query(world_models.NpcInstance).delete()
-        world_session.query(world_models.TrapInstance).delete()
-        world_session.query(world_models.Tile).delete()
-        world_session.query(world_models.Location).delete()
-        world_session.query(world_models.Map).delete()
-        world_session.query(world_models.Region).delete()
-        # world_session.query(world_models.Faction).delete() # MOVED
-        world_session.query(sim_models.Faction).delete()
-
-        # Character
-        char_session.query(char_models.Character).delete()
-
-        # --- 3. Repopulate data (in dependency order) ---
-        logger.info("Repopulating databases...")
-        # Character
-        for char_data in data.characters:
-            char_session.add(char_models.Character(**char_data.model_dump()))
-
-        # World
-        for faction_data in data.factions:
-            # Check fields - sim_models.Faction has different fields than old world_models.Faction
-            # This might fail if the schema in save file doesn't match.
-            # But we assume the save file matches the Pydantic schema FactionSave.
-            # We need to ensure sim_models.Faction is compatible with FactionSave.
-            world_session.add(sim_models.Faction(**faction_data.model_dump()))
-
-        # sim_session.commit() -> handled by world_session.commit()
-
-        for region_data in data.regions:
-            world_session.add(world_models.Region(**region_data.model_dump()))
-
-
-        for loc_data in data.locations:
-            world_session.add(world_models.Location(**loc_data.model_dump()))
-
-
-        for npc_data in data.npcs:
-            world_session.add(world_models.NpcInstance(**npc_data.model_dump()))
-        for item_data in data.items:
-            world_session.add(world_models.ItemInstance(**item_data.model_dump()))
-        for trap_data in data.traps:
-            world_session.add(world_models.TrapInstance(**trap_data.model_dump()))
-
-        # Story
-        for camp_data in data.campaigns:
-            story_session.add(story_models.Campaign(**camp_data.model_dump()))
-
-
-        for camp_state_data in data.campaign_states:
-            story_session.add(story_models.CampaignState(**camp_state_data.model_dump()))
-
-        for quest_data in data.quests:
-            story_session.add(story_models.ActiveQuest(**quest_data.model_dump()))
-        for flag_data in data.flags:
-            story_session.add(story_models.StoryFlag(**flag_data.model_dump()))
-
-        # --- 4. Commit all changes ---
-        logger.info("Committing all changes...")
-        char_session.commit()
-        world_session.commit()
-        story_session.commit()
-
-        logger.info("--- Load Game complete ---")
-        return {"success": True, "name": save_file.save_name, "active_character_name": save_file.active_character_name}
-
+        logger.info(f"Loading game from: {filepath}")
+        
+        if not filepath.exists():
+            raise FileNotFoundError(f"Save file not found: {filepath}")
+        
+        # Read and parse JSON
+        json_content = filepath.read_text(encoding='utf-8')
+        
+        # Validate with Pydantic
+        save_file = SaveFile.model_validate_json(json_content)
+        
+        logger.info(f"Load complete: {save_file.save_name}")
+        return {
+            "success": True,
+            "save_file": save_file,
+            "name": save_file.save_name,
+            "active_character_name": save_file.active_character_name,
+            "timestamp": save_file.save_time
+        }
+        
+    except FileNotFoundError as e:
+        logger.error(f"Save file not found: {e}")
+        return {
+            "success": False,
+            "error": f"Save file '{slot_name}' not found"
+        }
+    except ValidationError as e:
+        logger.exception(f"Save file validation failed: {e}")
+        return {
+            "success": False,
+            "error": f"Save file corrupted or incompatible: {e}"
+        }
     except Exception as e:
         logger.exception(f"Load game failed: {e}")
-        char_session.rollback()
-        world_session.rollback()
-        story_session.rollback()
-        return {"success": False, "error": str(e)}
-    finally:
-        char_session.close()
-        world_session.close()
-        story_session.close()
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+def scan_saves() -> List[Dict[str, Any]]:
+    """Scan the saves directory for all available save files.
+    
+    Returns:
+        List of save file metadata dictionaries
+    """
+    saves = []
+    
+    try:
+        for save_file in SAVE_DIR.glob("*.json"):
+            try:
+                # Read minimal metadata without full validation
+                json_content = save_file.read_text(encoding='utf-8')
+                data = json.loads(json_content)
+                
+                saves.append({
+                    "name": data.get("save_name", save_file.stem),
+                    "path": str(save_file),
+                    "timestamp": data.get("save_time", "Unknown"),
+                    "active_character": data.get("active_character_name", "Unknown")
+                })
+            except Exception as e:
+                logger.warning(f"Could not read save metadata from {save_file}: {e}")
+                # Include corrupted files in list but mark them
+                saves.append({
+                    "name": save_file.stem,
+                    "path": str(save_file),
+                    "timestamp": "Unknown",
+                    "active_character": "Corrupted",
+                    "error": str(e)
+                })
+        
+        logger.info(f"Found {len(saves)} save files")
+        return saves
+        
+    except Exception as e:
+        logger.exception(f"Error scanning save directory: {e}")
+        return []
+
+
+def load_character_from_json(filepath: str) -> Dict[str, Any]:
+    """Load and validate an external character JSON file.
+    
+    This is used during character creation and game setup to import
+    standalone character definitions.
+    
+    Args:
+        filepath: Path to the character JSON file
+        
+    Returns:
+        Result dictionary with CharacterSave data or error
+    """
+    try:
+        logger.info(f"Loading character from: {filepath}")
+        
+        char_path = Path(filepath)
+        if not char_path.exists():
+            raise FileNotFoundError(f"Character file not found: {filepath}")
+        
+        # Read and validate
+        json_content = char_path.read_text(encoding='utf-8')
+        character = CharacterSave.model_validate_json(json_content)
+        
+        logger.info(f"Character loaded: {character.name}")
+        return {
+            "success": True,
+            "character": character,
+            "name": character.name,
+            "id": character.id
+        }
+        
+    except FileNotFoundError as e:
+        logger.error(f"Character file not found: {e}")
+        return {
+            "success": False,
+            "error": f"Character file not found: {filepath}"
+        }
+    except ValidationError as e:
+        logger.exception(f"Character validation failed: {e}")
+        # Provide detailed error for modding/debugging
+        return {
+            "success": False,
+            "error": f"Character file validation failed:\n{e}",
+            "validation_details": str(e)
+        }
+    except Exception as e:
+        logger.exception(f"Load character failed: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+def save_character_to_json(character: CharacterSave, filename: Optional[str] = None) -> Dict[str, Any]:
+    """Save a character to a standalone JSON file.
+    
+    Used after character creation to export the character for later use.
+    
+    Args:
+        character: CharacterSave Pydantic model
+        filename: Optional custom filename (defaults to character name)
+        
+    Returns:
+        Result dictionary with success status and path
+    """
+    try:
+        if not filename:
+            filename = f"{character.name}.json"
+        
+        # Sanitize filename
+        filename = "".join(c for c in filename if c.isalnum() or c in ('_', '-', ' '))
+        if not filename.endswith('.json'):
+            filename += '.json'
+        
+        filepath = CHARACTER_DIR / filename
+        
+        logger.info(f"Saving character to: {filepath}")
+        
+        # Serialize and write
+        json_data = character.model_dump_json(indent=2)
+        filepath.write_text(json_data, encoding='utf-8')
+        
+        logger.info(f"Character saved: {character.name}")
+        return {
+            "success": True,
+            "path": str(filepath),
+            "name": character.name
+        }
+        
+    except Exception as e:
+        logger.exception(f"Save character failed: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+def scan_characters() -> List[Dict[str, Any]]:
+    """Scan the characters directory for available character files.
+    
+    Returns:
+        List of character metadata dictionaries
+    """
+    characters = []
+    
+    try:
+        for char_file in CHARACTER_DIR.glob("*.json"):
+            try:
+                # Read minimal metadata
+                json_content = char_file.read_text(encoding='utf-8')
+                data = json.loads(json_content)
+                
+                characters.append({
+                    "name": data.get("name", char_file.stem),
+                    "path": str(char_file),
+                    "id": data.get("id", "unknown"),
+                    "level": data.get("level", 1),
+                    "kingdom": data.get("kingdom", "Unknown")
+                })
+            except Exception as e:
+                logger.warning(f"Could not read character from {char_file}: {e}")
+                characters.append({
+                    "name": char_file.stem,
+                    "path": str(char_file),
+                    "error": str(e)
+                })
+        
+        logger.info(f"Found {len(characters)} character files")
+        return characters
+        
+    except Exception as e:
+        logger.exception(f"Error scanning character directory: {e}")
+        return []
+
+
+def delete_save(slot_name: str) -> Dict[str, Any]:
+    """Delete a save file.
+    
+    Args:
+        slot_name: Name of the save slot to delete
+        
+    Returns:
+        Result dictionary with success status
+    """
+    try:
+        filepath = _get_save_path(slot_name)
+        
+        if not filepath.exists():
+            return {
+                "success": False,
+                "error": f"Save file '{slot_name}' not found"
+            }
+        
+        filepath.unlink()
+        logger.info(f"Deleted save: {filepath}")
+        
+        return {
+            "success": True,
+            "message": f"Save '{slot_name}' deleted"
+        }
+        
+    except Exception as e:
+        logger.exception(f"Delete save failed: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }

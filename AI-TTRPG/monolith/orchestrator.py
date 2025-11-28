@@ -16,7 +16,7 @@ from pathlib import Path
 # Import core components
 from .event_bus import get_event_bus
 from .modules.save_schemas import SaveGameData, CharacterSave
-from .modules import save_manager_new as save_manager
+from .modules import save_manager
 
 logger = logging.getLogger("monolith.orchestrator")
 
@@ -360,31 +360,6 @@ class Orchestrator:
     
     async def _handle_ability(
         self,
-        current_state: SaveGameData,
-        player_id: str,
-        data: dict
-    ) -> Dict[str, Any]:
-        """Handle ability/talent usage."""
-        logger.info(f"Ability: {player_id} uses {data.get('ability_id')}")
-        
-        # TODO: Implement ability resolution
-        # from .modules.rules_pkg.talent_logic import resolve_action
-        # new_state, outcome = resolve_action(current_state, player_id, data['ability_id'], data.get('target_id'))
-        
-        await self.event_bus.publish("action.ability", {
-            "player_id": player_id,
-            "ability_id": data.get('ability_id')
-        })
-        
-        return {
-            "success": True,
-            "action": "ability",
-            "message": "Ability system not yet implemented"
-        }
-    
-    async def _handle_dialogue(
-        self,
-        current_state: SaveGameData,
         player_id: str,
         data: dict
     ) -> Dict[str, Any]:
