@@ -90,6 +90,37 @@ def get_all_talents_data() -> Dict[str, Any]:
         data_loader.load_data()
     return data_loader.TALENT_DATA
 
+def get_talent_details(talent_name: str) -> Dict[str, Any]:
+    """Returns details for a specific talent by name, searching recursively."""
+    all_talents = get_all_talents_data()
+    
+    def search_list(t_list: List[Any]) -> Optional[Dict[str, Any]]:
+        for t in t_list:
+            if not isinstance(t, dict): continue
+            
+            # Check current item
+            name = t.get("name") or t.get("talent_name")
+            if name == talent_name:
+                return t
+            
+            # Check nested 'talents' list (common in skill mastery)
+            if "talents" in t and isinstance(t["talents"], list):
+                found = search_list(t["talents"])
+                if found: return found
+        return None
+
+    for category, content in all_talents.items():
+        if isinstance(content, list):
+            found = search_list(content)
+            if found: return found
+        elif isinstance(content, dict):
+            for sub_list in content.values():
+                if isinstance(sub_list, list):
+                    found = search_list(sub_list)
+                    if found: return found
+
+    return {"name": talent_name, "effect": "Details not found.", "modifiers": []}
+
 def get_ability_school(school_name: str) -> Dict[str, Any]:
     """Returns data for a specific ability school."""
     if not data_loader.ABILITY_DATA:
