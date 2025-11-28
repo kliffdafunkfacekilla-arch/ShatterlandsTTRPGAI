@@ -496,7 +496,8 @@ class Orchestrator:
         
         return {
             "success": True,
-            "action": "end_turn",
+            "action": "end_turn"
+        }
     
     def get_active_player(self) -> Optional[CharacterSave]:
         """Get the currently active player."""

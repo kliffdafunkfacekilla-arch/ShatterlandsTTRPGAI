@@ -1,0 +1,64 @@
+[
+  {
+    "name": "Coastal Theocracy",
+    "faction_type": "Theocracy",
+    "capital_city": "Unknown",
+    "goals": "Preserve purity, defend against the coming Flood, maintain monopoly on Choral material.",
+    "lore": {
+      "philosophy": "Oceanic Genesis: All life began in the ocean. The surface is cursed. Purity is paramount.",
+      "social_structure": "Rigid Hierarchy: High Ecclesiarch -> Priesthood -> Warrior Caste -> Worker Caste -> The Drowned (Outcasts).",
+      "economy": "Monopoly on 'Choral' material (airship buoyancy/luxury glass).",
+      "military": "Defensive 'Net Line'. Uses harpoon cannons and choral-enhanced ships.",
+      "key_entities": [
+        "High Ecclesiarch (Leader)",
+        "The Drowned (Cursed lower class)"
+      ]
+    }
+  },
+  {
+    "name": "Sylvan Empire",
+    "faction_type": "Empire",
+    "capital_city": "The Rooted Citadel",
+    "goals": "Endurance, slow growth, resistance to kinetic chaos.",
+    "lore": {
+      "philosophy": "Rooted Endurance: The forest is a single sacred entity. Patience and deep roots survive the storm.",
+      "social_structure": "Living Cities: Integrated into massive trees. Collective consciousness.",
+      "economy": "Self-sufficient, biological technology.",
+      "military": "Heavy infantry, biological siege weapons.",
+      "key_entities": [
+        "The Evergreen Emperor"
+      ]
+    }
+  },
+  {
+    "name": "Treetop Commonwealth",
+    "faction_type": "Commonwealth",
+    "capital_city": "High-Canopy Nexus",
+    "goals": "Strategic survival, trade, rapid adaptation to targeted chaos.",
+    "lore": {
+      "philosophy": "Cunning and Strategy: Chaos is a puzzle to be solved. Decentralization is defense.",
+      "social_structure": "Decentralized Clans: Loose alliance of independent settlements.",
+      "economy": "Trade hub, textiles, mass-produced goods.",
+      "military": "Skirmishers, traps, guerrilla warfare.",
+      "key_entities": [
+        "Speaker of the Leaves (Elected Official)"
+      ]
+    }
+  },
+  {
+    "name": "Iron Caldera",
+    "faction_type": "Meritocracy",
+    "capital_city": "Forgespire",
+    "goals": "Endurance against the Implacable Siege, industrial dominance.",
+    "lore": {
+      "philosophy": "Endurance & Unyielding Will: Pressure creates diamonds (and strong reptiles).",
+      "social_structure": "Caste System: Stone-Scales (Rulers) -> Lizard-Folk -> Shelled -> Salamanders. Guild-based.",
+      "economy": "Metallurgy, Clockwork, Geothermal Energy.",
+      "military": "Forge Dancers (Elite), Heavy Plate Infantry.",
+      "key_entities": [
+        "Grand Forge Master",
+        "Brood Smiths"
+      ]
+    }
+  }
+]

@@ -12,6 +12,11 @@ class Faction(Base):
     strength = Column(Integer, default=50) # 0-100
     relationship_matrix = Column(JSON, default={}) # {"faction_name": -10, ...}
 
+    # --- NEW: Lore Fields ---
+    faction_type = Column(String, nullable=True) # e.g., "Theocracy", "Empire"
+    capital_city = Column(String, nullable=True)
+    lore = Column(JSON, default={}) # Structured lore data (philosophy, history, etc.)
+
     resources = relationship("WorldResource", back_populates="owner_faction")
 
 class WorldResource(Base):
