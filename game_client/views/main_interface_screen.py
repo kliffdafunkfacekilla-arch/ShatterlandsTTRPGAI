@@ -248,6 +248,25 @@ class MainInterfaceScreen(Screen, AsyncHelper):
         # We must schedule this to run after the KV string is loaded
         from kivy.clock import Clock
         Clock.schedule_once(self._bind_inputs)
+        Clock.schedule_once(self._subscribe_to_events, 0)  # NEW: Event Bus subscriptions
+
+    def _subscribe_to_events(self, dt):
+        """Subscribe to Event Bus for reactive updates"""
+        app = App.get_running_app()
+        
+        if app.event_bus:
+            # Subscribe to turn changes
+            app.event_bus.subscribe("player.turn_start", self.on_turn_changed)
+            
+            # Subscribe to ability results
+            app.event_bus.subscribe("action.ability", self.on_ability_result)
+            
+            # Subscribe to state updates
+            app.event_bus.subscribe("game.state_updated", self.on_state_updated)
+            
+            logging.info("Main Interface subscribed to Event Bus")
+        else:
+            logging.warning("Event Bus not available")
 
     def _bind_inputs(self, *args):
         """Bind inputs that aren't available during __init__."""
@@ -421,6 +440,51 @@ class MainInterfaceScreen(Screen, AsyncHelper):
         self.update_log(f"{char_context.name} is now the active character.")
         # Re-firing update_party_list_ui will update the highlighting
         self.update_party_list_ui()
+
+    # =========================================================================
+    # EVENT BUS HANDLERS (NEW)
+    # =========================================================================
+    
+    def on_turn_changed(self, player_id, player_name, **kwargs):
+        """Called when hotseat turn changes"""
+        self.update_log(f">>> It's {player_name}'s turn!")
+        
+        # Update active character if in party
+        for char in self.party_contexts:
+            if char.id == player_id:
+                self.active_character_context = char
+                break
+    
+    def on_ability_result(self, result, player_id, **kwargs):
+        """Called when an ability is used"""
+        if result.get("success"):
+            narrative = result.get("narrative", "")
+            if narrative:
+                self.update_narration(narrative)
+            
+            # Show effects in log
+            effects = result.get("effects_applied", [])
+            for effect in effects:
+                effect_type = effect.get('type', 'unknown')
+                self.update_log(f"→ Effect: {effect_type}")
+    
+    def on_state_updated(self, **kwargs):
+        """Called when game state changes"""
+        # Refresh display from orchestrator
+        app = App.get_running_app()
+        
+        if app.orchestrator:
+            state = app.orchestrator.get_current_state()
+            
+            if state and state.characters:
+                # Update party from state
+                self.party_contexts = list(state.characters)
+                self.party_list = self.party_contexts
+                logging.info("Main Interface refreshed from game state")
+    
+    # =========================================================================
+    # END EVENT BUS HANDLERS
+    # =========================================================================
 
     def update_log(self, message: str):
         self.ids.log_label.text += f"\n- {message}"

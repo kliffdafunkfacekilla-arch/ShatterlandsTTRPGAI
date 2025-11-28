@@ -15,10 +15,10 @@ from kivy.uix.popup import Popup
 
 # --- Direct Monolith Imports ---
 try:
-    from monolith.modules import save_api
+    from monolith.modules import save_manager
 except ImportError as e:
-    logging.error(f"LOAD_GAME: Failed to import save_api: {e}")
-    save_api = None
+    logging.error(f"LOAD_GAME: Failed to import save_manager: {e}")
+    save_manager = None
 
 class LoadGameScreen(Screen):
     save_list_container = ObjectProperty(None)
@@ -48,30 +48,33 @@ class LoadGameScreen(Screen):
         self.populate_save_list()
 
     def populate_save_list(self):
+        """Populate list of save games from JSON files"""
         self.save_list_container.clear_widgets()
-        if not save_api:
+        if not save_manager:
             self.save_list_container.add_widget(Label(text="Error: Save module not loaded."))
             return
 
         try:
-            saves = save_api.list_save_games()
+            saves = save_manager.scan_saves()
+            
             if not saves:
                 self.save_list_container.add_widget(Label(text="No save games found."))
                 return
 
-            for save in saves:
-                save_name = save.get('name', 'Unknown Save')
-                char_name = save.get('char', 'Unknown Char')
-                save_time = save.get('time', 'Unknown Time')
-
-                btn_text = f"{save_name}\n(Character: {char_name} - Time: {save_time})"
+            for slot_name, save_file in saves.items():
+                # Format display text
+                save_time = save_file.save_time.strftime("%Y-%m-%d %H:%M")
+                num_chars = len(save_file.data.characters)
+                
+                btn_text = f"{slot_name}\n({num_chars} characters - {save_time})"
+                
                 save_btn = Button(
                     text=btn_text,
                     size_hint_y=None,
                     height='60dp',
                     halign='center'
                 )
-                save_btn.bind(on_release=partial(self.load_selected_game, save_name))
+                save_btn.bind(on_release=partial(self.load_selected_game, slot_name))
                 self.save_list_container.add_widget(save_btn)
 
         except Exception as e:
@@ -79,31 +82,31 @@ class LoadGameScreen(Screen):
             self.save_list_container.add_widget(Label(text="Error loading save list."))
 
     def load_selected_game(self, slot_name: str, *args):
-        """Calls the save_api to load the game and transitions to the interface."""
+        """Load game using orchestrator"""
+        import asyncio
+        
         logging.info(f"Attempting to load game: {slot_name}")
-        if not save_api:
+        if not save_manager:
             return
 
         try:
-            result = save_api.load_game(slot_name)
+            app = App.get_running_app()
+            
+            # Call orchestrator to load game
+            result = asyncio.run(app.orchestrator.load_game(slot_name))
+            
             if not result.get("success"):
                 raise Exception(result.get("error", "Unknown load error"))
-
-            app = App.get_running_app()
-
-            # CRITICAL: We must set the active character name so the
-            # main_interface_screen knows who to load.
-            app.game_settings = {
-                'selected_character_name': result.get('active_character_name'),
-                'difficulty': 'Normal' # Placeholder, could store this in save
-            }
-
+            
+            logging.info(f"Game loaded successfully: {slot_name}")
+            
+            # Navigate to main interface
             app.root.current = 'main_interface'
 
         except Exception as e:
             logging.exception(f"Failed to load game: {e}")
 
-            # --- IMPLEMENTATION ---
+            # Show error popup
             content = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
             content.add_widget(Label(text="Load Failed!", font_size='20sp'))
             content.add_widget(Label(text=str(e), font_size='14sp', size_hint_y=None))
