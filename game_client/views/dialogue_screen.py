@@ -66,6 +66,7 @@ class DialogueScreen(Screen):
 
         self.dialogue_id = dialogue_info.get('dialogue_id')
         start_node_id = dialogue_info.get('start_node_id', 'start_node')
+        self.npc_id = dialogue_info.get('npc_id') # Load NPC ID if passed in settings
 
         self.load_node(self.dialogue_id, start_node_id)
 
@@ -122,7 +123,7 @@ class DialogueScreen(Screen):
                             action_type="DIALOGUE",
                             dialogue_id=self.dialogue_id,
                             node_id=next_node_id,
-                            npc_id="unknown" # TODO: Pass NPC ID if available
+                            npc_id=self.npc_id if hasattr(self, 'npc_id') else "unknown"
                         )
                     )
                 
@@ -134,6 +135,13 @@ class DialogueScreen(Screen):
             self.load_node(self.dialogue_id, next_node_id)
         else:
             self.end_dialogue()
+
+    def start_dialogue(self, dialogue_id, start_node_id="ROOT", npc_id=None):
+        """Starts a new dialogue sequence."""
+        self.dialogue_id = dialogue_id
+        self.npc_id = npc_id
+        self.load_node(dialogue_id, start_node_id)
+        # Don't switch screens here, usually called from main interface which handles switch
 
     def end_dialogue(self, *args):
         """Returns to the main interface screen."""

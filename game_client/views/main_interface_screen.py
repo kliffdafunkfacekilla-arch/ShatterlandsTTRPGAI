@@ -80,6 +80,9 @@ MAIN_INTERFACE_KV = '''
                     text: 'Debug'
                     on_release: root.show_debug_popup()
                 DungeonButton:
+                    text: 'Combat'
+                    on_release: root.start_debug_combat()
+                DungeonButton:
                     text: 'Save Game'
                     on_release: root.show_save_popup()
                 DungeonButton:
@@ -317,11 +320,29 @@ class MainInterfaceScreen(Screen, AsyncHelper):
             Clock.schedule_once(lambda dt: setattr(app.root, 'current', 'main_menu'), 1)
             return
         
-        # Location context - simplified (map data should be in game state if needed)
-        # For now, we'll skip location loading since it requires database
-        # This can be implemented later by storing location data in game state
+        # Location context - Load from game state
         self.location_context = None
-        logging.info("Location context skipped (to be implemented in game state)")
+        if hasattr(app, 'orchestrator'):
+            state = app.orchestrator.get_current_state()
+            if state and state.locations:
+                # Get active character's location
+                active_char = app.orchestrator.state_manager.get_active_player()
+                loc_id = active_char.current_location_id if active_char else 1
+                
+                # Find location in state
+                location = next((l for l in state.locations if l.id == loc_id), None)
+                
+                if location:
+                    # Convert Pydantic model to dict for the view
+                    self.location_context = location.dict()
+                    logging.info(f"Loaded location context: {location.name}")
+                else:
+                    logging.warning(f"Location ID {loc_id} not found in game state.")
+            else:
+                logging.warning("No game state or locations found.")
+                
+        if not self.location_context:
+            logging.info("Location context missing, map will be empty.")
 
         self.build_scene()
         self.center_layout(Window, Window.width, Window.height)
@@ -430,8 +451,35 @@ class MainInterfaceScreen(Screen, AsyncHelper):
     # END EVENT BUS HANDLERS
     # =========================================================================
 
-    def update_log(self, message: str):
-        self.ids.log_label.text += f"\n- {message}"
+    def start_debug_combat(self):
+        """Starts a debug combat encounter."""
+        app = App.get_running_app()
+        if not app.orchestrator or not app.orchestrator.combat_manager:
+            logging.error("Combat manager not available")
+            return
+            
+        # Mock Data
+        players = []
+        if self.active_character_context:
+            players.append({
+                "id": self.active_character_context.id,
+                "name": self.active_character_context.name,
+                "hp": self.active_character_context.current_hp,
+                "max_hp": self.active_character_context.max_hp
+            })
+        else:
+            players.append({"id": "player_debug", "name": "Debug Hero", "hp": 20, "max_hp": 20})
+            
+        enemies = [
+            {"id": "npc_goblin_1", "name": "Goblin Grunt", "hp": 8, "max_hp": 8},
+            {"id": "npc_goblin_2", "name": "Goblin Archer", "hp": 6, "max_hp": 6}
+        ]
+        
+        # Start Combat
+        app.orchestrator.combat_manager.start_combat(players, enemies)
+        
+        # Switch Screen
+        app.root.current = 'combat_screen'
 
     def update_narration(self, message: str):
         self.ids.narration_label.text = message
@@ -606,38 +654,6 @@ class MainInterfaceScreen(Screen, AsyncHelper):
         if not self.active_character_context or not story_api:
             self.update_log("Cannot rest right now.")
             return
-        
-        char_id = self.active_character_context.id
-        rest_request = camp_schemas.CampRestRequest(char_id=char_id, duration=8) # Rest for 8 hours
-        self.update_log("You rest for 8 hours...")
-
-        def background_task():
-            return story_api.rest_at_camp(rest_request)
-
-        def on_complete(updated_context_dict):
-            try:
-                new_context = CharacterContextResponse(**updated_context_dict)
-                for i, ctx in enumerate(self.party_contexts):
-                    if ctx.id == char_id:
-                        self.party_contexts[i] = new_context
-                        break
-                self.active_character_context = new_context
-                self.party_list = list(self.party_contexts)
-                self.update_log("You feel refreshed. HP and Composure restored.")
-            except Exception as e:
-                logging.exception(f"Error updating UI after rest: {e}")
-
-        def on_fail(error):
-            logging.exception(f"Error during rest: {error}")
-            self.update_log(f"Rest failed: {error}")
-
-        self.run_async(background_task, on_complete, on_fail)
-
-    def show_save_popup(self):
-        """Displays a popup to get a save game name."""
-        if self.save_popup:
-            self.save_popup.dismiss()
-        char_name = self.active_character_context.name if self.active_character_context else "save"
         default_save_name = f"{char_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}"
         content = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
         content.add_widget(Label(text='Enter a name for your save file:'))

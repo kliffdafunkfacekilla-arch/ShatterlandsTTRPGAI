@@ -116,6 +116,17 @@ class Orchestrator:
         self.event_bus = get_event_bus()
         self._lock = asyncio.Lock()
         self._initialized = False
+        
+        # Initialize Local Combat Manager
+        from .modules.combat_pkg.local_combat_manager import LocalCombatManager
+        self.combat_manager = LocalCombatManager(self.event_bus)
+        
+        # Initialize Local World Sim & Director
+        from .modules.simulation_pkg.local_simulation import LocalWorldSim
+        from .modules.story_pkg.local_director import LocalCampaignDirector
+        self.world_sim = LocalWorldSim()
+        self.campaign_director = LocalCampaignDirector()
+        
         logger.info("Orchestrator initialized")
     
     # -------------------------------------------------------------------------
@@ -180,20 +191,43 @@ class Orchestrator:
             
             logger.info(f"Loaded {len(characters)} characters")
             
-            # TODO: Generate initial world state
-            # from .modules.map_pkg.core import generate_starting_map
-            # world_state = generate_starting_map()
+            # Generate initial world state
+            from .modules.map_pkg import core as map_core
+            from .modules.map_pkg import models as map_models
             
-            # TODO: Initialize story state
-            # from .modules.story_pkg.services import start_new_quest_line
-            # story_state = start_new_quest_line()
+            # Select a random algorithm for the starting area
+            algo = map_core.select_algorithm(["forest", "starter"])
+            if not algo:
+                # Fallback if no specific tag match
+                algo = map_core.GENERATION_ALGORITHMS[0]
+                
+            # Generate the map
+            map_response = map_core.run_generation(
+                algorithm=algo,
+                seed="start_seed_12345", # Fixed seed for consistency or random
+                width_override=40,
+                height_override=30
+            )
             
-            # For now, create minimal game state
+            # Create starting location
+            start_location = LocationSave(
+                id=1,
+                name="Starting Area",
+                tags=["forest", "starter"],
+                exits={},
+                description="A quiet clearing in the woods.",
+                generated_map_data=map_response.map_data,
+                map_seed=map_response.seed_used,
+                region_id=1,
+                spawn_points=map_response.spawn_points
+            )
+            
+            # Create minimal game state
             game_state = SaveGameData(
                 characters=characters,
                 factions=[],
                 regions=[],
-                locations=[],
+                locations=[start_location],
                 npcs=[],
                 items=[],
                 traps=[],
@@ -202,6 +236,18 @@ class Orchestrator:
                 quests=[],
                 flags=[]
             )
+            
+            # Set initial positions for characters
+            spawn_x, spawn_y = 10, 10
+            if map_response.spawn_points and "player" in map_response.spawn_points:
+                spawns = map_response.spawn_points["player"]
+                if spawns:
+                    spawn_x, spawn_y = spawns[0]
+            
+            for char in characters:
+                char.current_location_id = start_location.id
+                char.position_x = spawn_x
+                char.position_y = spawn_y
             
             # Load into state manager
             self.state_manager.load_state(game_state)
@@ -321,6 +367,15 @@ class Orchestrator:
                     result = await self._handle_buy(current_state, player_id, action_data)
                 elif action_type == "SELL":
                     result = await self._handle_sell(current_state, player_id, action_data)
+                elif action_type in ["ATTACK", "FLEE"]:
+                    # Route directly to combat manager
+                    result = self.combat_manager.handle_action(player_id, action_type, action_data)
+                elif action_type == "END_TURN":
+                    # Check if we are in combat
+                    if self.combat_manager.state.is_active:
+                        result = self.combat_manager.handle_action(player_id, action_type, action_data)
+                    else:
+                        result = await self._handle_end_turn(current_state, player_id, action_data)
                 else:
                     return {
                         "success": False,
@@ -442,17 +497,6 @@ class Orchestrator:
         return {
             "success": True,
             "action": "end_turn",
-            "next_player": next_player.name,
-            "next_player_id": next_player.id
-        }
-    
-    # -------------------------------------------------------------------------
-    # Utility Methods
-    # -------------------------------------------------------------------------
-    
-    def get_current_state(self) -> Optional[SaveGameData]:
-        """Get the current game state (read-only)."""
-        return self.state_manager.get_current_state()
     
     def get_active_player(self) -> Optional[CharacterSave]:
         """Get the currently active player."""
@@ -651,6 +695,115 @@ class Orchestrator:
         """Handle selling an item."""
         shop_id = data.get("shop_id")
         item_id = data.get("item_id")
+        quantity = data.get("quantity", 1)
+        
+        logger.info(f"Sell: {player_id} selling {quantity}x {item_id} to {shop_id}")
+        
+        # Find character
+        character = next((c for c in current_state.characters if c.id == player_id), None)
+        if not character:
+            return {"success": False, "error": "Character not found"}
+            
+        # Get Shop Data
+        from .modules.story_pkg.shop_handler import get_shop_inventory
+        try:
+            shop = get_shop_inventory(shop_id)
+        except ValueError:
+            return {"success": False, "error": "Shop not found"}
+            
+        # Check player inventory
+        if not character.inventory: character.inventory = {}
+        
+        # Check carried gear
+        carried = character.inventory.get("carried_gear", {})
+        if item_id not in carried or carried[item_id] < quantity:
+            return {"success": False, "error": "Item not in inventory"}
+            
+        # Calculate value (simplified: 50% of buy price)
+        # We need item data to know price.
+        # For now, let's assume we can get it from shop if they sell it, or rule engine.
+        # Fallback: 10 gold per item if unknown.
+        
+        shop_item = shop["inventory"].get(item_id)
+        base_price = shop_item["price"] if shop_item else 20
+        sell_price = int(base_price * 0.5)
+        total_value = sell_price * quantity
+        
+        # Transaction
+        carried[item_id] -= quantity
+        if carried[item_id] <= 0:
+            del carried[item_id]
+            
+        current_gold = character.inventory.get("currency", 0)
+        character.inventory["currency"] = current_gold + total_value
+        
+        # Shop gets item? (Optional, maybe shop has infinite space or we add it)
+        # For now, items just vanish into the economy.
+        
+        self.state_manager.save_current_game()
+        
+        await self.event_bus.publish("action.sell", {
+            "player_id": player_id,
+            "shop_id": shop_id,
+            "item_id": item_id,
+            "quantity": quantity,
+            "value": total_value
+        })
+        
+        return {
+            "success": True,
+            "message": f"Sold {quantity}x {item_id} for {total_value} gold",
+            "character": character
+        }
+
+    # -------------------------------------------------------------------------
+    # Time & Simulation
+    # -------------------------------------------------------------------------
+
+    async def advance_time(self, hours: int = 8) -> Dict[str, Any]:
+        """
+        Advances game time, triggering world simulation and story checks.
+        """
+        logger.info(f"Advancing time by {hours} hours...")
+        
+        state = self.state_manager.current_state
+        if not state:
+            return {"success": False, "error": "No active game state"}
+            
+        events = []
+        
+        # 1. Run World Simulation
+        if self.world_sim:
+            sim_events = self.world_sim.process_turn(state)
+            events.extend(sim_events)
+            
+        # 2. Run Story Director
+        if self.campaign_director:
+            # Check pacing
+            if self.campaign_director.check_pacing(state):
+                beat = self.campaign_director.generate_next_beat(state)
+                if beat:
+                    # Add new quest to state
+                    from .modules.save_schemas import QuestSave
+                    new_quest = QuestSave(
+                        id=f"quest_{len(state.quests) + 1}",
+                        title=beat.get("title", "Unknown Quest"),
+                        description=beat.get("description", ""),
+                        status="active",
+                        objectives=[{"text": obj, "completed": False} for obj in beat.get("objectives", [])],
+                        rewards={"xp": 100, "gold": 50} # Simplified
+                    )
+                    state.quests.append(new_quest)
+                    events.append(f"New Quest: {new_quest.title}")
+                    
+        # Save changes
+        self.state_manager.save_current_game()
+        
+        return {
+            "success": True,
+            "hours_passed": hours,
+            "events": events
+        }
         quantity = data.get("quantity", 1)
         
         logger.info(f"Sell: {player_id} selling {quantity}x {item_id} to {shop_id}")

@@ -261,7 +261,9 @@ class CharacterCreationScreen(Screen, AsyncHelper):
             kingdom=self.collected_data.get("kingdom"),
             level=1,
             stats=final_stats,
-            skills={}, # TODO: Map background choices to skills
+            stats=final_stats,
+            skills=self._map_background_to_skills(),
+            max_hp=max_hp,
             max_hp=max_hp,
             current_hp=max_hp,
             max_composure=max_comp,
