@@ -139,18 +139,25 @@ class CharacterSheetScreen(Screen):
 
     def on_enter(self, *args):
         """Called when this screen is shown. Fetches data and populates UI."""
-        app = App.get_running_app()
+        try:
+            app = App.get_running_app()
 
-        # Get the active character directly from the App
-        char_context = app.active_character_context
+            # Get the active character directly from the App
+            char_context = app.active_character_context
 
-        if not char_context:
-            logging.error("CHAR_SHEET: No active character context found!")
+            if not char_context:
+                logging.error("CHAR_SHEET: No active character context found!")
+                if 'char_name_label' in self.ids:
+                    self.ids.char_name_label.text = "Error: No Character Loaded"
+                return
+
+            self.populate_sheet(char_context)
+        except Exception as e:
+            logging.exception("CRASH PREVENTED IN CHARACTER SHEET")
             if 'char_name_label' in self.ids:
-                self.ids.char_name_label.text = "Error: No Character Loaded"
-            return
-
-        self.populate_sheet(char_context)
+                self.ids.char_name_label.text = f"CRASH ERROR: {str(e)}"
+            import traceback
+            traceback.print_exc()
 
     def populate_sheet(self, context):
         """Fills all UI elements with character data."""
@@ -165,10 +172,10 @@ class CharacterSheetScreen(Screen):
             if stats:
                 for stat_name, value in stats.items():
                     self.ids.stats_grid.add_widget(
-                        Label(text=f"{stat_name}:", font_size='16sp', size_hint_x=0.6, height='30dp')
+                        Label(text=f"{stat_name}:", font_size='16sp', size_hint_x=0.6, size_hint_y=None, height='30dp')
                     )
                     self.ids.stats_grid.add_widget(
-                        Label(text=f"{value}", font_size='16sp', size_hint_x=0.4, height='30dp')
+                        Label(text=f"{value}", font_size='16sp', size_hint_x=0.4, size_hint_y=None, height='30dp')
                     )
 
         # --- Populate Skills ---
@@ -181,10 +188,10 @@ class CharacterSheetScreen(Screen):
                     rank = data.get('rank', 0)
                     if rank > 0:
                         self.ids.skills_grid.add_widget(
-                            Label(text=f"{skill_name}:", font_size='14sp', size_hint_x=0.7, height='30dp')
+                            Label(text=f"{skill_name}:", font_size='14sp', size_hint_x=0.7, size_hint_y=None, height='30dp')
                         )
                         self.ids.skills_grid.add_widget(
-                            Label(text=f"Rank {rank}", font_size='14sp', size_hint_x=0.3, height='30dp')
+                            Label(text=f"Rank {rank}", font_size='14sp', size_hint_x=0.3, size_hint_y=None, height='30dp')
                         )
 
         # --- Populate Talents ---
@@ -239,15 +246,20 @@ class CharacterSheetScreen(Screen):
             pools = context.resource_pools or {}
             if pools:
                 for pool_name, data in pools.items():
-                    current = data.get('current', 0)
-                    max_val = data.get('max', 0)
+                    # Handle both dict and Pydantic object
+                    if isinstance(data, dict):
+                        current = data.get('current', 0)
+                        max_val = data.get('max', 0)
+                    else:
+                        current = getattr(data, 'current', 0)
+                        max_val = getattr(data, 'max', 0)
 
                     self.ids.resource_pools_grid.add_widget(
-                        Label(text=f"{pool_name}:", font_size='16sp', size_hint_x=0.4, height='30dp')
+                        Label(text=f"{pool_name}:", font_size='16sp', size_hint_x=0.4, size_hint_y=None, height='30dp')
                     )
                     self.ids.resource_pools_grid.add_widget(
-                        Label(text=f"{current}", font_size='16sp', size_hint_x=0.3, height='30dp')
+                        Label(text=f"{current}", font_size='16sp', size_hint_x=0.3, size_hint_y=None, height='30dp')
                     )
                     self.ids.resource_pools_grid.add_widget(
-                        Label(text=f"Max {max_val}", font_size='16sp', size_hint_x=0.3, height='30dp')
+                        Label(text=f"Max {max_val}", font_size='16sp', size_hint_x=0.3, size_hint_y=None, height='30dp')
                     )

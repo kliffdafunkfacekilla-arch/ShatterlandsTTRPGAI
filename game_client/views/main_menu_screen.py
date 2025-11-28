@@ -21,7 +21,7 @@ MAIN_MENU_KV = """
             bold: True
 
         DungeonButton:
-            text: 'New Game'
+            text: 'New Game (Debug Active)'
             font_size: '24sp'
             size_hint_y: 0.15
             on_release: app.root.current = 'game_setup'

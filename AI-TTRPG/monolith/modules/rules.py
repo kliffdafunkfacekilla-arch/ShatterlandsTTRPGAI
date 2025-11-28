@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from .rules_pkg import data_loader, core, models, talent_logic
 
 logger = logging.getLogger("monolith.rules")
