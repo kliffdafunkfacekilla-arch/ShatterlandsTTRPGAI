@@ -109,6 +109,28 @@ class DialogueScreen(Screen):
     def on_option_select(self, next_node_id):
         """Called when a player clicks a dialogue option."""
         if next_node_id:
+            # 1. Notify Orchestrator (for side effects like quests)
+            app = App.get_running_app()
+            if app.orchestrator:
+                # Fire and forget the action to the orchestrator
+                import asyncio
+                
+                def send_action():
+                    asyncio.run(
+                        app.orchestrator.handle_player_action(
+                            player_id=app.active_character_context.id if app.active_character_context else "unknown",
+                            action_type="DIALOGUE",
+                            dialogue_id=self.dialogue_id,
+                            node_id=next_node_id,
+                            npc_id="unknown" # TODO: Pass NPC ID if available
+                        )
+                    )
+                
+                # Run in background
+                from threading import Thread
+                Thread(target=send_action, daemon=True).start()
+
+            # 2. Update UI immediately
             self.load_node(self.dialogue_id, next_node_id)
         else:
             self.end_dialogue()

@@ -317,6 +317,10 @@ class Orchestrator:
                     result = await self._handle_equip(current_state, player_id, action_data)
                 elif action_type == "UNEQUIP":
                     result = await self._handle_unequip(current_state, player_id, action_data)
+                elif action_type == "BUY":
+                    result = await self._handle_buy(current_state, player_id, action_data)
+                elif action_type == "SELL":
+                    result = await self._handle_sell(current_state, player_id, action_data)
                 else:
                     return {
                         "success": False,
@@ -367,7 +371,7 @@ class Orchestrator:
         player_id: str,
         data: dict
     ) -> Dict[str, Any]:
-        """Handle dialogue/NPC interaction."""
+        """Handle ability usage."""
         logger.info(f"Dialogue: {player_id} with {data.get('npc_id')}")
         
         # TODO: Implement dialogue system with AI DM
@@ -379,8 +383,42 @@ class Orchestrator:
         
         return {
             "success": True,
+            "action": "ability",
+            "message": "Ability system not yet implemented"
+        }
+
+    async def _handle_dialogue(
+        self,
+        current_state: SaveGameData,
+        player_id: str,
+        data: dict
+    ) -> Dict[str, Any]:
+        """Handle dialogue interaction."""
+        npc_id = data.get("npc_id")
+        dialogue_id = data.get("dialogue_id")
+        node_id = data.get("node_id")
+        
+        logger.info(f"Dialogue: {player_id} talking to {npc_id} (Dialogue: {dialogue_id}, Node: {node_id})")
+        
+        # Publish event
+        await self.event_bus.publish("action.dialogue", {
+            "player_id": player_id,
+            "npc_id": npc_id,
+            "dialogue_id": dialogue_id,
+            "node_id": node_id
+        })
+        
+        # If this is a narrative advance (e.g. choosing an option), we might want to trigger story logic
+        if node_id:
+             await self.event_bus.publish("command.story.advance_narrative", {
+                "node_id": node_id,
+                "actor_id": player_id
+            })
+        
+        return {
+            "success": True,
             "action": "dialogue",
-            "message": "Dialogue system not yet implemented"
+            "message": f"Dialogue processed: {node_id}"
         }
     
     async def _handle_end_turn(
@@ -420,16 +458,6 @@ class Orchestrator:
         """Get the currently active player."""
         return self.state_manager.get_active_player()
 
-
-# Module-level singleton
-_orchestrator_instance: Optional[Orchestrator] = None
-
-def get_orchestrator() -> Orchestrator:
-    """Return the singleton Orchestrator instance."""
-    global _orchestrator_instance
-    if _orchestrator_instance is None:
-        _orchestrator_instance = Orchestrator()
-    return _orchestrator_instance
     async def _handle_equip(
         self,
         current_state: SaveGameData,
@@ -537,3 +565,158 @@ def get_orchestrator() -> Orchestrator:
             "message": f"Unequipped {item_id}",
             "character": character
         }
+
+    async def _handle_buy(
+        self,
+        current_state: SaveGameData,
+        player_id: str,
+        data: dict
+    ) -> Dict[str, Any]:
+        """Handle buying an item."""
+        shop_id = data.get("shop_id")
+        item_id = data.get("item_id")
+        quantity = data.get("quantity", 1)
+        
+        logger.info(f"Buy: {player_id} buying {quantity}x {item_id} from {shop_id}")
+        
+        # Find character
+        character = next((c for c in current_state.characters if c.id == player_id), None)
+        if not character:
+            return {"success": False, "error": "Character not found"}
+            
+        # Get Shop Data (Importing here to avoid circular imports if possible, or move to top)
+        from .modules.story_pkg.shop_handler import get_shop_inventory
+        try:
+            shop = get_shop_inventory(shop_id)
+        except ValueError:
+            return {"success": False, "error": "Shop not found"}
+            
+        shop_item = shop["inventory"].get(item_id)
+        if not shop_item:
+            return {"success": False, "error": "Item not in shop"}
+            
+        if shop_item["quantity"] < quantity:
+            return {"success": False, "error": "Not enough stock"}
+            
+        cost = shop_item["price"] * quantity
+        
+        # Check funds
+        # Ensure inventory exists
+        if not character.inventory: character.inventory = {}
+        current_gold = character.inventory.get("currency", 0)
+        
+        if current_gold < cost:
+            return {"success": False, "error": "Not enough gold"}
+            
+        # Transaction
+        character.inventory["currency"] = current_gold - cost
+        shop_item["quantity"] -= quantity
+        
+        # Add item
+        # If it's gear, it goes to 'carried_gear' usually? 
+        # The schema says 'inventory' is Dict[str, Any]. 
+        # Let's assume flat structure or nested 'carried_gear' depending on usage.
+        # ShopScreen expects `char_context.inventory['carried_gear']`.
+        # So we should respect that structure.
+        
+        if "carried_gear" not in character.inventory:
+            character.inventory["carried_gear"] = {}
+            
+        character.inventory["carried_gear"][item_id] = character.inventory["carried_gear"].get(item_id, 0) + quantity
+        
+        self.state_manager.save_current_game()
+        
+        await self.event_bus.publish("action.buy", {
+            "player_id": player_id,
+            "shop_id": shop_id,
+            "item_id": item_id,
+            "quantity": quantity,
+            "cost": cost
+        })
+        
+        return {
+            "success": True,
+            "message": f"Bought {quantity}x {item_id}",
+            "character": character
+        }
+
+    async def _handle_sell(
+        self,
+        current_state: SaveGameData,
+        player_id: str,
+        data: dict
+    ) -> Dict[str, Any]:
+        """Handle selling an item."""
+        shop_id = data.get("shop_id")
+        item_id = data.get("item_id")
+        quantity = data.get("quantity", 1)
+        
+        logger.info(f"Sell: {player_id} selling {quantity}x {item_id} to {shop_id}")
+        
+        character = next((c for c in current_state.characters if c.id == player_id), None)
+        if not character:
+            return {"success": False, "error": "Character not found"}
+            
+        if not character.inventory or "carried_gear" not in character.inventory:
+             return {"success": False, "error": "Inventory empty"}
+             
+        current_qty = character.inventory["carried_gear"].get(item_id, 0)
+        if current_qty < quantity:
+            return {"success": False, "error": "Not enough items"}
+            
+        # Calculate price (50% value)
+        # We need item template.
+        from .modules.rules_pkg.data_loader import get_item_template
+        try:
+            template = get_item_template(item_id)
+            value = template.value if template else 10 # Default fallback
+        except:
+            value = 10
+            
+        sell_price = (value // 2) * quantity
+        
+        # Transaction
+        character.inventory["carried_gear"][item_id] -= quantity
+        if character.inventory["carried_gear"][item_id] <= 0:
+            del character.inventory["carried_gear"][item_id]
+            
+        character.inventory["currency"] = character.inventory.get("currency", 0) + sell_price
+        
+        # Add to shop
+        from .modules.story_pkg.shop_handler import get_shop_inventory
+        try:
+            shop = get_shop_inventory(shop_id)
+            if item_id in shop["inventory"]:
+                shop["inventory"][item_id]["quantity"] += quantity
+            else:
+                shop["inventory"][item_id] = {"price": value, "quantity": quantity}
+        except:
+            pass # Ignore shop update error if shop not found (shouldn't happen)
+            
+        self.state_manager.save_current_game()
+        
+        await self.event_bus.publish("action.sell", {
+            "player_id": player_id,
+            "shop_id": shop_id,
+            "item_id": item_id,
+            "quantity": quantity,
+            "value": sell_price
+        })
+        
+        return {
+            "success": True,
+            "message": f"Sold {quantity}x {item_id}",
+            "character": character
+        }
+
+
+# Module-level singleton
+_orchestrator_instance: Optional[Orchestrator] = None
+
+def get_orchestrator() -> Orchestrator:
+    """Return the singleton Orchestrator instance."""
+    global _orchestrator_instance
+    if _orchestrator_instance is None:
+        _orchestrator_instance = Orchestrator()
+    return _orchestrator_instance
+
