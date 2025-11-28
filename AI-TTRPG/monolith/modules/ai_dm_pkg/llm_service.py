@@ -68,7 +68,7 @@ class LLMService:
         except Exception as e:
             logger.error(f"AI Init failed: {e}")
 
-    def generate_map_flavor(self, tags: List[str]) -> Dict[str, Any]:
+    def generate_map_flavor(self, tags: List[str], lore_context: str = "") -> Dict[str, Any]:
         """
         Generates a batch of flavor text based on map tags.
         Returns a dictionary matching MapFlavorContext.
@@ -94,6 +94,9 @@ class LLMService:
         You are a Fantasy RPG Content Generator.
         I need a JSON object containing atmospheric descriptions and combat flavor text for a map with these tags: [{tag_str}].
         
+        Lore Context:
+        {lore_context}
+        
         The output MUST be a valid JSON object that strictly adheres to this schema:
         {{
             "environment_description": "string",
@@ -106,7 +109,7 @@ class LLMService:
             "enemy_intros": ["string", "string", "string"]
         }}
         
-        Ensure the content is thematic and immersive.
+        Ensure the content is thematic and immersive, drawing from the provided Lore Context where applicable.
         """
 
         try:

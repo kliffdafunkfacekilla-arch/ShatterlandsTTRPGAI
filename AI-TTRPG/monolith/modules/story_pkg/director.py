@@ -6,6 +6,11 @@ from . import schemas
 from ..ai_dm_pkg.llm_service import ai_client
 from ..simulation import get_world_context
 
+try:
+    from ..lore import LoreManager
+except ImportError:
+    LoreManager = None
+
 logger = logging.getLogger("monolith.story.director")
 
 class CampaignDirector:
@@ -56,6 +61,14 @@ class CampaignDirector:
         narrative_tags = state.narrative_tags or []
         current_act = state.current_act
 
+        lore_context = ""
+        if LoreManager:
+            try:
+                lore_mgr = LoreManager()
+                lore_context = lore_mgr.get_lore_context(narrative_tags)
+            except Exception as e:
+                logger.error(f"Failed to load lore context: {e}")
+
         prompt = f"""
         Act as a Campaign Director for a TTRPG.
 
@@ -64,6 +77,9 @@ class CampaignDirector:
 
         Campaign Narrative Tags:
         {', '.join(narrative_tags)}
+
+        Lore Context:
+        {lore_context}
 
         Current Act: {current_act}
 

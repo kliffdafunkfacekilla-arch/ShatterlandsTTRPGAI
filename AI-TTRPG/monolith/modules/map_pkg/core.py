@@ -10,6 +10,11 @@ try:
 except ImportError:
     ai_client = None
 
+try:
+    from ..lore import LoreManager
+except ImportError:
+    LoreManager = None
+
 # --- Algorithm Selection ---
 def select_algorithm(tags: List[str]) -> Optional[Dict[str, Any]]:
     """Finds a generation algorithm matching the input tags."""
@@ -345,8 +350,17 @@ def run_generation(algorithm: Dict[str, Any], seed: str, width_override: Optiona
         print("Requesting Map Flavor from AI...")
         # Use tags from algorithm definition to guide the AI (e.g., "forest", "creepy")
         map_tags = algorithm.get("required_tags", ["generic"])
+        
+        lore_context = ""
+        if LoreManager:
+            try:
+                lore_mgr = LoreManager()
+                lore_context = lore_mgr.get_lore_context(map_tags)
+            except Exception as e:
+                print(f"Failed to load lore context: {e}")
+
         try:
-            flavor_dict = ai_client.generate_map_flavor(map_tags)
+            flavor_dict = ai_client.generate_map_flavor(map_tags, lore_context=lore_context)
             if flavor_dict:
                 flavor_data = models.MapFlavorContext(**flavor_dict)
             else:
