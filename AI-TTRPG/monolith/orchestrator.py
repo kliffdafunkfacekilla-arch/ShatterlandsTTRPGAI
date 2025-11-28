@@ -805,65 +805,7 @@ class Orchestrator:
             "hours_passed": hours,
             "events": events
         }
-        quantity = data.get("quantity", 1)
-        
-        logger.info(f"Sell: {player_id} selling {quantity}x {item_id} to {shop_id}")
-        
-        character = next((c for c in current_state.characters if c.id == player_id), None)
-        if not character:
-            return {"success": False, "error": "Character not found"}
-            
-        if not character.inventory or "carried_gear" not in character.inventory:
-             return {"success": False, "error": "Inventory empty"}
-             
-        current_qty = character.inventory["carried_gear"].get(item_id, 0)
-        if current_qty < quantity:
-            return {"success": False, "error": "Not enough items"}
-            
-        # Calculate price (50% value)
-        # We need item template.
-        from .modules.rules_pkg.data_loader import get_item_template
-        try:
-            template = get_item_template(item_id)
-            value = template.value if template else 10 # Default fallback
-        except:
-            value = 10
-            
-        sell_price = (value // 2) * quantity
-        
-        # Transaction
-        character.inventory["carried_gear"][item_id] -= quantity
-        if character.inventory["carried_gear"][item_id] <= 0:
-            del character.inventory["carried_gear"][item_id]
-            
-        character.inventory["currency"] = character.inventory.get("currency", 0) + sell_price
-        
-        # Add to shop
-        from .modules.story_pkg.shop_handler import get_shop_inventory
-        try:
-            shop = get_shop_inventory(shop_id)
-            if item_id in shop["inventory"]:
-                shop["inventory"][item_id]["quantity"] += quantity
-            else:
-                shop["inventory"][item_id] = {"price": value, "quantity": quantity}
-        except:
-            pass # Ignore shop update error if shop not found (shouldn't happen)
-            
-        self.state_manager.save_current_game()
-        
-        await self.event_bus.publish("action.sell", {
-            "player_id": player_id,
-            "shop_id": shop_id,
-            "item_id": item_id,
-            "quantity": quantity,
-            "value": sell_price
-        })
-        
-        return {
-            "success": True,
-            "message": f"Sold {quantity}x {item_id}",
-            "character": character
-        }
+
 
 
 # Module-level singleton
