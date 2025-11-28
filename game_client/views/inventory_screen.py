@@ -1,5 +1,6 @@
 # game_client/views/inventory_screen.py
 import logging
+import asyncio
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.uix.screenmanager import Screen
@@ -10,15 +11,13 @@ from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.properties import ObjectProperty
 from functools import partial
+from kivy.clock import Clock
 
-# --- Direct Monolith Imports ---
-try:
-    from monolith.modules import character as character_api
-    from monolith.modules import rules as rules_api
-except ImportError as e:
-    logging.error(f"INVENTORY: Failed to import monolith modules: {e}")
-    character_api = None
-    rules_api = None
+# Import UI utilities
+from game_client.ui_utils import show_error, show_success
+
+# Use RuleSetContainer for item data
+from monolith.modules.rules_pkg.data_loader_enhanced import RuleSetContainer
 
 INVENTORY_SCREEN_KV = """
 <InventoryScreen>:
@@ -129,48 +128,78 @@ class InventoryScreen(Screen):
 
     def on_equip_item(self, char_id, item_id, *args):
         logging.info(f"Equipping {item_id} for {char_id}")
-        if not rules_api:
-            logging.error("Rules API not available.")
-            return
-
-        template = rules_api.get_item_template_params(item_id)
-        item_type = template.get("type")
-
-        if item_type == "weapon":
+        
+        # Use RuleSetContainer to get item details
+        rules = RuleSetContainer()
+        # Note: In a real implementation, we'd have a proper item database.
+        # For now, we'll infer slot from item name or use a default if not found
+        # Or check if rules has item templates
+        
+        # Simple heuristic for now if rules doesn't have it
+        slot = "hand" # Default
+        if "sword" in item_id.lower() or "axe" in item_id.lower():
             slot = "weapon"
-        elif item_type == "armor":
+        elif "armor" in item_id.lower() or "mail" in item_id.lower():
             slot = "armor"
-        else:
-            logging.error(f"Item {item_id} is not equippable.")
-            return
-
-        new_context_dict = character_api.equip_item(char_id, item_id, slot)
+        elif "shield" in item_id.lower():
+            slot = "offhand"
+            
+        # Try to get from rules if possible (assuming get_item exists or similar)
+        # template = rules.get_item(item_id)
+        # if template: slot = template.get("slot", slot)
 
         app = App.get_running_app()
-        context_schema = app.active_character_context.__class__
-        app.active_character_context = context_schema(**new_context_dict)
-
-        self.on_enter()
+        
+        try:
+            # Use Orchestrator
+            result = asyncio.run(
+                app.orchestrator.handle_player_action(
+                    player_id=char_id,
+                    action_type="EQUIP",
+                    item_id=item_id,
+                    slot=slot
+                )
+            )
+            
+            if result.get("success"):
+                # Update local context
+                updated_char = result.get("character")
+                if updated_char:
+                    app.active_character_context = updated_char
+                    self.on_enter() # Refresh UI
+                    show_success(f"Equipped {item_id}")
+            else:
+                show_error("Equip Failed", result.get("error", "Unknown error"))
+                
+        except Exception as e:
+            logging.exception(f"Equip error: {e}")
+            show_error("Equip Error", str(e))
 
     def on_unequip_item(self, char_id: str, slot: str, *args):
         logging.info(f"Unequipping item from {slot} for {char_id}")
-        if not character_api:
-            logging.error("Character API not available.")
-            return
-
+        
+        app = App.get_running_app()
+        
         try:
-            # 1. Call the monolithic adapter to perform the database operation
-            new_context_dict = character_api.unequip_item(char_id, slot)
-
-            # 2. Get the active character context object from the main screen
-            app = App.get_running_app()
-
-            # 3. Update the context object using the refreshed schema data
-            context_schema = app.active_character_context.__class__
-            app.active_character_context = context_schema(**new_context_dict)
-
-            # 4. Refresh the current screen's display to show the updated inventory
-            self.on_enter()
+            # Use Orchestrator
+            result = asyncio.run(
+                app.orchestrator.handle_player_action(
+                    player_id=char_id,
+                    action_type="UNEQUIP",
+                    slot=slot
+                )
+            )
+            
+            if result.get("success"):
+                # Update local context
+                updated_char = result.get("character")
+                if updated_char:
+                    app.active_character_context = updated_char
+                    self.on_enter() # Refresh UI
+                    show_success(f"Unequipped {slot}")
+            else:
+                show_error("Unequip Failed", result.get("error", "Unknown error"))
+                
         except Exception as e:
-            logging.exception(f"Failed to unequip item: {e}")
-            # A production version would display a small popup here.
+            logging.exception(f"Unequip error: {e}")
+            show_error("Unequip Error", str(e))

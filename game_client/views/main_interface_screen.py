@@ -466,20 +466,79 @@ class MainInterfaceScreen(Screen, AsyncHelper):
             return False
         try:
             tile_id = tile_map[tile_y][tile_x]
-                events = result.get("events", [])
-                if events:
-                    # Example: Check for combat event
-                    # In a real impl, we'd iterate and handle types
-                    pass
+        except IndexError:
+            return False
+        tile_def = asset_loader.get_tile_definition(str(tile_id))
+        if not tile_def:
+            logging.warning(f"No tile definition found for ID {tile_id}")
+            return False
+        return tile_def.get('passable', False)
 
-            except Exception as e:
-                logging.exception(f"Error updating UI after move: {e}")
+    def on_map_tile_click(self, tile_x, tile_y):
+        """
+        Handles when a player clicks on a map tile.
+        UPDATED: Uses Orchestrator for movement instead of character_api
+        """
+        if not self.active_character_context:
+            logging.warning("No active character to move.")
+            return
 
-        def on_fail(error):
-            logging.exception(f"Failed to move player: {error}")
-            self.update_log(f"Error: Could not move player.")
+        app = App.get_running_app()
+        
+        # Check if tile is passable
+        if not self.is_tile_passable(tile_x, tile_y):
+             self.update_log(f"Cannot move to ({tile_x}, {tile_y}) - Blocked")
+             return
 
-        self.run_async(background_task, on_complete, on_fail)
+        try:
+            # Use Orchestrator to handle movement
+            import asyncio
+            
+            def background_move():
+                # Run the async orchestrator method in this thread
+                return asyncio.run(
+                    app.orchestrator.handle_player_action(
+                        player_id=self.active_character_context.id,
+                        action_type="MOVE",
+                        target_x=tile_x,
+                        target_y=tile_y
+                    )
+                )
+            
+            def on_move_complete(result):
+                if result.get("success"):
+                    # Refresh state
+                    state = app.orchestrator.get_current_state()
+                    if state:
+                        self.party_contexts = list(state.characters)
+                        self.party_list = self.party_contexts
+                        
+                        # Find active char
+                        for c in self.party_contexts:
+                            if c.id == self.active_character_context.id:
+                                self.active_character_context = c
+                                app.active_character_context = c
+                                break
+                    
+                    self.update_log(f"{self.active_character_context.name} moved to ({tile_x}, {tile_y})")
+                    
+                    # Update sprite
+                    if self.map_view_widget:
+                        self.map_view_widget.move_active_player_sprite(
+                            self.active_character_context.id, tile_x, tile_y, self.get_map_height()
+                        )
+                else:
+                    self.update_log(f"Move failed: {result.get('error')}")
+
+            def on_move_fail(e):
+                logging.error(f"Move error: {e}")
+                self.update_log(f"Move error: {e}")
+
+            self.run_async(background_move, on_move_complete, on_move_fail)
+                
+        except Exception as e:
+            logging.exception(f"Movement error: {e}")
+            self.update_log(f"Movement error: {e}")
 
     def trigger_combat(self, encounter_id):
         """Transitions the game to the combat screen."""

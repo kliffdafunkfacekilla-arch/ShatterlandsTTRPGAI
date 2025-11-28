@@ -313,6 +313,10 @@ class Orchestrator:
                     result = await self._handle_dialogue(current_state, player_id, action_data)
                 elif action_type == "END_TURN":
                     result = await self._handle_end_turn(current_state, player_id, action_data)
+                elif action_type == "EQUIP":
+                    result = await self._handle_equip(current_state, player_id, action_data)
+                elif action_type == "UNEQUIP":
+                    result = await self._handle_unequip(current_state, player_id, action_data)
                 else:
                     return {
                         "success": False,
@@ -426,3 +430,110 @@ def get_orchestrator() -> Orchestrator:
     if _orchestrator_instance is None:
         _orchestrator_instance = Orchestrator()
     return _orchestrator_instance
+    async def _handle_equip(
+        self,
+        current_state: SaveGameData,
+        player_id: str,
+        data: dict
+    ) -> Dict[str, Any]:
+        """Handle equipping an item."""
+        item_id = data.get("item_id")
+        slot = data.get("slot")
+        
+        logger.info(f"Equip: {player_id} equipping {item_id} to {slot}")
+        
+        # Find character
+        character = next((c for c in current_state.characters if c.id == player_id), None)
+        if not character:
+            return {"success": False, "error": "Character not found"}
+            
+        # Basic validation
+        if item_id not in (character.inventory or {}):
+            return {"success": False, "error": "Item not in inventory"}
+            
+        # Logic:
+        # 1. Remove from inventory
+        # 2. Add to equipment
+        # 3. If slot occupied, move old item to inventory
+        
+        # Implementation (simplified for now)
+        if not character.equipment:
+            character.equipment = {}
+        if not character.inventory:
+            character.inventory = {}
+            
+        # Check if slot occupied
+        old_item = character.equipment.get(slot)
+        if old_item:
+            # Move old item to inventory
+            character.inventory[old_item] = character.inventory.get(old_item, 0) + 1
+            
+        # Equip new item
+        character.equipment[slot] = item_id
+        
+        # Remove from inventory
+        character.inventory[item_id] -= 1
+        if character.inventory[item_id] <= 0:
+            del character.inventory[item_id]
+            
+        # Save state
+        self.state_manager.save_current_game()
+        
+        await self.event_bus.publish("action.equip", {
+            "player_id": player_id,
+            "item_id": item_id,
+            "slot": slot
+        })
+        
+        return {
+            "success": True,
+            "message": f"Equipped {item_id}",
+            "character": character
+        }
+
+    async def _handle_unequip(
+        self,
+        current_state: SaveGameData,
+        player_id: str,
+        data: dict
+    ) -> Dict[str, Any]:
+        """Handle unequipping an item."""
+        slot = data.get("slot")
+        
+        logger.info(f"Unequip: {player_id} unequipping {slot}")
+        
+        # Find character
+        character = next((c for c in current_state.characters if c.id == player_id), None)
+        if not character:
+            return {"success": False, "error": "Character not found"}
+            
+        if not character.equipment or slot not in character.equipment:
+            return {"success": False, "error": "Slot is empty"}
+            
+        item_id = character.equipment[slot]
+        
+        # Logic:
+        # 1. Remove from equipment
+        # 2. Add to inventory
+        
+        del character.equipment[slot]
+        
+        if not character.inventory:
+            character.inventory = {}
+            
+        character.inventory[item_id] = character.inventory.get(item_id, 0) + 1
+        
+        # Save state
+        self.state_manager.save_current_game()
+        
+        await self.event_bus.publish("action.unequip", {
+            "player_id": player_id,
+            "item_id": item_id,
+            "slot": slot
+        })
+        
+        return {
+            "success": True,
+            "message": f"Unequipped {item_id}",
+            "character": character
+        }

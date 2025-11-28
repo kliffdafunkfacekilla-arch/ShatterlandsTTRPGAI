@@ -1,4 +1,6 @@
+# game_client/views/character_creation_screen.py
 import logging
+import uuid
 from functools import partial
 from kivy.app import App
 from kivy.uix.screenmanager import Screen
@@ -17,18 +19,16 @@ from kivy.clock import Clock
 from game_client.utils import AsyncHelper
 from game_client.views.wizard_steps import IdentityStep, FeatureStep, CapstoneStep, BackgroundStep, FinalStep
 
-# Try to import monolith modules
+# Import Monolith Modules (Local Architecture)
 try:
     from monolith.modules import rules as rules_api
-    from monolith.modules.character_pkg import schemas as char_schemas
-    from monolith.modules.character_pkg import services as char_services
-    from monolith.modules.character_pkg.database import SessionLocal as CharSession
+    from monolith.modules.save_manager import save_character_to_json
+    from monolith.modules.save_schemas import CharacterSave
 except ImportError as e:
-    logging.warning(f"Monolith modules not found: {e}. Running in UI-only mode.")
+    logging.error(f"Monolith modules not found: {e}")
     rules_api = None
-    char_services = None
-    char_schemas = None
-    CharSession = None
+    save_character_to_json = None
+    CharacterSave = None
 
 class CharacterCreationScreen(Screen, AsyncHelper):
     def __init__(self, **kwargs):
@@ -176,7 +176,7 @@ class CharacterCreationScreen(Screen, AsyncHelper):
 
     def update_nav_state(self, *args):
         step = self.steps[self.current_step_index]
-        print(f"DEBUG: update_nav_state: Step={step.title}, Valid={step.is_valid}")
+        # print(f"DEBUG: update_nav_state: Step={step.title}, Valid={step.is_valid}")
         self.next_btn.disabled = not step.is_valid
 
     def go_next(self, instance):
@@ -233,62 +233,73 @@ class CharacterCreationScreen(Screen, AsyncHelper):
         self.run_async(self._create_character_task, self._on_character_created, self._on_creation_error)
 
     def _create_character_task(self):
-        # Construct payload
-        feature_choices_list = []
-        for i in range(1, 9):
-            f_key = f"F{i}"
-            choice = self.collected_data.get(f_key)
-            if choice:
-                feature_choices_list.append({"feature_id": f_key, "choice_name": choice})
+        if not save_character_to_json or not CharacterSave:
+            raise ImportError("SaveManager or CharacterSave schema not available.")
 
-        # Capstone (F9) - We treat the manual stat boosts as the capstone effect
-        # But the backend expects a "choice_name" for F9 if we want to record it.
-        # Since we did custom point allocation, we might need to synthesize a choice or just apply the stats.
-        # The current backend `create_character` logic might try to recalculate stats from choices.
-        # If so, our custom point allocation will be lost unless we pass it explicitly or create a "Custom Capstone" choice.
-        # For now, we'll assume the backend RECALCULATES stats from features.
-        # THIS IS A PROBLEM. The backend logic needs to know about the extra points.
-        # I will append a special feature choice for Capstone if the backend supports it, 
-        # OR I rely on the backend accepting explicit stats (which it usually doesn't, it calculates them).
-        # Wait, `CharacterCreate` schema has `feature_choices`.
-        # If I can't pass explicit stats, I need to pass a "Capstone" feature that represents the choices.
-        # But the choices are arbitrary (+1 to A, +1 to B...).
-        # I might need to skip backend stat calculation or update backend to accept `manual_stat_adjustments`.
-        # Given I can't easily change the backend logic right now without risk, 
-        # I will proceed with creating the character and then maybe updating stats?
-        # Or, I'll just send the "Capstone" feature as "Custom" and hope the backend doesn't crash, 
-        # but the stats won't reflect the +4 points unless I modify the backend.
-        # User said "revamped rules".
-        # I will assume for this task that I just need to send the data.
-        # I will add a TODO to update backend stat calculation.
+        # 1. Calculate Stats
+        final_stats = self.calculate_current_stats()
         
-        new_char = char_schemas.CharacterCreate(
-            name=self.collected_data.get("name"),
+        # 2. Generate ID
+        char_id = str(uuid.uuid4())
+        
+        # 3. Construct CharacterSave Object
+        # Note: We are simplifying here. In a full implementation, we'd map all the background choices
+        # to specific skills, equipment, etc. For now, we just save the choices in 'previous_state' or similar
+        # if we want to keep them, or just rely on the stats we calculated.
+        
+        # We'll store the raw choices in 'previous_state' so we can debug or re-process later if needed.
+        raw_choices = self.collected_data.copy()
+        
+        # Default HP/Composure
+        max_hp = final_stats.get("Vitality", 10) * 2 + final_stats.get("Might", 10)
+        max_comp = final_stats.get("Willpower", 10) * 2 + final_stats.get("Logic", 10)
+        
+        new_char = CharacterSave(
+            id=char_id,
+            name=self.collected_data.get("name", "Unknown Hero"),
             kingdom=self.collected_data.get("kingdom"),
-            ability_school=self.collected_data.get("ability_school"),
-            feature_choices=feature_choices_list,
-            origin_choice=self.collected_data.get("origin"),
-            childhood_choice=self.collected_data.get("childhood"),
-            coming_of_age_choice=self.collected_data.get("coming_of_age"),
-            training_choice=self.collected_data.get("training"),
-            devotion_choice=self.collected_data.get("devotion"),
-            ability_talent=self.collected_data.get("ability_talent"),
-            portrait_id="character_1"
+            level=1,
+            stats=final_stats,
+            skills={}, # TODO: Map background choices to skills
+            max_hp=max_hp,
+            current_hp=max_hp,
+            max_composure=max_comp,
+            current_composure=max_comp,
+            talents=[self.collected_data.get("ability_talent")] if self.collected_data.get("ability_talent") else [],
+            abilities=[],
+            inventory={},
+            equipment={},
+            previous_state={"creation_choices": raw_choices}, # Store choices for reference
+            portrait_id="character_1" # Default for now
         )
         
-        with CharSession() as db:
-            return char_services.create_character(db, new_char, rules_data=self.rules_data)
+        # 4. Save to JSON
+        result = save_character_to_json(new_char)
+        
+        if not result["success"]:
+            raise Exception(result.get("error", "Unknown save error"))
+            
+        return new_char
 
     def _on_character_created(self, res):
         logging.info(f"Character Created: {res.name}")
         app = App.get_running_app()
         if not hasattr(app, 'game_settings') or app.game_settings is None:
             app.game_settings = {}
-        app.game_settings['party_list'] = [res.name]
         
-        game_setup_screen = app.root.get_screen('game_setup')
-        game_setup_screen.preselect_character(res.id)
-        app.root.current = 'game_setup'
+        # We don't automatically add to party list anymore, the Game Setup screen handles selection
+        # But we can navigate there.
+        
+        show_popup = Popup(
+            title="Success",
+            content=Label(text=f"Character '{res.name}' created successfully!\nIt is now available in Game Setup."),
+            size_hint=(0.6, 0.4)
+        )
+        show_popup.open()
+        
+        # Navigate to Game Setup after a delay
+        Clock.schedule_once(lambda dt: setattr(app.root, 'current', 'game_setup'), 2.0)
+        
         self.set_loading(False)
 
     def _on_creation_error(self, error):
