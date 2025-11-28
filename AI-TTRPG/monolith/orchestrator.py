@@ -133,9 +133,15 @@ class Orchestrator:
         
         logger.info("Initializing game engine...")
         
-        # TODO: Load and validate all JSON rules from ./game_data/
-        # from .modules.rules_pkg.data_loader import load_and_validate_all
-        # load_and_validate_all()
+        # Load and validate all JSON rules from data directory
+        try:
+            from .modules.rules_pkg.data_loader_enhanced import load_and_validate_all
+            rules_summary = load_and_validate_all()
+            logger.info(f"Rules loaded: {rules_summary}")
+        except Exception as e:
+            logger.exception(f"Failed to load rules data: {e}")
+            await self.event_bus.publish("engine.initialization_failed", {"error": str(e)})
+            raise
         
         self._initialized = True
         await self.event_bus.publish("engine.initialized", {})
