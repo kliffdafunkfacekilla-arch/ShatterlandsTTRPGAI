@@ -240,6 +240,22 @@ class MainInterfaceScreen(Screen, AsyncHelper):
         Clock.schedule_once(self._subscribe_to_events, 0)  # NEW: Event Bus subscriptions
 
 
+    def _subscribe_to_events(self, dt):
+        """Subscribes to relevant events from the Event Bus."""
+        app = App.get_running_app()
+        if app and app.event_bus:
+            # Subscribe to turn changes
+            app.event_bus.subscribe("turn_changed", self.on_turn_changed)
+            # Subscribe to ability results
+            app.event_bus.subscribe("ability_result", self.on_ability_result)
+            # Subscribe to state updates
+            app.event_bus.subscribe("state_updated", self.on_state_updated)
+            
+            logging.info("MainInterfaceScreen subscribed to events.")
+        else:
+            logging.warning("MainInterfaceScreen could not subscribe to events: Event Bus not found.")
+
+
 
     def _bind_inputs(self, *args):
         """Bind inputs that aren't available during __init__."""

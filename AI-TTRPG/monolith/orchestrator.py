@@ -117,14 +117,16 @@ class Orchestrator:
         self._lock = asyncio.Lock()
         self._initialized = False
         
-        # Initialize Local Combat Manager
+        logger.info("Orchestrator: Initializing Local Combat Manager...")
         from .modules.combat_pkg.local_combat_manager import LocalCombatManager
         self.combat_manager = LocalCombatManager(self.event_bus)
         
-        # Initialize Local World Sim & Director
+        logger.info("Orchestrator: Initializing Local World Sim...")
         from .modules.simulation_pkg.local_simulation import LocalWorldSim
-        from .modules.story_pkg.local_director import LocalCampaignDirector
         self.world_sim = LocalWorldSim()
+        
+        logger.info("Orchestrator: Initializing Local Campaign Director...")
+        from .modules.story_pkg.local_director import LocalCampaignDirector
         self.campaign_director = LocalCampaignDirector()
         
         logger.info("Orchestrator initialized")
@@ -502,6 +504,10 @@ class Orchestrator:
     def get_active_player(self) -> Optional[CharacterSave]:
         """Get the currently active player."""
         return self.state_manager.get_active_player()
+
+    def get_current_state(self) -> Optional[SaveGameData]:
+        """Get the current game state."""
+        return self.state_manager.get_current_state()
 
     async def _handle_equip(
         self,

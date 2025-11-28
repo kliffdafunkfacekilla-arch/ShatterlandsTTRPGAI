@@ -154,10 +154,18 @@ class ActiveQuestSave(BaseModel):
     steps: List[str]
     current_step: int = 1
     status: str = "active"
-    campaign_id: int
+    campaign_id: Optional[int] = None # Made optional
 
     class Config:
         from_attributes = True
+
+# Alias for backward compatibility or cleaner naming
+QuestSave = ActiveQuestSave
+
+class StoryFlagSave(BaseModel):
+    id: int
+    flag_name: str
+    value: bool = False
 
 class SaveGameData(BaseModel):
     characters: List[CharacterSave]
@@ -170,17 +178,10 @@ class SaveGameData(BaseModel):
     campaigns: List[CampaignSave]
     campaign_states: List[CampaignStateSave] = []
     quests: List[ActiveQuestSave]
-    flags: List["StoryFlagSave"] = []
+    flags: List[StoryFlagSave] = []
 
     class Config:
         from_attributes = True
-
-class StoryFlagSave(BaseModel):
-    id: int
-    flag_name: str
-    active_character_id: Optional[str] = None
-    active_character_name: Optional[str] = None
-    data: SaveGameData
 
 class SaveFile(BaseModel):
     save_name: str
