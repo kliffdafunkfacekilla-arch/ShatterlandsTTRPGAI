@@ -1,10 +1,15 @@
-from kivy.core.image import Image as CoreImage
 import os
+from kivy.core.image import Image as CoreImage
 
-img_path = r"c:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\game_client\assets\graphics\ui\uipack_rpg_sheet.png"
-if os.path.exists(img_path):
-    im = CoreImage(img_path)
-    print(f"WIDTH={im.width}")
-    print(f"HEIGHT={im.height}")
+image_path = r"c:\Users\krazy\Documents\GitHub\ShatterlandsTTRPGAI\game_client\assets\graphics\entities\hero_token.png"
+
+if os.path.exists(image_path):
+    try:
+        img = CoreImage(image_path)
+        print(f"Image: {os.path.basename(image_path)}")
+        print(f"Dimensions: {img.width}x{img.height}")
+        print(f"Texture Size: {img.texture.size}")
+    except Exception as e:
+        print(f"Error loading image: {e}")
 else:
-    print("Image not found")
+    print("File not found.")

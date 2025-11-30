@@ -1,7 +1,17 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
+from .schemas import MapState, MapTile, EntitySchema
 
-# --- API Request Model ---
+# --- API Request Models ---
+
+class PlayerMoveRequest(BaseModel):
+    """
+    Request from client to move a player to specific coordinates.
+    """
+    player_id: str = Field(..., description="ID of the player moving")
+    target_x: int = Field(..., description="Target X coordinate")
+    target_y: int = Field(..., description="Target Y coordinate")
+
 class MapInjectionRequest(BaseModel):
     """
     Specific items or NPCs to force into the generated map.
@@ -18,9 +28,9 @@ class MapGenerationRequest(BaseModel):
     seed: Optional[str] = None # For reproducible generation
     width: Optional[int] = None # Optional override
     height: Optional[int] = None # Optional override
-    injections: Optional[MapInjectionRequest] = None # --- NEW ---
+    injections: Optional[MapInjectionRequest] = None
 
-# --- New: Context Containers ---
+# --- Context Containers ---
 class MapFlavorContext(BaseModel):
     """
     Pre-generated text assets for this specific map.
@@ -39,17 +49,19 @@ class MapFlavorContext(BaseModel):
     spell_casts: List[str] = []
     enemy_intros: List[str] = [] # e.g. "A goblin bursts from the underbrush!"
 
-# --- API Response Model ---
+# --- API Response Models ---
+
 class MapGenerationResponse(BaseModel):
     """
     The generated map data, now enriched with AI context.
     """
     width: int
     height: int
-    map_data: List[List[int]] # The 2D array of tile IDs
-    seed_used: str # The actual seed used (generated if none provided)
-    algorithm_used: str # Name of the algorithm from the rules file
-    spawn_points: Optional[Dict[str, List[List[int]]]] = None # e.g., {"player": [[5,5]], "enemy": [[10,10],[12,8]]}
-
-    # --- NEW FIELD ---
+    map_data: List[List[int]] # The 2D array of tile IDs (Legacy support)
+    seed_used: str 
+    algorithm_used: str
+    spawn_points: Optional[Dict[str, List[List[int]]]] = None
     flavor_context: Optional[MapFlavorContext] = None
+    
+    # New: Full state representation
+    initial_state: Optional[MapState] = None

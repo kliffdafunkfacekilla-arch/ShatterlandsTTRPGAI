@@ -157,6 +157,7 @@ class Orchestrator:
             raise
         
         self._initialized = True
+        self.register_listeners() # <--- Register listeners
         await self.event_bus.publish("engine.initialized", {})
         logger.info("Game engine initialization complete")
     
@@ -812,10 +813,244 @@ class Orchestrator:
             "events": events
         }
 
+    async def _handle_buy(
+        self,
+        current_state: SaveGameData,
+        player_id: str,
+        data: dict
+    ) -> Dict[str, Any]:
+        """Handle buying an item."""
+        shop_id = data.get("shop_id")
+        item_id = data.get("item_id")
+        quantity = data.get("quantity", 1)
+        
+        logger.info(f"Buy: {player_id} buying {quantity}x {item_id} from {shop_id}")
+        
+        # Find character
+        character = next((c for c in current_state.characters if c.id == player_id), None)
+        if not character:
+            return {"success": False, "error": "Character not found"}
+            
+        # Get Shop Data (Importing here to avoid circular imports if possible, or move to top)
+        from .modules.story_pkg.shop_handler import get_shop_inventory
+        try:
+            shop = get_shop_inventory(shop_id)
+        except ValueError:
+            return {"success": False, "error": "Shop not found"}
+            
+        shop_item = shop["inventory"].get(item_id)
+        if not shop_item:
+            return {"success": False, "error": "Item not in shop"}
+            
+        if shop_item["quantity"] < quantity:
+            return {"success": False, "error": "Not enough stock"}
+            
+        cost = shop_item["price"] * quantity
+        
+        # Check funds
+        # Ensure inventory exists
+        if not character.inventory: character.inventory = {}
+        current_gold = character.inventory.get("currency", 0)
+        
+        if current_gold < cost:
+            return {"success": False, "error": "Not enough gold"}
+            
+        # Transaction
+        character.inventory["currency"] = current_gold - cost
+        shop_item["quantity"] -= quantity
+        
+        # Add item
+        # If it's gear, it goes to 'carried_gear' usually? 
+        # The schema says 'inventory' is Dict[str, Any]. 
+        # Let's assume flat structure or nested 'carried_gear' depending on usage.
+        # ShopScreen expects `char_context.inventory['carried_gear']`.
+        # So we should respect that structure.
+        
+        if "carried_gear" not in character.inventory:
+            character.inventory["carried_gear"] = {}
+            
+        character.inventory["carried_gear"][item_id] = character.inventory["carried_gear"].get(item_id, 0) + quantity
+        
+        self.state_manager.save_current_game()
+        
+        await self.event_bus.publish("action.buy", {
+            "player_id": player_id,
+            "shop_id": shop_id,
+            "item_id": item_id,
+            "quantity": quantity,
+            "cost": cost
+        })
+        
+        return {
+            "success": True,
+            "message": f"Bought {quantity}x {item_id}",
+            "character": character
+        }
 
+    async def _handle_sell(
+        self,
+        current_state: SaveGameData,
+        player_id: str,
+        data: dict
+    ) -> Dict[str, Any]:
+        """Handle selling an item."""
+        shop_id = data.get("shop_id")
+        item_id = data.get("item_id")
+        quantity = data.get("quantity", 1)
+        
+        logger.info(f"Sell: {player_id} selling {quantity}x {item_id} to {shop_id}")
+        
+        # Find character
+        character = next((c for c in current_state.characters if c.id == player_id), None)
+        if not character:
+            return {"success": False, "error": "Character not found"}
+            
+        # Get Shop Data
+        from .modules.story_pkg.shop_handler import get_shop_inventory
+        try:
+            shop = get_shop_inventory(shop_id)
+        except ValueError:
+            return {"success": False, "error": "Shop not found"}
+            
+        # Check player inventory
+        if not character.inventory: character.inventory = {}
+        
+        # Check carried gear
+        carried = character.inventory.get("carried_gear", {})
+        if item_id not in carried or carried[item_id] < quantity:
+            return {"success": False, "error": "Item not in inventory"}
+            
+        # Calculate value (simplified: 50% of buy price)
+        # We need item data to know price.
+        # For now, let's assume we can get it from shop if they sell it, or rule engine.
+        # Fallback: 10 gold per item if unknown.
+        
+        shop_item = shop["inventory"].get(item_id)
+        base_price = shop_item["price"] if shop_item else 20
+        sell_price = int(base_price * 0.5)
+        total_value = sell_price * quantity
+        
+        # Transaction
+        carried[item_id] -= quantity
+        if carried[item_id] <= 0:
+            del carried[item_id]
+            
+        current_gold = character.inventory.get("currency", 0)
+        character.inventory["currency"] = current_gold + total_value
+        
+        # Shop gets item? (Optional, maybe shop has infinite space or we add it)
+        # For now, items just vanish into the economy.
+        
+        self.state_manager.save_current_game()
+        
+        await self.event_bus.publish("action.sell", {
+            "player_id": player_id,
+            "shop_id": shop_id,
+            "item_id": item_id,
+            "quantity": quantity,
+            "value": total_value
+        })
+        
+        return {
+            "success": True,
+            "message": f"Sold {quantity}x {item_id} for {total_value} gold",
+            "character": character
+        }
 
-# Module-level singleton
-_orchestrator_instance: Optional[Orchestrator] = None
+    # -------------------------------------------------------------------------
+    # Time & Simulation
+    # -------------------------------------------------------------------------
+
+    async def advance_time(self, hours: int = 8) -> Dict[str, Any]:
+        """
+        Advances game time, triggering world simulation and story checks.
+        """
+        logger.info(f"Advancing time by {hours} hours...")
+        
+        state = self.state_manager.current_state
+        if not state:
+            return {"success": False, "error": "No active game state"}
+            
+        events = []
+        
+        # 1. Run World Simulation
+        if self.world_sim:
+            sim_events = self.world_sim.process_turn(state)
+            events.extend(sim_events)
+            
+        # 2. Run Story Director
+        if self.campaign_director:
+            # Check pacing
+            if self.campaign_director.check_pacing(state):
+                beat = self.campaign_director.generate_next_beat(state)
+                if beat:
+                    # Add new quest to state
+                    from .modules.save_schemas import QuestSave
+                    new_quest = QuestSave(
+                        id=f"quest_{len(state.quests) + 1}",
+                        title=beat.get("title", "Unknown Quest"),
+                        description=beat.get("description", ""),
+                        status="active",
+                        objectives=[{"text": obj, "completed": False} for obj in beat.get("objectives", [])],
+                        rewards={"xp": 100, "gold": 50} # Simplified
+                    )
+                    state.quests.append(new_quest)
+                    events.append(f"New Quest: {new_quest.title}")
+                    
+        # Save changes
+        self.state_manager.save_current_game()
+        
+        return {
+            "success": True,
+            "hours_passed": hours,
+            "events": events
+        }
+
+    async def _on_player_action(self, topic: str, payload: Dict[str, Any]) -> None:
+        """
+        Listens for 'player_action' events from the Map Core (or other modules).
+        Triggers the AI DM to interpret the action and generate a response/tool call.
+        """
+        logger.info(f"[Orchestrator] Received player_action: {payload.get('action_type')} from {payload.get('player_id')}")
+        
+        # In a real implementation, we would call the AI DM service here.
+        # For now, we'll just log it or maybe trigger a placeholder response.
+        # The next step (AI Tools) will implement the actual logic in llm_service.py
+        
+        # Example:
+        # response = await ai_client.process_action(payload)
+        # await self.event_bus.publish("ai_response", response)
+        pass
+
+    def register_listeners(self):
+        """Register internal listeners."""
+        self.event_bus.subscribe("player_action", self._on_player_action)
+
+    # -------------------------------------------------------------------------
+    # Public API for Frontend
+    # -------------------------------------------------------------------------
+
+    async def handle_player_move(self, player_id: str, x: int, y: int) -> Dict[str, Any]:
+        """
+        Public API for frontend to request player movement.
+        Delegates to map_pkg.core.process_move.
+        """
+        # Import here to avoid circular dependency at top level if necessary
+        from .modules.map_pkg import core as map_core
+        # Call the map core logic
+        result = await map_core.process_move(player_id, x, y)
+        
+        if result.get("success"):
+            # Update local state
+            new_pos = result.get("new_position")
+            if new_pos:
+                char = self.state_manager.get_active_player()
+                if char and char.id == player_id:
+                    char.position_x = new_pos[0]
+                    char.position_y = new_pos[1]
+                    logger.info(f"Updated character {char.name} position to {new_pos}")
+            
+        return result
 
 def get_orchestrator() -> Orchestrator:
     """Return the singleton Orchestrator instance."""
@@ -823,4 +1058,3 @@ def get_orchestrator() -> Orchestrator:
     if _orchestrator_instance is None:
         _orchestrator_instance = Orchestrator()
     return _orchestrator_instance
-

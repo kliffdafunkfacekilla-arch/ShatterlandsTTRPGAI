@@ -262,6 +262,18 @@ class MainInterfaceScreen(Screen, AsyncHelper):
             self.ids.dm_input.bind(on_text_validate=self.on_submit_narration)
         else:
             logging.error("Failed to bind dm_input, widget not found.")
+            
+        # Bind keyboard for debug keys
+        Window.bind(on_key_down=self._on_keyboard_down)
+
+    def _on_keyboard_down(self, instance, keyboard, keycode, text, modifiers):
+        """Handle keyboard events."""
+        # 'c' key to trigger combat
+        if text == 'c':
+            logging.info("Debug: Triggering combat via keybind 'C'")
+            self.start_debug_combat()
+            return True
+        return False
 
     def center_layout(self, instance, width, height):
         """
@@ -795,9 +807,37 @@ class MainInterfaceScreen(Screen, AsyncHelper):
         """
         Asynchronously sends the player movement command to the backend via the Orchestrator.
         """
-        if not self.app.orchestrator.game_state.party:
+        app = App.get_running_app()
+        if not app.orchestrator:
+            self.update_log("Error: Orchestrator not available.")
+            return
+
+        if not self.active_character_context:
             self.update_log("Error: No active party member to move.")
             return
+
+        # Call Orchestrator
+        try:
+            result = await app.orchestrator.handle_player_move(
+                player_id=self.active_character_context.id,
+                x=tile_x,
+                y=tile_y
+            )
+            
+            if result.get("success"):
+                self.update_log(f"Moved to ({tile_x}, {tile_y})")
+                
+                # Update sprite locally for immediate feedback (optional, state update handles it too)
+                if self.map_view_widget:
+                    self.map_view_widget.move_active_player_sprite(
+                        self.active_character_context.id, tile_x, tile_y, self.get_map_height()
+                    )
+            else:
+                self.update_log(f"Move failed: {result.get('message')}")
+                
+        except Exception as e:
+            logging.exception(f"Move error: {e}")
+            self.update_log(f"Move error: {e}")
 
         # Assuming the currently controlled player is the first in the party list.
         player_uuid = self.app.orchestrator.game_state.party[0].uuid 

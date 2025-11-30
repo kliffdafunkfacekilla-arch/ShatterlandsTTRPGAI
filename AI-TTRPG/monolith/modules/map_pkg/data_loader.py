@@ -52,3 +52,6 @@ def load_data():
         raise
 
     print("--- Map Generator: Data Loaded ---")
+
+# Automatically load data on import
+load_data()

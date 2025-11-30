@@ -374,12 +374,114 @@ def run_generation(algorithm: Dict[str, Any], seed: str, width_override: Optiona
         flavor_data = fallback_flavor
 
     # 5. Build Response
-    return models.MapGenerationResponse(
+    # 5. Build Response
+    response = models.MapGenerationResponse(
         width=width,
         height=height,
         map_data=grid_np.tolist(),
         seed_used=seed,
         algorithm_used=algo_name,
         spawn_points=spawn_points,
-        flavor_context=flavor_data # <--- Attached
+        flavor_context=flavor_data
     )
+    
+    # --- Initialize Active Map State ---
+    # Convert the raw grid into our rich MapTile schema
+    tiles = {}
+    for y in range(height):
+        for x in range(width):
+            tile_id = grid_np[y, x]
+            # Map ID to type (simple mapping for now)
+            terrain = "wall" if tile_id == params.get("wall_tile_id", 1) else "floor"
+            
+            tiles[f"{x},{y}"] = models.MapTile(
+                coordinates=(x, y),
+                terrain_type=terrain,
+                visibility="fogged"
+            )
+            
+    global ACTIVE_MAP_STATE
+    ACTIVE_MAP_STATE = models.MapState(
+        map_id=seed, # Use seed as ID for now
+        width=width,
+        height=height,
+        tiles=tiles
+    )
+    
+    response.initial_state = ACTIVE_MAP_STATE
+    return response
+
+# --- State Management ---
+ACTIVE_MAP_STATE: Optional[models.MapState] = None
+
+# --- Movement Logic ---
+from monolith.event_bus import get_event_bus
+import asyncio
+
+async def process_move(player_id: str, target_x: int, target_y: int) -> Dict[str, Any]:
+    """
+    Validates and executes a player movement.
+    """
+    global ACTIVE_MAP_STATE
+    if not ACTIVE_MAP_STATE:
+        return {"success": False, "message": "No active map state."}
+        
+    # 1. Validate Bounds
+    if target_x < 0 or target_x >= ACTIVE_MAP_STATE.width or \
+       target_y < 0 or target_y >= ACTIVE_MAP_STATE.height:
+        return {"success": False, "message": "Cannot move out of bounds."}
+        
+    # 2. Validate Terrain (Simple check)
+    tile = ACTIVE_MAP_STATE.get_tile(target_x, target_y)
+    if not tile:
+        return {"success": False, "message": "Invalid tile."}
+        
+    if tile.terrain_type == "wall":
+        return {"success": False, "message": "The way is blocked."}
+        
+    # 3. Update State (Player Position)
+    # In a full implementation, we'd update the entity's position in the Entity list
+    # For now, we assume the Orchestrator/GameClient tracks the player's 'official' position
+    # and we just validate the map logic here.
+    
+    # Update visibility (Fog of War)
+    # Simple radius reveal
+    radius = 2
+    for dy in range(-radius, radius + 1):
+        for dx in range(-radius, radius + 1):
+            nx, ny = target_x + dx, target_y + dy
+            neighbor = ACTIVE_MAP_STATE.get_tile(nx, ny)
+            if neighbor:
+                neighbor.visibility = "visible"
+                
+    # 4. Emit Event
+    bus = get_event_bus()
+    
+    # Gather context for AI
+    surrounding_tiles = []
+    for dy in range(-1, 2):
+        for dx in range(-1, 2):
+            nx, ny = target_x + dx, target_y + dy
+            t = ACTIVE_MAP_STATE.get_tile(nx, ny)
+            if t:
+                surrounding_tiles.append({
+                    "coords": (nx, ny),
+                    "terrain": t.terrain_type,
+                    "entities": [e.description for e in t.entities]
+                })
+
+    await bus.publish("player_action", {
+        "player_id": player_id,
+        "action_type": "move",
+        "location": (target_x, target_y),
+        "context_data": {
+            "surroundings": surrounding_tiles,
+            "tile_description": tile.terrain_type
+        }
+    })
+    
+    return {
+        "success": True, 
+        "message": f"Moved to {target_x}, {target_y}",
+        "new_position": (target_x, target_y)
+    }

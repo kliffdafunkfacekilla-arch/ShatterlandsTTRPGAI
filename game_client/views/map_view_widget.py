@@ -79,32 +79,81 @@ class MapViewWidget(FloatLayout):
         self.size = (map_width * TILE_SIZE, map_height * TILE_SIZE)
 
         # --- 1. Render Tiles ---
-        for y, row in enumerate(tile_map):
-            for x, tile_id in enumerate(row):
-                render_info = asset_loader.get_sprite_render_info(str(tile_id))
+        # Check for new MapState format
+        map_state = location_context.get('map_state')
+        
+        if map_state:
+            # Render from MapState (Dict or Object)
+            # If it's a Pydantic model, convert to dict, otherwise assume dict
+            if hasattr(map_state, 'dict'):
+                tiles = map_state.tiles
+            elif isinstance(map_state, dict) and 'tiles' in map_state:
+                tiles = map_state['tiles']
+            else:
+                tiles = {}
 
-                if not render_info:
-                    logging.warning(f"No render info for tile ID {tile_id} at ({x},{y})")
-                    continue
+            for tile_key, tile_data in tiles.items():
+                # tile_key is "x,y"
+                try:
+                    if hasattr(tile_data, 'coordinates'):
+                        tx, ty = tile_data.coordinates
+                        terrain = tile_data.terrain_type
+                    else:
+                        tx, ty = tile_data.get('coordinates', (0,0))
+                        terrain = tile_data.get('terrain_type', 'floor')
+                        
+                    # Map terrain to ID (simplified)
+                    tile_id = "1" if terrain == "wall" else "0"
+                    
+                    render_info = asset_loader.get_sprite_render_info(tile_id)
+                    if not render_info: continue
+                    
+                    sheet_path, rtx, rty, _, _ = render_info
+                    render_y = (map_height - 1 - ty) * TILE_SIZE
+                    
+                    texture = asset_loader.get_texture(sheet_path)
+                    if texture:
+                        region = texture.get_region(rtx, rty, TILE_SIZE, TILE_SIZE)
+                        tile_image = Image(
+                            texture=region,
+                            size_hint=(None, None),
+                            size=(TILE_SIZE, TILE_SIZE),
+                            pos=(tx * TILE_SIZE, render_y)
+                        )
+                        self.add_widget(tile_image)
+                        self.tile_sprites.append(tile_image)
+                        
+                except Exception as e:
+                    logging.error(f"Error rendering tile {tile_key}: {e}")
 
-                sheet_path, tx, ty, tx2, ty2 = render_info
-                render_y = (map_height - 1 - y) * TILE_SIZE
-
-                texture = asset_loader.get_texture(sheet_path)
-                if not texture:
-                    continue
-
-                # Create a texture region for the sprite
-                region = texture.get_region(tx, ty, TILE_SIZE, TILE_SIZE)
-
-                tile_image = Image(
-                    texture=region,
-                    size_hint=(None, None),
-                    size=(TILE_SIZE, TILE_SIZE),
-                    pos=(x * TILE_SIZE, render_y)
-                )
-                self.add_widget(tile_image)
-                self.tile_sprites.append(tile_image)
+        else:
+            # Legacy Render (List of Lists)
+            for y, row in enumerate(tile_map):
+                for x, tile_id in enumerate(row):
+                    render_info = asset_loader.get_sprite_render_info(str(tile_id))
+    
+                    if not render_info:
+                        logging.warning(f"No render info for tile ID {tile_id} at ({x},{y})")
+                        continue
+    
+                    sheet_path, tx, ty, tx2, ty2 = render_info
+                    render_y = (map_height - 1 - y) * TILE_SIZE
+    
+                    texture = asset_loader.get_texture(sheet_path)
+                    if not texture:
+                        continue
+    
+                    # Create a texture region for the sprite
+                    region = texture.get_region(tx, ty, TILE_SIZE, TILE_SIZE)
+    
+                    tile_image = Image(
+                        texture=region,
+                        size_hint=(None, None),
+                        size=(TILE_SIZE, TILE_SIZE),
+                        pos=(x * TILE_SIZE, render_y)
+                    )
+                    self.add_widget(tile_image)
+                    self.tile_sprites.append(tile_image)
 
 
         # --- 2. Render NPCs ---

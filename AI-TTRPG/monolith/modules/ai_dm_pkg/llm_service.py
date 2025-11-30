@@ -210,6 +210,84 @@ class LLMService:
         except:
             return ""
 
+    async def process_player_action(self, action_payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Processes a player action, potentially calling tools, and returning a narrative.
+        """
+        player_id = action_payload.get("player_id")
+        action_type = action_payload.get("action_type")
+        context = action_payload.get("context_data", {})
+        
+        # 1. Construct Prompt with Tool Definitions
+        from .tools import AI_TOOLS
+        
+        tools_desc = json.dumps({
+            name: {"description": t["description"], "schema": t["schema"].model_json_schema()}
+            for name, t in AI_TOOLS.items()
+        }, indent=2)
+        
+        prompt = f"""
+        You are the AI Dungeon Master. The player ({player_id}) has performed an action: {action_type}.
+        Context: {json.dumps(context, indent=2)}
+        
+        Available Tools:
+        {tools_desc}
+        
+        Decide how to respond.
+        1. If the action requires a game mechanic (e.g., checking a skill, spawning a monster), call a tool.
+           Output a JSON object: {{"tool_call": "tool_name", "arguments": {{...}}}}
+        2. If no tool is needed, provide a narrative response.
+           Output a JSON object: {{"narrative": "Your story text here."}}
+           
+        Do not output markdown code blocks. Just the JSON.
+        """
+        
+        # 2. First LLM Call (Decide Action)
+        try:
+            # Run blocking call in thread if needed, or just call directly
+            response_text = self.model.generate_content(prompt).text
+            response_text = clean_json_response(response_text)
+            decision = json.loads(response_text)
+            
+            # 3. Handle Tool Call
+            if "tool_call" in decision:
+                tool_name = decision["tool_call"]
+                args = decision.get("arguments", {})
+                
+                if tool_name in AI_TOOLS:
+                    logger.info(f"AI executing tool: {tool_name} with {args}")
+                    tool_func = AI_TOOLS[tool_name]["function"]
+                    try:
+                        # Execute Tool
+                        tool_result = tool_func(**args)
+                    except Exception as e:
+                        tool_result = f"Tool execution failed: {e}"
+                        
+                    # 4. Second LLM Call (Narrate Result)
+                    follow_up_prompt = f"""
+                    The tool '{tool_name}' was executed.
+                    Result: {tool_result}
+                    
+                    Provide a final narrative response describing what happens to the player.
+                    Output JSON: {{"narrative": "..."}}
+                    """
+                    final_resp = self.model.generate_content(follow_up_prompt).text
+                    final_data = json.loads(clean_json_response(final_resp))
+                    return final_data
+                else:
+                    return {"narrative": f"The DM tries to do something strange ({tool_name}), but fails."}
+            
+            # 4. Handle Direct Narrative
+            elif "narrative" in decision:
+                return decision
+            
+            else:
+                return {"narrative": "The DM is silent."}
+                
+        except Exception as e:
+            logger.error(f"AI Action Processing failed: {e}")
+            return {"narrative": "Something happens, but the details are hazy."}
+
     def _get_fallback_flavor(self) -> Dict[str, Any]:
         return {
             "environment_description": "A quiet area with nothing notable.",
