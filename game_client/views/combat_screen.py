@@ -332,10 +332,12 @@ class CombatScreen(Screen):
         import asyncio
         import logging
         
+        app = App.get_running_app()
+        
         async def send_action():
-            await self.app.orchestrator.handle_player_action(player_id, action_type, **data)
+            await app.orchestrator.handle_player_action(player_id, action_type, **data)
             
-        if hasattr(self.app, 'loop'):
-            asyncio.run_coroutine_threadsafe(send_action(), self.app.loop)
+        if hasattr(app, 'loop'):
+            asyncio.run_coroutine_threadsafe(send_action(), app.loop)
         else:
             logging.error("Cannot perform action: app loop not available")

@@ -527,20 +527,53 @@ class MainInterfaceScreen(Screen, AsyncHelper):
 
     def is_tile_passable(self, tile_x: int, tile_y: int) -> bool:
         if not self.location_context: return False
+        
+        # 1. Check MapState (New Format)
+        map_state = self.location_context.get('map_state')
+        if map_state:
+            # Handle Pydantic model or dict
+            tiles = map_state.tiles if hasattr(map_state, 'tiles') else map_state.get('tiles', {})
+            
+            # Key format is "x,y"
+            key = f"{tile_x},{tile_y}"
+            tile_data = tiles.get(key)
+            
+            if tile_data:
+                # Check terrain type directly if available
+                terrain = getattr(tile_data, 'terrain_type', None)
+                if not terrain:
+                    terrain = tile_data.get('terrain_type')
+                
+                # Hardcoded passability for now based on terrain
+                # TODO: Use a proper terrain definition lookup
+                if terrain == "wall": return False
+                if terrain == "water": return False
+                if terrain == "void": return False
+                return True
+            
+            # If coordinate not in map_state, assume impassable (void)
+            return False
+
+        # 2. Fallback to generated_map_data (Old Format)
         tile_map = self.location_context.get('generated_map_data')
         if not tile_map: return False
+        
         map_height = len(tile_map)
         map_width = len(tile_map[0]) if map_height > 0 else 0
+        
         if not (0 <= tile_x < map_width and 0 <= tile_y < map_height):
             return False
+            
         try:
             tile_id = tile_map[tile_y][tile_x]
         except IndexError:
             return False
+            
         tile_def = asset_loader.get_tile_definition(str(tile_id))
         if not tile_def:
             logging.warning(f"No tile definition found for ID {tile_id}")
             return False
+            
         return tile_def.get('passable', False)
 
     def on_map_tile_click(self, tile_x, tile_y):
@@ -691,6 +724,7 @@ class MainInterfaceScreen(Screen, AsyncHelper):
         if not self.active_character_context or not story_api:
             self.update_log("Cannot rest right now.")
             return
+        char_name = self.active_character_context.name if self.active_character_context else "Unknown"
         default_save_name = f"{char_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}"
         content = BoxLayout(orientation='vertical', padding='10dp', spacing='10dp')
         content.add_widget(Label(text='Enter a name for your save file:'))
@@ -765,15 +799,39 @@ class MainInterfaceScreen(Screen, AsyncHelper):
         popup.open()
 
     def on_touch_down(self, touch):
-        """Handle clicks on the map for movement."""
+        """Handle clicks on the map for movement and selection."""
         if not self.map_view_widget or not self.map_view_widget.collide_point(*touch.pos):
             return super().on_touch_down(touch)
+            
+        # Convert touch to local map coordinates (handles zoom/pan)
+        local_pos = self.map_view_widget.to_local(*touch.pos)
+        
+        # 1. Check for Character Selection
+        # Iterate through player sprites to see if we clicked one
+        for pid, sprite in self.map_view_widget.player_sprites.items():
+            # Sprite pos is in local map coordinates
+            # Check collision manually since sprite.collide_point uses global coords usually,
+            # but here we have local_pos relative to the map widget (which is the sprite's parent).
+            # So we can check if local_pos is within the sprite's bounding box.
+            
+            sx, sy = sprite.pos
+            sw, sh = sprite.size
+            if sx <= local_pos[0] <= sx + sw and sy <= local_pos[1] <= sy + sh:
+                # Clicked on this player!
+                # Find the context
+                char_ctx = next((c for c in self.party_contexts if c.id == pid), None)
+                if char_ctx:
+                    self.set_active_character(char_ctx)
+                    return True
+
+        # 2. Handle Movement / Interaction
         if self.active_character_context and self.location_context:
-            local_pos = self.map_view_widget.to_local(*touch.pos)
             tile_x = int(local_pos[0] // TILE_SIZE)
             map_height = self.get_map_height()
             if map_height == 0: return True
             tile_y = (map_height - 1) - int(local_pos[1] // TILE_SIZE)
+            
+            # Check for NPC interaction
             target_npc = None
             for npc in self.location_context.get('npcs', []):
                 coords = npc.get('coordinates')
@@ -790,6 +848,8 @@ class MainInterfaceScreen(Screen, AsyncHelper):
                 }
                 app.root.current = 'dialogue_screen'
                 return True
+                
+            # Handle Movement
             if self.is_tile_passable(tile_x, tile_y):
                 import asyncio
                 app = App.get_running_app()
@@ -838,34 +898,3 @@ class MainInterfaceScreen(Screen, AsyncHelper):
         except Exception as e:
             logging.exception(f"Move error: {e}")
             self.update_log(f"Move error: {e}")
-
-        # Assuming the currently controlled player is the first in the party list.
-        player_uuid = self.app.orchestrator.game_state.party[0].uuid 
-        self.update_log(f"Requesting move to ({tile_x}, {tile_y})...")
-        
-        try:
-            # The orchestrator should have an async method to handle game logic calls
-            # Using handle_player_action as seen in other parts of the code
-            result = await self.app.orchestrator.handle_player_action(
-                player_id=player_uuid,
-                action_type="MOVE",
-                target_x=tile_x,
-                target_y=tile_y
-            )
-            
-            @mainthread
-            def update_on_success():
-                if result and result.get('success'):
-                    self.update_log(f"Moved to ({tile_x}, {tile_y})")
-                    # Trigger state refresh if needed, though event bus should handle it
-                else:
-                    self.update_log(f"Movement failed: {result.get('error', 'Unknown')}")
-
-            update_on_success()
-
-        except Exception as e:
-            @mainthread
-            def handle_error():
-                logging.exception(f"Movement error: {e}")
-                self.update_log(f"Movement error: {e}")
-            handle_error()

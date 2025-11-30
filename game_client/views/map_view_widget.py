@@ -20,12 +20,12 @@ except ImportError as e:
 # Constants
 TILE_SIZE = 64 # Render tiles at 64x64 pixels
 
-class MapViewWidget(FloatLayout):
+from kivy.uix.scatterlayout import ScatterLayout
+
+class MapViewWidget(ScatterLayout):
     """
     A Widget that renders the 2D tile-based map and entities.
-
-    It acts as a simple rendering surface and does not handle game logic or input
-    (which is handled by `MainInterfaceScreen` or `CombatScreen`).
+    Uses ScatterLayout to allow zooming and panning.
     """
     # Keep track of rendered sprites
     tile_sprites = ListProperty([])
@@ -41,9 +41,28 @@ class MapViewWidget(FloatLayout):
         Initializes the map widget.
         """
         super().__init__(**kwargs)
-        # We are a simple FloatLayout, so our size must
-        # be set from the outside.
+        self.do_rotation = False # Disable rotation
+        self.do_scale = True
+        self.do_translation = True
+        self.auto_bring_to_front = False # Don't reorder widgets on click
+        
+        # We are a ScatterLayout, so our size is determined by content, 
+        # but we need to set size_hint to None to allow scrolling/panning within parent if needed.
+        # However, ScatterLayout usually fills its parent or is sized explicitly.
+        # Let's keep size_hint None for now as we set size in build_scene.
         self.size_hint = (None, None)
+
+    def on_touch_down(self, touch):
+        # Handle zooming with mouse scroll
+        if touch.is_mouse_scrolling:
+            if touch.button == 'scrolldown':
+                if self.scale < 2.0:
+                    self.scale *= 1.1
+            elif touch.button == 'scrollup':
+                if self.scale > 0.5:
+                    self.scale *= 0.9
+            return True
+        return super().on_touch_down(touch)
 
     def build_scene(self, location_context, party_contexts_list):
         """

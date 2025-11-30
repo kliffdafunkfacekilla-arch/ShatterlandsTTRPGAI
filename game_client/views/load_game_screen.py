@@ -64,12 +64,13 @@ class LoadGameScreen(Screen):
                 self.save_list_container.add_widget(Label(text="No save games found."))
                 return
 
-            for slot_name, save_file in saves.items():
+            for save_data in saves:
                 # Format display text
-                save_time = save_file.save_time.strftime("%Y-%m-%d %H:%M")
-                num_chars = len(save_file.data.characters)
+                slot_name = save_data.get("name", "Unknown")
+                save_time = save_data.get("timestamp", "Unknown")
+                # num_chars is not in the scan_saves output currently, so we skip it or default
                 
-                btn_text = f"{slot_name}\n({num_chars} characters - {save_time})"
+                btn_text = f"{slot_name}\n({save_time})"
                 
                 save_btn = Button(
                     text=btn_text,

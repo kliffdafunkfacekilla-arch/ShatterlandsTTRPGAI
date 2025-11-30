@@ -202,7 +202,7 @@ class CharacterSheetScreen(Screen):
                 # Use RuleSetContainer instead of old rules_api
                 from monolith.modules.rules_pkg.data_loader_enhanced import RuleSetContainer
                 
-                rules = RuleSetContainer()
+                rules = RuleSetContainer.get_instance()
                 
                 for talent_name in talents:
                     talent_data = rules.get_talent(talent_name)

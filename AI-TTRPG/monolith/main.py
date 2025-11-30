@@ -1,4 +1,9 @@
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 from fastapi import FastAPI, Depends, HTTPException, status
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel

@@ -20,13 +20,15 @@ logger = logging.getLogger("monolith.ai_dm.llm")
 from .schemas import NarrativeResponse
 from .context_builder import build_minimal_context
 
+from .llm_service import ai_client
+
 def generate_dm_response(
     prompt_text: str,
     char_context: Dict[str, Any],
     loc_context: Dict[str, Any],
     recent_log: list = None,
     api_key: Optional[str] = None,
-    request_type: str = "narrative" # Added request_type
+    request_type: str = "narrative"
 ) -> str:
     """Generate a narrative response from the AI DM using minimal context.
 
@@ -34,20 +36,12 @@ def generate_dm_response(
     ``NarrativeResponse`` Pydantic schema and uses diff-based minimal
     context to drastically reduce token usage.
     """
-    if not HAS_GENAI:
-        return "Error: google-generativeai library not installed. Please install it to use the AI DM."
-
-    if not api_key:
-        api_key = os.environ.get("GOOGLE_API_KEY")
-
-    if not api_key:
-        return "Error: No Google API Key provided. Please set it in Settings."
+    # Note: api_key arg is legacy/optional now, as LLMService handles auth
+    
+    if not ai_client.model:
+        return "Error: AI Client not initialized. Check settings/env vars."
 
     try:
-        # Initialise the Gemini client
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-pro')
-
         # Build minimal context snapshot (diff-based)
         context_snapshot = build_minimal_context(char_context, loc_context, recent_log)
         context_text = context_snapshot.to_prompt_text()
@@ -62,7 +56,12 @@ def generate_dm_response(
         # Rough estimate: 1 token ~= 4 chars
         prompt_tokens = len(full_prompt) // 4
         
-        response = model.generate_content(full_prompt)
+        # Use the unified client (Ollama or Gemini)
+        # We pass generation_config to hint JSON if supported
+        response = ai_client.model.generate_content(
+            full_prompt, 
+            generation_config={"response_mime_type": "application/json"}
+        )
 
         # --- Metrics: Estimate Response Tokens ---
         response_text = response.text if response.text else ""
@@ -73,7 +72,8 @@ def generate_dm_response(
 
         # Expect the model to return a JSON string that matches NarrativeResponse
         try:
-            raw_text = response.text.strip()
+            from .llm_service import clean_json_response
+            raw_text = clean_json_response(response.text)
             data = json.loads(raw_text)
             validated = NarrativeResponse(**data)
             return validated.message
@@ -84,7 +84,7 @@ def generate_dm_response(
                 return response.text
             return "The DM remains silent (Empty response from AI)."
     except Exception as e:
-        logger.error(f"Gemini API call failed: {e}")
+        logger.error(f"AI generation failed: {e}")
         return f"The DM is having trouble thinking right now. (Error: {e})"
 
 def _get_system_instruction() -> str:

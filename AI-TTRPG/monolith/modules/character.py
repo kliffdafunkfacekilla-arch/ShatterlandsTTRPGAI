@@ -53,11 +53,12 @@ def _get_character_db(db: char_db.SessionLocal, char_id: str) -> Character:
         Exception: If the character is not found in the database.
     """
     # Note: char_id in story_engine is "player_UUID"
-    # We must strip the "player_" prefix
-    if not isinstance(char_id, str) or not char_id.startswith("player_"):
-        raise ValueError(f"Invalid char_id format: {char_id}")
-
-    uuid_part = char_id.split("_", 1)[1]
+    # We must strip the "player_" prefix if present, or use as is if it's already a UUID
+    if isinstance(char_id, str) and char_id.startswith("player_"):
+        uuid_part = char_id.split("_", 1)[1]
+    else:
+        # Assume it is already a UUID or valid ID
+        uuid_part = char_id
 
     db_character = char_crud.get_character(db, char_id=uuid_part)
     if not db_character:
