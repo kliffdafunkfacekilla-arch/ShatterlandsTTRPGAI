@@ -87,13 +87,18 @@ class MapViewWidget(FloatLayout):
                     logging.warning(f"No render info for tile ID {tile_id} at ({x},{y})")
                     continue
 
-                sheet_path, u, v, u2, v2 = render_info
+                sheet_path, tx, ty, tx2, ty2 = render_info
                 render_y = (map_height - 1 - y) * TILE_SIZE
 
+                texture = asset_loader.get_texture(sheet_path)
+                if not texture:
+                    continue
+
+                # Create a texture region for the sprite
+                region = texture.get_region(tx, ty, TILE_SIZE, TILE_SIZE)
+
                 tile_image = Image(
-                    source=sheet_path,
-                    texture=asset_loader.get_texture(sheet_path),
-                    tex_coords=(u, v, u2, v2),
+                    texture=region,
                     size_hint=(None, None),
                     size=(TILE_SIZE, TILE_SIZE),
                     pos=(x * TILE_SIZE, render_y)
@@ -142,13 +147,19 @@ class MapViewWidget(FloatLayout):
                 logging.warning(f"No render info for entity sprite ID {sprite_id}")
                 return
 
-        sheet_path, u, v, u2, v2 = render_info
+        sheet_path, tx, ty, tx2, ty2 = render_info
         render_y = (map_height - 1 - coords[1]) * TILE_SIZE
 
+        texture = asset_loader.get_texture(sheet_path)
+        if not texture:
+            logging.warning(f"Skipping entity {entity_id_log}: texture not found at {sheet_path}")
+            return
+
+        # Create a texture region for the sprite
+        region = texture.get_region(tx, ty, TILE_SIZE, TILE_SIZE)
+
         entity_image = Image(
-            source=sheet_path,
-            texture=asset_loader.get_texture(sheet_path),
-            tex_coords=(u, v, u2, v2),
+            texture=region,
             size_hint=(None, None),
             size=(TILE_SIZE, TILE_SIZE),
             pos=(coords[0] * TILE_SIZE, render_y)

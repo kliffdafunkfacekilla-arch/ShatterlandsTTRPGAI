@@ -15,7 +15,7 @@ from pathlib import Path
 
 # Import core components
 from .event_bus import get_event_bus
-from .modules.save_schemas import SaveGameData, CharacterSave
+from .modules.save_schemas import SaveGameData, CharacterSave, LocationSave
 from .modules import save_manager
 
 logger = logging.getLogger("monolith.orchestrator")

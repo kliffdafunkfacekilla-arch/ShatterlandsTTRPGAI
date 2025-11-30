@@ -159,23 +159,6 @@ class CombatScreen(Screen):
     action_menu = ObjectProperty(None)
     
     combat_state = ObjectProperty(None, allownone=True)
-    
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.app = App.get_running_app()
-        Clock.schedule_once(self._subscribe_events, 1)
-
-    def _subscribe_events(self, dt):
-        if hasattr(self.app, 'event_bus'):
-            self.app.event_bus.subscribe("combat.started", self.on_combat_update)
-            self.app.event_bus.subscribe("combat.updated", self.on_combat_update)
-            self.app.event_bus.subscribe("combat.ended", self.on_combat_end)
-
-    def on_enter(self):
-        """Called when screen is shown."""
-        # Refresh state if available
-        if hasattr(self.app, 'orchestrator') and self.app.orchestrator.combat_manager:
-            self.on_combat_update(self.app.orchestrator.combat_manager.get_state_dict())
 
     def on_combat_update(self, state):
         """Updates the UI based on combat state."""
@@ -347,15 +330,12 @@ class CombatScreen(Screen):
 
     def _perform_action(self, player_id, action_type, data):
         import asyncio
-        # We need to run async method from sync callback
-        # Best way is to use orchestrator directly if possible, or fire-and-forget
-        
-        # Since we are in UI thread, we can call orchestrator directly but it's async
-        # We'll use a helper or just schedule it
+        import logging
         
         async def send_action():
             await self.app.orchestrator.handle_player_action(player_id, action_type, **data)
             
-        # Create task in the running loop
-        loop = asyncio.get_event_loop()
-        loop.create_task(send_action())
+        if hasattr(self.app, 'loop'):
+            asyncio.run_coroutine_threadsafe(send_action(), self.app.loop)
+        else:
+            logging.error("Cannot perform action: app loop not available")

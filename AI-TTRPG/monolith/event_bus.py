@@ -59,7 +59,7 @@ class EventBus:
         except Exception as e:
             logging.getLogger("monolith.event_bus").exception(f"Event handler failed: {e}")
 
-    async def subscribe(self, topic: str, handler: Subscriber) -> None:
+    def subscribe(self, topic: str, handler: Subscriber) -> None:
         """
         Subscribes a handler function to a topic.
 
@@ -67,12 +67,12 @@ class EventBus:
             topic (str): The event topic to listen for.
             handler (Subscriber): An async callable that takes (topic, payload).
         """
-        async with self.lock:
-            if topic not in self._subscribers:
-                self._subscribers[topic] = []
-            self._subscribers[topic].append(handler)
+        # Synchronous registration is safe enough for this use case
+        if topic not in self._subscribers:
+            self._subscribers[topic] = []
+        self._subscribers[topic].append(handler)
 
-    async def unsubscribe(self, topic: str, handler: Subscriber) -> None:
+    def unsubscribe(self, topic: str, handler: Subscriber) -> None:
         """
         Unsubscribes a handler from a topic.
 
@@ -80,12 +80,11 @@ class EventBus:
             topic (str): The event topic.
             handler (Subscriber): The handler to remove.
         """
-        async with self.lock:
-            if topic in self._subscribers:
-                try:
-                    self._subscribers[topic].remove(handler)
-                except ValueError:
-                    pass
+        if topic in self._subscribers:
+            try:
+                self._subscribers[topic].remove(handler)
+            except ValueError:
+                pass
 
 
 # singleton convenience (but modules may create their own bus if needed)

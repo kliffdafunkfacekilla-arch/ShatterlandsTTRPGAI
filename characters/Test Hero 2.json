@@ -1,0 +1,46 @@
+{
+    "id": "b487c429-d438-503b-cfc9-8e5fefec2d73",
+    "name": "Test Hero 2",
+    "kingdom": "Kingdom B",
+    "level": 1,
+    "stats": {
+        "Might": 8,
+        "Endurance": 8,
+        "Finesse": 8,
+        "Reflexes": 8,
+        "Vitality": 8,
+        "Fortitude": 8,
+        "Knowledge": 8,
+        "Logic": 8,
+        "Awareness": 8,
+        "Intuition": 8,
+        "Charm": 8,
+        "Willpower": 8
+    },
+    "skills": {},
+    "max_hp": 24,
+    "current_hp": 24,
+    "temp_hp": 0,
+    "max_composure": 24,
+    "current_composure": 24,
+    "resource_pools": {},
+    "talents": [
+        "Defend"
+    ],
+    "abilities": [],
+    "inventory": {},
+    "equipment": {},
+    "status_effects": [],
+    "injuries": [],
+    "current_location_id": 1,
+    "position_x": 2,
+    "position_y": 1,
+    "portrait_id": "character_2",
+    "previous_state": {
+        "creation_choices": {
+            "name": "Test Hero 2",
+            "kingdom": "Kingdom B",
+            "ability_talent": "Defend"
+        }
+    }
+}

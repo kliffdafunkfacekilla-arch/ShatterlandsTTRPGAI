@@ -49,6 +49,42 @@ class LLMCache:
         logger.debug(f"Cached result for tags: {tags}")
 
 
+import requests
+
+class OllamaClient:
+    """Client for local Ollama instance."""
+    def __init__(self, model="llama3", base_url="http://localhost:11434"):
+        self.model = model
+        self.base_url = base_url
+        self.api_url = f"{base_url}/api/generate"
+        
+    def generate_content(self, prompt: str, generation_config: Optional[Dict] = None) -> Any:
+        """Mimics the Google GenAI generate_content interface."""
+        try:
+            payload = {
+                "model": self.model,
+                "prompt": prompt,
+                "stream": False
+            }
+            
+            if generation_config and generation_config.get("response_mime_type") == "application/json":
+                payload["format"] = "json"
+                
+            response = requests.post(self.api_url, json=payload)
+            response.raise_for_status()
+            
+            result = response.json()
+            text = result.get("response", "")
+            
+            # Return an object with a .text attribute to match GenAI
+            class ResponseWrapper:
+                def __init__(self, t): self.text = t
+            return ResponseWrapper(text)
+            
+        except Exception as e:
+            logger.error(f"Ollama generation failed: {e}")
+            raise e
+
 class LLMService:
     def __init__(self):
         self.model = None
@@ -56,17 +92,28 @@ class LLMService:
         self._setup_client()
 
     def _setup_client(self):
+        # Check for Gemini Key first
         api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            logger.warning("GEMINI_API_KEY not found. AI features disabled.")
-            return
-
-        try:
-            genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
-            logger.info("AI Client initialized.")
-        except Exception as e:
-            logger.error(f"AI Init failed: {e}")
+        
+        # Check for Local Preference or Missing Key
+        use_local = os.environ.get("USE_LOCAL_LLM", "false").lower() == "true"
+        
+        if use_local or not api_key:
+            logger.info("Using Local LLM (Ollama)...")
+            try:
+                # Default to llama3:latest, but allow override
+                model_name = os.environ.get("LOCAL_LLM_MODEL", "llama3:latest")
+                self.model = OllamaClient(model=model_name)
+                logger.info(f"Local AI Client initialized with model: {model_name}")
+            except Exception as e:
+                logger.error(f"Local AI Init failed: {e}")
+        else:
+            try:
+                genai.configure(api_key=api_key)
+                self.model = genai.GenerativeModel('gemini-1.5-flash')
+                logger.info("Gemini AI Client initialized.")
+            except Exception as e:
+                logger.error(f"Gemini AI Init failed: {e}")
 
     def generate_map_flavor(self, tags: List[str], lore_context: str = "") -> Dict[str, Any]:
         """
@@ -131,9 +178,20 @@ class LLMService:
             self.cache.set(tags, result_dict)
             
             return result_dict
-
+            
         except Exception as e:
-            logger.error(f"Flavor generation failed: {e}")
+            logger.warning(f"Flavor generation failed with primary model: {e}")
+            
+            # Fallback to Ollama if not already using it
+            if not isinstance(self.model, OllamaClient):
+                logger.info("Attempting fallback to Local LLM (Ollama)...")
+                try:
+                    self.model = OllamaClient(model=os.environ.get("LOCAL_LLM_MODEL", "llama3:latest"))
+                    # Retry with new model
+                    return self.generate_map_flavor(tags, lore_context)
+                except Exception as ollama_e:
+                    logger.error(f"Fallback to Ollama failed: {ollama_e}")
+            
             return self._get_fallback_flavor()
 
     def generate_combat_narrative(self, combat_log: List[str]) -> str:

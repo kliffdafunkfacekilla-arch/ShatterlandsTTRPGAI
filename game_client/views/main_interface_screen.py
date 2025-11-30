@@ -237,21 +237,18 @@ class MainInterfaceScreen(Screen, AsyncHelper):
         # We must schedule this to run after the KV string is loaded
         from kivy.clock import Clock
         Clock.schedule_once(self._bind_inputs)
-        Clock.schedule_once(self._subscribe_to_events, 0)  # NEW: Event Bus subscriptions
-
+        Clock.schedule_once(self._subscribe_to_events, 0)
 
     def _subscribe_to_events(self, dt):
-        """Subscribes to relevant events from the Event Bus."""
+        """
+        Subscribe to necessary events from the backend.
+        """
         app = App.get_running_app()
-        if app and app.event_bus:
-            # Subscribe to turn changes
+        if hasattr(app, 'event_bus'):
+            # Now synchronous
             app.event_bus.subscribe("turn_changed", self.on_turn_changed)
-            # Subscribe to ability results
             app.event_bus.subscribe("ability_result", self.on_ability_result)
-            # Subscribe to state updates
             app.event_bus.subscribe("state_updated", self.on_state_updated)
-            
-            logging.info("MainInterfaceScreen subscribed to events.")
         else:
             logging.warning("MainInterfaceScreen could not subscribe to events: Event Bus not found.")
 
@@ -499,6 +496,16 @@ class MainInterfaceScreen(Screen, AsyncHelper):
 
     def update_narration(self, message: str):
         self.ids.narration_label.text = message
+
+    def update_log(self, message: str):
+        """Appends a message to the game log."""
+        if self.ids.log_label:
+            current_text = self.ids.log_label.text
+            timestamp = datetime.datetime.now().strftime("%H:%M")
+            new_entry = f"\n[{timestamp}] {message}"
+            self.ids.log_label.text = current_text + new_entry
+        else:
+            logging.warning(f"Log label not found. Message: {message}")
 
     def get_map_height(self):
         tile_map = self.location_context.get('generated_map_data', []) if self.location_context else []
@@ -770,9 +777,49 @@ class MainInterfaceScreen(Screen, AsyncHelper):
                 app.root.current = 'dialogue_screen'
                 return True
             if self.is_tile_passable(tile_x, tile_y):
-                self.move_player_to(tile_x, tile_y)
+                import asyncio
+                asyncio.create_task(self.move_player_to(tile_x, tile_y))
                 return True
-            else:
-                self.update_log("You can't move there.")
-                return True
+        else:
+            self.update_log("You can't move there.")
+            return True
         return super().on_touch_down(touch)
+
+    async def move_player_to(self, tile_x: int, tile_y: int):
+        """
+        Asynchronously sends the player movement command to the backend via the Orchestrator.
+        """
+        if not self.app.orchestrator.game_state.party:
+            self.update_log("Error: No active party member to move.")
+            return
+
+        # Assuming the currently controlled player is the first in the party list.
+        player_uuid = self.app.orchestrator.game_state.party[0].uuid 
+        self.update_log(f"Requesting move to ({tile_x}, {tile_y})...")
+        
+        try:
+            # The orchestrator should have an async method to handle game logic calls
+            # Using handle_player_action as seen in other parts of the code
+            result = await self.app.orchestrator.handle_player_action(
+                player_id=player_uuid,
+                action_type="MOVE",
+                target_x=tile_x,
+                target_y=tile_y
+            )
+            
+            @mainthread
+            def update_on_success():
+                if result and result.get('success'):
+                    self.update_log(f"Moved to ({tile_x}, {tile_y})")
+                    # Trigger state refresh if needed, though event bus should handle it
+                else:
+                    self.update_log(f"Movement failed: {result.get('error', 'Unknown')}")
+
+            update_on_success()
+
+        except Exception as e:
+            @mainthread
+            def handle_error():
+                logging.exception(f"Movement error: {e}")
+                self.update_log(f"Movement error: {e}")
+            handle_error()

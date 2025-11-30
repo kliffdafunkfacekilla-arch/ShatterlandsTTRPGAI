@@ -153,8 +153,8 @@ class ShatterlandsClientApp(App):
         try:
             # Create async event loop for this thread
             import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
 
             self.update_loading_status("Initializing Engine...", 10)
             
@@ -179,7 +179,7 @@ class ShatterlandsClientApp(App):
             
             # Initialize engine (loads rules into orchestrator)
             self.update_loading_status("Initializing Game Engine...", 60)
-            loop.run_until_complete(self.orchestrator.initialize_engine())
+            self.loop.run_until_complete(self.orchestrator.initialize_engine())
             
             # Asset Loading
             self.update_loading_status("Loading Assets...", 80)
@@ -188,6 +188,7 @@ class ShatterlandsClientApp(App):
             # Settings Loading
             self.update_loading_status("Loading Settings...", 90)
             self.app_settings = settings_manager.load_settings()
+            self.game_settings = {"session_start": time.time()} # Initialize session settings
             
             # Complete
             self.update_loading_status("Initialization Complete!", 100)
@@ -197,7 +198,7 @@ class ShatterlandsClientApp(App):
             Clock.schedule_once(self.initialize_screens_and_switch, 0)
             
             # Keep the loop running for async operations (Event Bus, AI DM)
-            loop.run_forever()
+            self.loop.run_forever()
             
         except Exception as e:
             logger.exception(f"FATAL: An error occurred during startup: {e}")

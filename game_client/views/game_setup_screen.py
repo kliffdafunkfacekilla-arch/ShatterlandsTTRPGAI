@@ -48,32 +48,44 @@ class GameSetupScreen(Screen):
         )
         root.add_widget(title)
         
-        # Instructions
-        instructions = Factory.ParchmentLabel(
-            text="Select 2-4 character JSON files from the characters folder",
-            size_hint_y=None,
-            height='40dp',
-            font_size='16sp'
-        )
-        root.add_widget(instructions)
+        # Main Content Area (Horizontal split)
+        content = BoxLayout(orientation='horizontal', spacing='20dp')
         
-        # File chooser for character JSON files
-        file_chooser = FileChooserListView(
+        # Left: File Chooser
+        left_panel = BoxLayout(orientation='vertical', spacing='10dp', size_hint_x=0.5)
+        left_panel.add_widget(Factory.ParchmentLabel(text="Available Characters", size_hint_y=None, height='30dp', bold=True))
+        
+        self.file_chooser = FileChooserListView(
             path=str(Path.cwd() / "characters"),
             filters=["*.json"],
-            multiselect=True
+            multiselect=False # Changed to single select for explicit adding
         )
-        file_chooser.bind(selection=self.on_file_selection)
-        root.add_widget(file_chooser)
+        left_panel.add_widget(self.file_chooser)
         
-        # Selected files display
-        self.selected_label = Factory.ParchmentLabel(
-            text="Selected: 0 characters",
-            size_hint_y=None,
-            height='40dp',
-            font_size='14sp'
-        )
-        root.add_widget(self.selected_label)
+        add_btn = Factory.DungeonButton(text="Add to Party ->", size_hint_y=None, height='44dp')
+        add_btn.bind(on_release=self.add_selected_character)
+        left_panel.add_widget(add_btn)
+        
+        content.add_widget(left_panel)
+        
+        # Right: Party List
+        right_panel = BoxLayout(orientation='vertical', spacing='10dp', size_hint_x=0.5)
+        right_panel.add_widget(Factory.ParchmentLabel(text="Current Party (2-4)", size_hint_y=None, height='30dp', bold=True))
+        
+        self.party_container = BoxLayout(orientation='vertical', spacing='5dp', size_hint_y=None)
+        self.party_container.bind(minimum_height=self.party_container.setter('height'))
+        
+        scroll = ScrollView()
+        scroll.add_widget(self.party_container)
+        right_panel.add_widget(scroll)
+        
+        # Clear Button
+        clear_btn = Factory.DungeonButton(text="Clear Party", size_hint_y=None, height='44dp')
+        clear_btn.bind(on_release=self.clear_party)
+        right_panel.add_widget(clear_btn)
+        
+        content.add_widget(right_panel)
+        root.add_widget(content)
         
         # Bottom buttons
         button_box = BoxLayout(
@@ -95,18 +107,56 @@ class GameSetupScreen(Screen):
         
         self.add_widget(root)
     
-    def on_file_selection(self, instance, selection):
-        """Called when file selection changes"""
-        self.selected_char_files = selection
-        count = len(selection)
-        self.selected_label.text = f"Selected: {count} character{'s' if count != 1 else ''}"
+    def add_selected_character(self, instance):
+        """Add the currently selected file to the party list."""
+        if not self.file_chooser.selection:
+            return
+            
+        file_path = self.file_chooser.selection[0]
         
-        if count > 0:
-            files_str = "\n".join([Path(f).name for f in selection[:3]])
-            if count > 3:
-                files_str += f"\n... and {count - 3} more"
-            self.selected_label.text += f"\n{files_str}"
-    
+        # Check if already added
+        if file_path in self.selected_char_files:
+            show_error("Already Added", "This character is already in the party.")
+            return
+            
+        if len(self.selected_char_files) >= 4:
+            show_error("Party Full", "Maximum 4 party members allowed.")
+            return
+            
+        self.selected_char_files.append(file_path)
+        self.refresh_party_list()
+        
+    def remove_character(self, file_path):
+        """Remove a character from the party list."""
+        if file_path in self.selected_char_files:
+            self.selected_char_files.remove(file_path)
+            self.refresh_party_list()
+            
+    def clear_party(self, instance):
+        self.selected_char_files = []
+        self.refresh_party_list()
+        
+    def refresh_party_list(self):
+        """Rebuild the party list UI."""
+        self.party_container.clear_widgets()
+        
+        for file_path in self.selected_char_files:
+            name = Path(file_path).stem
+            
+            row = BoxLayout(orientation='horizontal', size_hint_y=None, height='40dp', spacing='5dp')
+            lbl = Label(text=name, color=(0,0,0,1), size_hint_x=0.7, halign='left', valign='middle')
+            lbl.bind(size=lbl.setter('text_size'))
+            
+            rem_btn = Button(text="X", size_hint_x=0.3, background_color=(0.8, 0.2, 0.2, 1))
+            rem_btn.bind(on_release=lambda x, fp=file_path: self.remove_character(fp))
+            
+            row.add_widget(lbl)
+            row.add_widget(rem_btn)
+            self.party_container.add_widget(row)
+
+    def on_file_selection(self, instance, selection):
+        pass # No longer needed for label update, handled by add button
+
     def go_to_main_menu(self, instance):
         """Navigate back to main menu"""
         self.manager.current = 'main_menu'
@@ -114,24 +164,10 @@ class GameSetupScreen(Screen):
     def start_game(self, instance):
         """Start game with selected character files"""
         # Validation
-        if not self.selected_char_files:
-            show_error(
-                "No Characters Selected",
-                "Please select at least 2 character files to start the game."
-            )
-            return
-        
         if len(self.selected_char_files) < 2:
             show_error(
                 "Not Enough Characters",
-                f"You selected {len(self.selected_char_files)} character(s).\nPlease select at least 2 characters for hotseat play."
-            )
-            return
-        
-        if len(self.selected_char_files) > 4:
-            show_error(
-                "Too Many Characters",
-                f"You selected {len(self.selected_char_files)} characters.\nMaximum 4 characters allowed."
+                f"You have {len(self.selected_char_files)} character(s) in the party.\nPlease add at least 2 characters for hotseat play."
             )
             return
         

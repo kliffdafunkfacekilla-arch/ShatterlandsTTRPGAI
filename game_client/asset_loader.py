@@ -58,19 +58,24 @@ def get_texture(sheet_path: str):
     """
     if sheet_path not in KIVY_TEXTURE_CACHE:
         logging.info(f"AssetLoader: Caching new texture for {sheet_path}")
-        texture = CoreImage(sheet_path).texture
-        if not texture:
-            logging.error(f"AssetLoader: Failed to load texture at {sheet_path}")
+        try:
+            texture = CoreImage(sheet_path).texture
+            if not texture:
+                logging.error(f"AssetLoader: Failed to load texture at {sheet_path} (Texture is None)")
+                return None
+            
+            # Enable texture clipping
+            texture.mag_filter = 'nearest'
+            texture.min_filter = 'nearest'
+            texture.wrap = 'clamp_to_edge'
+
+            # Create a region for the full texture that we can clip
+            # full_region = texture.texture_regions[0] # Not strictly needed if we use tex_coords
+            KIVY_TEXTURE_CACHE[sheet_path] = texture
+            
+        except Exception as e:
+            logging.error(f"AssetLoader: Exception loading texture at {sheet_path}: {e}")
             return None
-
-        # Enable texture clipping
-        texture.mag_filter = 'nearest'
-        texture.min_filter = 'nearest'
-        texture.wrap = 'clamp_to_edge'
-
-        # Create a region for the full texture that we can clip
-        full_region = texture.texture_regions[0]
-        KIVY_TEXTURE_CACHE[sheet_path] = texture
 
     return KIVY_TEXTURE_CACHE[sheet_path]
 
@@ -154,6 +159,7 @@ def _build_sprite_lookup_map():
         sx = col * TILE_SIZE
         sy = row * TILE_SIZE
         SPRITE_RENDER_INFO[entity_id] = (sheet_path, sx, sy)
+        logging.info(f"AssetLoader: Mapped {entity_id} -> {sheet_path} ({sx}, {sy})")
 
     logging.info(f"AssetLoader: Built sprite map with {len(SPRITE_RENDER_INFO)} entries.")
 
