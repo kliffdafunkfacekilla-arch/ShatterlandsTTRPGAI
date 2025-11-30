@@ -160,6 +160,30 @@ class CombatScreen(Screen):
     
     combat_state = ObjectProperty(None, allownone=True)
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        from kivy.clock import Clock
+        Clock.schedule_once(self._subscribe_to_events, 0)
+
+    def _subscribe_to_events(self, dt):
+        app = App.get_running_app()
+        if hasattr(app, 'event_bus'):
+            app.event_bus.subscribe("combat.started", self.on_combat_update)
+            app.event_bus.subscribe("combat.updated", self.on_combat_update)
+            app.event_bus.subscribe("combat.ended", self.on_combat_end)
+        else:
+            logging.warning("CombatScreen: Event Bus not found.")
+
+    def on_enter(self, *args):
+        """Called when entering the combat screen."""
+        app = App.get_running_app()
+        if app.orchestrator and app.orchestrator.combat_manager:
+            # Fetch current state immediately
+            state = app.orchestrator.combat_manager.get_state_dict()
+            self.on_combat_update(state)
+        else:
+            logging.error("CombatScreen: Orchestrator or CombatManager not found.")
+
     def on_combat_update(self, state):
         """Updates the UI based on combat state."""
         self.combat_state = state

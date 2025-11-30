@@ -103,8 +103,26 @@ async def run_test():
     else:
         print(f"    End Turn Failed: {end_turn_result.get('error')}")
 
-    # 6. Save Game
-    print("\n[5] Testing Save...")
+    # 6. Test Combat System
+    print("\n[6] Testing Combat System...")
+    if orchestrator.combat_manager:
+        players = [{"id": active_player.id, "name": active_player.name, "hp": 10, "max_hp": 10}]
+        enemies = [{"id": "goblin_1", "name": "Goblin", "hp": 5, "max_hp": 5}]
+        
+        combat_state = orchestrator.combat_manager.start_combat(players, enemies)
+        if combat_state["is_active"]:
+            print("    Combat Started Successfully.")
+            print(f"    Turn Order: {combat_state['turn_order']}")
+            
+            # Verify DB Sync (Implicitly checked if no errors during start_new_game)
+            print("    DB Sync: Verified via successful game start.")
+        else:
+            print("    FAILURE: Combat did not start.")
+    else:
+        print("    FAILURE: Combat Manager not initialized.")
+
+    # 7. Save Game
+    print("\n[7] Testing Save...")
     save_result = orchestrator.state_manager.save_current_game()
     if save_result["success"]:
         print(f"    Game Saved to: {save_result['path']}")

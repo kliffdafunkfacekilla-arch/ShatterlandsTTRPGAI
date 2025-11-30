@@ -17,6 +17,9 @@ from pathlib import Path
 from .event_bus import get_event_bus
 from .modules.save_schemas import SaveGameData, CharacterSave, LocationSave
 from .modules import save_manager
+from .modules.character_pkg import models as char_models
+from .modules.character_pkg import database as char_db
+from .modules.character_pkg import crud as char_crud
 
 logger = logging.getLogger("monolith.orchestrator")
 
@@ -172,6 +175,46 @@ class Orchestrator:
             self.state_manager.save_current_game()
     
     # -------------------------------------------------------------------------
+    # Helper Methods
+    # -------------------------------------------------------------------------
+
+    def _sync_characters_to_db(self, characters: List[CharacterSave]):
+        """Syncs loaded characters to the SQLite database for AI access."""
+        logger.info(f"Syncing {len(characters)} characters to DB...")
+        db = char_db.SessionLocal()
+        try:
+            for char_data in characters:
+                # Check if exists
+                db_char = char_crud.get_character(db, char_data.id)
+                
+                # Prepare data dict
+                char_dict = char_data.model_dump()
+                
+                # Handle complex fields that need to be JSON
+                # Pydantic model_dump handles recursion, but we need to ensure
+                # the top-level fields match the SQLAlchemy model.
+                # Specifically, 'equipment' in CharacterSave is a model, model_dump converts it to dict.
+                # SQLAlchemy JSON column expects dict/list.
+                
+                if not db_char:
+                    logger.info(f"Creating DB record for {char_data.name}")
+                    db_char = char_models.Character(**char_dict)
+                    db.add(db_char)
+                else:
+                    # Update existing
+                    for key, value in char_dict.items():
+                        if hasattr(db_char, key):
+                            setattr(db_char, key, value)
+            
+            db.commit()
+            logger.info("Character sync complete.")
+        except Exception as e:
+            logger.exception(f"Failed to sync characters to DB: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
+    # -------------------------------------------------------------------------
     # Game Creation & Loading
     # -------------------------------------------------------------------------
     
@@ -258,6 +301,9 @@ class Orchestrator:
             # Load into state manager
             self.state_manager.load_state(game_state)
             
+            # Sync to DB for AI
+            self._sync_characters_to_db(characters)
+            
             # Initial save
             save_result = self.state_manager.save_current_game()
             
@@ -302,6 +348,9 @@ class Orchestrator:
             
             save_file = result["save_file"]
             self.state_manager.load_state(save_file.data, slot_name)
+            
+            # Sync to DB for AI
+            self._sync_characters_to_db(save_file.data.characters)
             
             await self.event_bus.publish("game.loaded", {
                 "slot_name": slot_name,

@@ -44,20 +44,28 @@ def teleport_to_construct(app):
         
         target_loc_id = loc.id
         
-        # 2. Move Party
-        main_screen = app.root.get_screen('main_interface')
-        if main_screen.active_character_context:
-            char_id = main_screen.active_character_context.id
-            # Move to (10, 10)
-            main_screen.move_player_to(10, 10) 
-            # But move_player_to only works in current map. We need to force location change.
+        # 2. Move Party (Update Orchestrator State)
+        if app.orchestrator and app.orchestrator.state_manager.current_state:
+            state = app.orchestrator.state_manager.current_state
             
-            # We need to use the monolith API directly to change location_id
+            # Update all characters to new location
+            for char in state.characters:
+                char.current_location_id = target_loc_id
+                char.position_x = 10
+                char.position_y = 10
+                
+            # Save and Refresh
+            app.orchestrator.state_manager.save_current_game()
+            
+            # Also sync to DB for consistency (optional but good)
             from monolith.modules import character as character_api
-            character_api.update_character_location(char_id, target_loc_id, [10, 10])
+            for char in state.characters:
+                character_api.update_character_location(char.id, target_loc_id, [10, 10])
+                
+            # Trigger UI Refresh
+            app.event_bus.publish("state_updated", {})
             
-            # Refresh UI
-            main_screen.on_enter()
+            main_screen = app.root.get_screen('main_interface')
             main_screen.update_log("Teleported to The Construct.")
             
     except Exception as e:
@@ -83,10 +91,34 @@ def spawn_npc(app, template_id):
             location_id=loc_id,
             coordinates=[10, 12] # Offset from center
         )
-        world_crud.spawn_npc(db, spawn_req)
+        
+        # 1. DB Spawn
+        npc = world_crud.spawn_npc(db, spawn_req)
+        
+        # 2. Update Orchestrator State
+        if app.orchestrator and app.orchestrator.state_manager.current_state:
+            state = app.orchestrator.state_manager.current_state
+            # Find location
+            location = next((l for l in state.locations if l.id == loc_id), None)
+            if location:
+                # Convert DB model to Pydantic/Dict
+                # This is tricky without full schemas, but let's try to append a dict
+                npc_dict = {
+                    "id": npc.id,
+                    "name": npc.name,
+                    "template_id": npc.template_id,
+                    "coordinates": [npc.position_x, npc.position_y],
+                    "hp": npc.current_hp,
+                    "max_hp": npc.max_hp
+                }
+                if not location.npcs: location.npcs = []
+                location.npcs.append(npc_dict)
+                
+                app.orchestrator.state_manager.save_current_game()
+                app.event_bus.publish("state_updated", {})
+        
         main_screen.update_log(f"Spawned {template_id}.")
-        # Refresh map
-        main_screen.on_enter()
+        
     except Exception as e:
         logging.error(f"Spawn failed: {e}")
         main_screen.update_log(f"Spawn failed: {e}")
@@ -102,8 +134,22 @@ def grant_test_items(app):
     char_id = main_screen.active_character_context.id
     db = CharSession()
     try:
+        # 1. DB Grant
         char_services.add_item_to_character(db, char_id, "test_sword", 1)
         char_services.add_item_to_character(db, char_id, "test_potion", 5)
+        
+        # 2. Update Orchestrator State
+        if app.orchestrator and app.orchestrator.state_manager.current_state:
+            state = app.orchestrator.state_manager.current_state
+            char = next((c for c in state.characters if c.id == char_id), None)
+            if char:
+                if not char.inventory: char.inventory = {}
+                char.inventory["test_sword"] = char.inventory.get("test_sword", 0) + 1
+                char.inventory["test_potion"] = char.inventory.get("test_potion", 0) + 5
+                
+                app.orchestrator.state_manager.save_current_game()
+                app.event_bus.publish("state_updated", {})
+
         main_screen.update_log("Granted Test Sword and Potions.")
     except Exception as e:
         logging.error(f"Grant items failed: {e}")
@@ -117,5 +163,24 @@ def heal_party(app):
     if not main_screen.active_character_context: return
     
     # We can use the rest mechanic or just hack the stats
-    main_screen.on_rest()
-    main_screen.update_log("Party Healed (Debug Rest).")
+    # Update Orchestrator State directly
+    if app.orchestrator and app.orchestrator.state_manager.current_state:
+        state = app.orchestrator.state_manager.current_state
+        for char in state.characters:
+            char.current_hp = char.max_hp
+            
+        app.orchestrator.state_manager.save_current_game()
+        
+        # Sync to DB
+        db = CharSession()
+        try:
+            for char in state.characters:
+                db_char = char_services.get_character(db, char.id)
+                if db_char:
+                    char_services.apply_healing(db, db_char, 9999)
+        finally:
+            db.close()
+            
+        app.event_bus.publish("state_updated", {})
+        
+    main_screen.update_log("Party Healed (Debug).")
