@@ -190,12 +190,6 @@ class Orchestrator:
                 # Prepare data dict
                 char_dict = char_data.model_dump()
                 
-                # Handle complex fields that need to be JSON
-                # Pydantic model_dump handles recursion, but we need to ensure
-                # the top-level fields match the SQLAlchemy model.
-                # Specifically, 'equipment' in CharacterSave is a model, model_dump converts it to dict.
-                # SQLAlchemy JSON column expects dict/list.
-                
                 if not db_char:
                     logger.info(f"Creating DB record for {char_data.name}")
                     db_char = char_models.Character(**char_dict)
@@ -214,19 +208,78 @@ class Orchestrator:
         finally:
             db.close()
 
+    def _sync_world_to_db(self, state: SaveGameData):
+        """
+        Ensures that Regions and Locations loaded from JSON are present in the SQLite database.
+        """
+        from .modules.world_pkg import database as world_db
+        from .modules.world_pkg import crud as world_crud
+        
+        db = world_db.SessionLocal()
+        try:
+            # 1. Sync Regions
+            for region in state.regions:
+                existing = world_crud.get_region(db, region.id)
+                if not existing:
+                    from .modules.world_pkg import models as world_models
+                    db_region = world_models.Region(
+                        id=region.id,
+                        name=region.name,
+                        current_weather=region.current_weather,
+                        environmental_effects=region.environmental_effects,
+                        faction_influence=region.faction_influence
+                    )
+                    db.add(db_region)
+                else:
+                    existing.name = region.name
+                    existing.current_weather = region.current_weather
+                    existing.environmental_effects = region.environmental_effects
+                    existing.faction_influence = region.faction_influence
+            
+            # 2. Sync Locations
+            for loc in state.locations:
+                existing_loc = world_crud.get_location(db, loc.id)
+                if not existing_loc:
+                    from .modules.world_pkg import models as world_models
+                    db_loc = world_models.Location(
+                        id=loc.id,
+                        name=loc.name,
+                        region_id=loc.region_id,
+                        tags=loc.tags,
+                        exits=loc.exits,
+                        description=loc.description,
+                        generated_map_data=loc.generated_map_data,
+                        map_seed=loc.map_seed,
+                        spawn_points=loc.spawn_points,
+                        ai_annotations=loc.ai_annotations
+                    )
+                    db.add(db_loc)
+                else:
+                    existing_loc.name = loc.name
+                    existing_loc.region_id = loc.region_id
+                    existing_loc.tags = loc.tags
+                    existing_loc.exits = loc.exits
+                    existing_loc.description = loc.description
+                    existing_loc.generated_map_data = loc.generated_map_data
+                    existing_loc.map_seed = loc.map_seed
+                    existing_loc.spawn_points = loc.spawn_points
+                    existing_loc.ai_annotations = loc.ai_annotations
+            
+            db.commit()
+            logger.info(f"Synced {len(state.regions)} regions and {len(state.locations)} locations to SQLite DB.")
+            
+        except Exception as e:
+            logger.error(f"Failed to sync world to DB: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
     # -------------------------------------------------------------------------
     # Game Creation & Loading
     # -------------------------------------------------------------------------
     
     async def start_new_game(self, character_json_paths: List[str]) -> Dict[str, Any]:
-        """Initialize a new game from character JSON files.
-        
-        Args:
-            character_json_paths: List of paths to character JSON files
-            
-        Returns:
-            Result dictionary with success status
-        """
+        """Initialize a new game from character JSON files."""
         try:
             logger.info(f"Starting new game with {len(character_json_paths)} characters")
             
@@ -242,18 +295,16 @@ class Orchestrator:
             
             # Generate initial world state
             from .modules.map_pkg import core as map_core
-            from .modules.map_pkg import models as map_models
             
             # Select a random algorithm for the starting area
             algo = map_core.select_algorithm(["forest", "starter"])
             if not algo:
-                # Fallback if no specific tag match
                 algo = map_core.GENERATION_ALGORITHMS[0]
                 
             # Generate the map
             map_response = map_core.run_generation(
                 algorithm=algo,
-                seed="start_seed_12345", # Fixed seed for consistency or random
+                seed="start_seed_12345",
                 width_override=40,
                 height_override=30
             )
@@ -303,6 +354,7 @@ class Orchestrator:
             
             # Sync to DB for AI
             self._sync_characters_to_db(characters)
+            self._sync_world_to_db(game_state)
             
             # Initial save
             save_result = self.state_manager.save_current_game()
@@ -351,6 +403,7 @@ class Orchestrator:
             
             # Sync to DB for AI
             self._sync_characters_to_db(save_file.data.characters)
+            self._sync_world_to_db(save_file.data)
             
             await self.event_bus.publish("game.loaded", {
                 "slot_name": slot_name,

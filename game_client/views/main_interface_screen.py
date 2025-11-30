@@ -503,7 +503,14 @@ class MainInterfaceScreen(Screen, AsyncHelper):
         ]
         
         # Start Combat
-        app.orchestrator.combat_manager.start_combat(players, enemies)
+        import asyncio
+        async def launch_combat():
+            app.orchestrator.combat_manager.start_combat(players, enemies)
+            
+        if hasattr(app, 'loop'):
+            asyncio.run_coroutine_threadsafe(launch_combat(), app.loop)
+        else:
+            logging.error("No event loop found in app")
         
         # Switch Screen
         app.root.current = 'combat_screen'
