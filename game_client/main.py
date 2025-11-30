@@ -17,6 +17,27 @@ MONOLITH_PATH = APP_ROOT / "AI-TTRPG"
 if str(MONOLITH_PATH) not in sys.path:
     sys.path.insert(0, str(MONOLITH_PATH))
 
+# --- 1.5 LOAD ENV VARS ---
+def load_env_file():
+    """Manually load .env file to avoid external dependencies."""
+    env_path = APP_ROOT / ".env"
+    if env_path.exists():
+        logging.info(f"Loading environment from {env_path}")
+        try:
+            with open(env_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"): continue
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        # Don't overwrite existing system env vars
+                        if key.strip() not in os.environ:
+                            os.environ[key.strip()] = value.strip()
+        except Exception as e:
+            logging.error(f"Failed to load .env file: {e}")
+
+load_env_file()
+
 # --- 2. MONOLITH IMPORTS ---
 try:
     from monolith.orchestrator import Orchestrator

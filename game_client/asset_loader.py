@@ -59,7 +59,7 @@ def get_texture(sheet_path: str):
     if sheet_path not in KIVY_TEXTURE_CACHE:
         logging.info(f"AssetLoader: Caching new texture for {sheet_path}")
         try:
-            texture = CoreImage(sheet_path).texture
+            texture = CoreImage(str(sheet_path)).texture
             if not texture:
                 logging.error(f"AssetLoader: Failed to load texture at {sheet_path} (Texture is None)")
                 return None
@@ -69,8 +69,6 @@ def get_texture(sheet_path: str):
             texture.min_filter = 'nearest'
             texture.wrap = 'clamp_to_edge'
 
-            # Create a region for the full texture that we can clip
-            # full_region = texture.texture_regions[0] # Not strictly needed if we use tex_coords
             KIVY_TEXTURE_CACHE[sheet_path] = texture
             
         except Exception as e:

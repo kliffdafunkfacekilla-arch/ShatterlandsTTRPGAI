@@ -1,0 +1,526 @@
+{
+    "uipack_rpg_sheet.png": {
+        "arrowBeige_left": [
+            303,
+            5,
+            22,
+            21
+        ],
+        "arrowBeige_right": [
+            171,
+            5,
+            22,
+            21
+        ],
+        "arrowBlue_left": [
+            193,
+            5,
+            22,
+            21
+        ],
+        "arrowBlue_right": [
+            215,
+            5,
+            22,
+            21
+        ],
+        "arrowBrown_left": [
+            237,
+            5,
+            22,
+            21
+        ],
+        "arrowBrown_right": [
+            325,
+            5,
+            22,
+            21
+        ],
+        "arrowSilver_left": [
+            281,
+            5,
+            22,
+            21
+        ],
+        "arrowSilver_right": [
+            259,
+            5,
+            22,
+            21
+        ],
+        "barBack_horizontalLeft": [
+            372,
+            164,
+            9,
+            18
+        ],
+        "barBack_horizontalMid": [
+            338,
+            108,
+            18,
+            18
+        ],
+        "barBack_horizontalRight": [
+            190,
+            200,
+            9,
+            18
+        ],
+        "barBack_verticalBottom": [
+            290,
+            314,
+            18,
+            9
+        ],
+        "barBack_verticalMid": [
+            338,
+            90,
+            18,
+            18
+        ],
+        "barBack_verticalTop": [
+            338,
+            63,
+            18,
+            9
+        ],
+        "barBlue_horizontalBlue": [
+            356,
+            63,
+            18,
+            18
+        ],
+        "barBlue_horizontalLeft": [
+            372,
+            200,
+            9,
+            18
+        ],
+        "barBlue_horizontalRight": [
+            372,
+            182,
+            9,
+            18
+        ],
+        "barBlue_verticalBottom": [
+            344,
+            314,
+            18,
+            9
+        ],
+        "barBlue_verticalMid": [
+            356,
+            108,
+            18,
+            18
+        ],
+        "barBlue_verticalTop": [
+            356,
+            99,
+            18,
+            9
+        ],
+        "barGreen_horizontalLeft": [
+            370,
+            386,
+            9,
+            18
+        ],
+        "barGreen_horizontalMid": [
+            338,
+            126,
+            18,
+            18
+        ],
+        "barGreen_horizontalRight": [
+            190,
+            182,
+            9,
+            18
+        ],
+        "barGreen_verticalBottom": [
+            338,
+            36,
+            18,
+            9
+        ],
+        "barGreen_verticalMid": [
+            356,
+            81,
+            18,
+            18
+        ],
+        "barGreen_verticalTop": [
+            171,
+            27,
+            18,
+            9
+        ],
+        "barRed_horizontalLeft": [
+            370,
+            404,
+            9,
+            18
+        ],
+        "barRed_horizontalMid": [
+            356,
+            126,
+            18,
+            18
+        ],
+        "barRed_horizontalRight": [
+            190,
+            146,
+            9,
+            18
+        ],
+        "barRed_verticalBottom": [
+            347,
+            0,
+            18,
+            9
+        ],
+        "barRed_verticalMid": [
+            347,
+            9,
+            18,
+            18
+        ],
+        "barRed_verticalTop": [
+            338,
+            27,
+            18,
+            9
+        ],
+        "barYellow_horizontalLeft": [
+            370,
+            368,
+            9,
+            18
+        ],
+        "barYellow_horizontalMid": [
+            338,
+            45,
+            18,
+            18
+        ],
+        "barYellow_horizontalRight": [
+            190,
+            164,
+            9,
+            18
+        ],
+        "barYellow_verticalBottom": [
+            326,
+            314,
+            18,
+            9
+        ],
+        "barYellow_verticalMid": [
+            338,
+            72,
+            18,
+            18
+        ],
+        "barYellow_verticalTop": [
+            308,
+            314,
+            18,
+            9
+        ],
+        "buttonLong_beige": [
+            0,
+            181,
+            190,
+            49
+        ],
+        "buttonLong_beige_pressed": [
+            0,
+            230,
+            190,
+            45
+        ],
+        "buttonLong_blue": [
+            0,
+            275,
+            190,
+            49
+        ],
+        "buttonLong_blue_pressed": [
+            0,
+            324,
+            190,
+            45
+        ],
+        "buttonLong_brown": [
+            0,
+            414,
+            190,
+            49
+        ],
+        "buttonLong_brown_pressed": [
+            0,
+            369,
+            190,
+            45
+        ],
+        "buttonLong_grey": [
+            0,
+            463,
+            190,
+            49
+        ],
+        "buttonLong_grey_pressed": [
+            0,
+            136,
+            190,
+            45
+        ],
+        "buttonRound_beige": [
+            335,
+            398,
+            35,
+            38
+        ],
+        "buttonRound_blue": [
+            335,
+            436,
+            35,
+            38
+        ],
+        "buttonRound_brown": [
+            335,
+            360,
+            35,
+            38
+        ],
+        "buttonRound_grey": [
+            335,
+            474,
+            35,
+            38
+        ],
+        "buttonSquare_beige": [
+            293,
+            169,
+            45,
+            49
+        ],
+        "buttonSquare_beige_pressed": [
+            290,
+            373,
+            45,
+            45
+        ],
+        "buttonSquare_blue": [
+            290,
+            463,
+            45,
+            49
+        ],
+        "buttonSquare_blue_pressed": [
+            290,
+            328,
+            45,
+            45
+        ],
+        "buttonSquare_brown": [
+            293,
+            120,
+            45,
+            49
+        ],
+        "buttonSquare_brown_pressed": [
+            293,
+            75,
+            45,
+            45
+        ],
+        "buttonSquare_grey": [
+            293,
+            26,
+            45,
+            49
+        ],
+        "buttonSquare_grey_pressed": [
+            290,
+            418,
+            45,
+            45
+        ],
+        "cursorGauntlet_blue": [
+            30,
+            0,
+            30,
+            30
+        ],
+        "cursorGauntlet_bronze": [
+            0,
+            0,
+            30,
+            30
+        ],
+        "cursorGauntlet_grey": [
+            60,
+            0,
+            30,
+            30
+        ],
+        "cursorHand_beige": [
+            90,
+            2,
+            27,
+            28
+        ],
+        "cursorHand_blue": [
+            117,
+            2,
+            27,
+            28
+        ],
+        "cursorHand_grey": [
+            144,
+            2,
+            27,
+            28
+        ],
+        "cursorSword_bronze": [
+            338,
+            144,
+            34,
+            37
+        ],
+        "cursorSword_gold": [
+            338,
+            181,
+            34,
+            37
+        ],
+        "cursorSword_silver": [
+            335,
+            323,
+            34,
+            37
+        ],
+        "iconCheck_beige": [
+            369,
+            313,
+            16,
+            15
+        ],
+        "iconCheck_blue": [
+            370,
+            467,
+            16,
+            15
+        ],
+        "iconCheck_bronze": [
+            370,
+            452,
+            16,
+            15
+        ],
+        "iconCheck_grey": [
+            370,
+            422,
+            16,
+            15
+        ],
+        "iconCircle_beige": [
+            356,
+            29,
+            17,
+            17
+        ],
+        "iconCircle_blue": [
+            365,
+            12,
+            17,
+            17
+        ],
+        "iconCircle_brown": [
+            369,
+            343,
+            17,
+            17
+        ],
+        "iconCircle_grey": [
+            356,
+            46,
+            17,
+            17
+        ],
+        "iconCross_beige": [
+            369,
+            328,
+            16,
+            15
+        ],
+        "iconCross_blue": [
+            370,
+            482,
+            16,
+            15
+        ],
+        "iconCross_brown": [
+            370,
+            497,
+            16,
+            15
+        ],
+        "iconCross_grey": [
+            370,
+            437,
+            16,
+            15
+        ],
+        "panelInset_beige": [
+            200,
+            124,
+            93,
+            94
+        ],
+        "panelInset_beigeLight": [
+            190,
+            218,
+            93,
+            94
+        ],
+        "panelInset_blue": [
+            200,
+            30,
+            93,
+            94
+        ],
+        "panelInset_brown": [
+            283,
+            218,
+            93,
+            94
+        ],
+        "panel_beige": [
+            190,
+            312,
+            100,
+            100
+        ],
+        "panel_beigeLight": [
+            100,
+            36,
+            100,
+            100
+        ],
+        "panel_blue": [
+            190,
+            412,
+            100,
+            100
+        ],
+        "panel_brown": [
+            0,
+            36,
+            100,
+            100
+        ]
+    }
+}

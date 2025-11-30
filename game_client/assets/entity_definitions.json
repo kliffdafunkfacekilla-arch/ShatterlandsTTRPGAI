@@ -1,32 +1,32 @@
 {
   "character_1": {
     "name": "Warrior",
-    "sheet": "character1.png",
+    "sheet": "hero_token.png",
     "col": 0,
     "row": 0
   },
   "character_2": {
     "name": "Rogue",
-    "sheet": "character1.png",
-    "col": 1,
+    "sheet": "hero_token.png",
+    "col": 0,
     "row": 0
   },
   "character_3": {
     "name": "Mage",
-    "sheet": "character1.png",
-    "col": 2,
+    "sheet": "hero_token.png",
+    "col": 0,
     "row": 0
   },
   "character_4": {
     "name": "Cleric",
-    "sheet": "character1.png",
-    "col": 3,
+    "sheet": "hero_token.png",
+    "col": 0,
     "row": 0
   },
   "character_5": {
     "name": "Ranger",
-    "sheet": "character1.png",
+    "sheet": "hero_token.png",
     "col": 0,
-    "row": 1
+    "row": 0
   }
 }

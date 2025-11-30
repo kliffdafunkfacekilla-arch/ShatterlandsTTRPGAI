@@ -24,10 +24,12 @@ from kivy.clock import mainthread
 try:
     from monolith.modules.story_pkg import schemas as story_schemas
     from monolith.modules.camp_pkg import schemas as camp_schemas
+    from monolith.modules import story as story_api
 except ImportError as e:
     logging.error(f"MAIN_INTERFACE: Failed to import monolith modules: {e}")
     story_schemas = None
     camp_schemas = None
+    story_api = None
 
 # --- Client Imports ---
 try:
@@ -98,8 +100,8 @@ MAIN_INTERFACE_KV = '''
         # Left Panel (Log & Party)
         BoxLayout:
             orientation: 'vertical'
-            size_hint: 0.25, 0.8
-            pos_hint: {'x': 0.02, 'y': 0.05}
+            size_hint: 0.2, 0.95
+            pos_hint: {'x': 0, 'center_y': 0.5}
             spacing: '10dp'
             
             # Log
@@ -158,8 +160,8 @@ MAIN_INTERFACE_KV = '''
         # Right Panel (Narration)
         BoxLayout:
             orientation: 'vertical'
-            size_hint: 0.3, 0.8
-            pos_hint: {'right': 0.98, 'y': 0.05}
+            size_hint: 0.25, 0.95
+            pos_hint: {'right': 1, 'center_y': 0.5}
             ParchmentPanel:
                 orientation: 'vertical'
                 spacing: '10dp'
@@ -778,7 +780,11 @@ class MainInterfaceScreen(Screen, AsyncHelper):
                 return True
             if self.is_tile_passable(tile_x, tile_y):
                 import asyncio
-                asyncio.create_task(self.move_player_to(tile_x, tile_y))
+                app = App.get_running_app()
+                if hasattr(app, 'loop') and app.loop.is_running():
+                    asyncio.run_coroutine_threadsafe(self.move_player_to(tile_x, tile_y), app.loop)
+                else:
+                    self.update_log("Error: Game engine not ready.")
                 return True
         else:
             self.update_log("You can't move there.")

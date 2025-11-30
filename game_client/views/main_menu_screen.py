@@ -58,5 +58,5 @@ class MainMenuScreen(Screen):
         show_confirmation(
             "Quit Game",
             "Are you sure you want to quit?",
-            on_confirm=App.get_running_app().stop
+            on_yes=App.get_running_app().stop
         )
